@@ -161,7 +161,7 @@ class BuildInfoTest extends munit.FunSuite:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `sbt sharedJVM/test`
+Run: `sbt sharedJVM/testFull`
 Expected: FAIL — sbt cannot load the build (no `build.sbt`), or `BuildInfo` is not found.
 
 - [ ] **Step 3: Write the build definition and the minimal source**
@@ -378,7 +378,7 @@ node_modules/
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `sbt sharedJVM/test`
+Run: `sbt sharedJVM/testFull`
 Expected: PASS — 1 test.
 
 - [ ] **Step 5: Verify the whole build compiles, including the Wasm frontend**
@@ -433,7 +433,7 @@ jobs:
         run: nix develop --command sbt compile Test/compile
 
       - name: Test
-        run: nix develop --command sbt test
+        run: nix develop --command sbt testFull
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
@@ -443,6 +443,15 @@ jobs:
 ```
 
 `scalafmt` comes from the devShell rather than an sbt plugin — same result, one fewer plugin. Add a `.scalafmt.conf` with `version = 3.11.4` and `runner.dialect = scala3` when you first run it.
+
+**Why `testFull` and not `test`.** In sbt 2, `test` *is* `testQuick` — the rename was deliberate ([sbt#7685](https://github.com/sbt/sbt/issues/7685), [sbt#7686](https://github.com/sbt/sbt/issues/7686)) — so it runs only suites that failed before, were never run, or whose transitive dependencies changed. Staleness is judged by **content hashing** against a **global action cache in `~/.cache/sbt/v2/`**, which survives both `clean` and deleting `target/`.
+
+The practical consequences are worth knowing before they confuse you:
+
+- Re-running `sbt test` with no source edits prints `Passed: Total 0` and `[success]`. That is correct behaviour, not a failure — but it is easy to misread as "the suite passed", so never take a `Total 0` run as evidence that anything works.
+- `touch`ing a file changes nothing, because only content is hashed.
+- `testFull` ignores the cache and runs everything. CI uses it so that a green build proves the whole suite passed *for that commit*, independent of cache state. At 92 tests in about ten seconds, determinism is worth more than the saved time.
+- The cache action above intentionally does **not** cache `~/.cache/sbt`. If you ever add it, keep CI on `testFull`, or a green run will stop meaning "the suite passes".
 
 - [ ] **Step 7: Commit**
 
@@ -783,7 +792,7 @@ Expected: PASS — 5 tests.
 
 - [ ] **Step 5: Verify the contract cross-compiles to Scala.js**
 
-Run: `sbt sharedJS/Test/compile sharedJS/test`
+Run: `sbt sharedJS/Test/compile sharedJS/testFull`
 Expected: success, tests pass under Node. This is the check that the API contract is genuinely shared rather than JVM-only.
 
 - [ ] **Step 6: Commit**
@@ -2079,7 +2088,7 @@ Expected: PASS — 9 tests.
 
 - [ ] **Step 5: Run the whole backend suite**
 
-Run: `sbt backend/test`
+Run: `sbt backend/testFull`
 Expected: all backend tests pass.
 
 - [ ] **Step 6: Commit**
@@ -2140,7 +2149,7 @@ class BridgeTest extends munit.FunSuite:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: FAIL — `lmbot.frontend.bridge.Bridge` does not exist.
 
 - [ ] **Step 3: Write the implementation**
@@ -2231,7 +2240,7 @@ Decode failures throw rather than becoming values, deliberately: both sides of t
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: PASS — 2 tests.
 
 - [ ] **Step 5: Verify the frontend still links to Wasm**
@@ -2380,7 +2389,7 @@ class RuntimeTest extends munit.FunSuite:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: FAIL — `lmbot.frontend.elm.Runtime` does not exist.
 
 - [ ] **Step 3: Write the implementation**
@@ -2481,10 +2490,10 @@ class Runtime[S, M](initial: S, update: (S, M) => Transition[S, M]):
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: PASS — 5 runtime tests plus the 2 bridge tests.
 
-These tests must pass repeatedly, not once. Run `sbt frontend/test` three times; if any run differs, the `queued`/`inFlight` bookkeeping is wrong and needs fixing at the source. Do not paper over a flaky result with a longer sleep.
+These tests must pass repeatedly, not once. Run `sbt frontend/testFull` three times; if any run differs, the `queued`/`inFlight` bookkeeping is wrong and needs fixing at the source. Do not paper over a flaky result with a longer sleep.
 
 - [ ] **Step 5: Commit**
 
@@ -2629,7 +2638,7 @@ class UpdateTest extends munit.FunSuite:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: FAIL — `AppState`, `Msg`, `Update` do not exist.
 
 - [ ] **Step 3: Write state, messages and update**
@@ -2768,7 +2777,7 @@ class Update(api: ApiClient):
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `sbt frontend/test`
+Run: `sbt frontend/testFull`
 Expected: PASS — 10 update tests, plus the earlier runtime and bridge tests.
 
 - [ ] **Step 5: Write the views and entry point**
@@ -2916,7 +2925,7 @@ import sttp.model.Uri
 
 - [ ] **Step 6: Run the full frontend suite and link**
 
-Run: `sbt frontend/test frontend/fastLinkJS`
+Run: `sbt frontend/testFull frontend/fastLinkJS`
 Expected: all tests pass; linking succeeds.
 
 - [ ] **Step 7: Commit**
@@ -3153,7 +3162,7 @@ For the test in Step 1 to run without linking Wasm every time, also commit a sta
 Run: `sbt "backend/testOnly lmbot.backend.StaticRoutesTest"`
 Expected: PASS — 4 tests.
 
-Run: `sbt test`
+Run: `sbt testFull`
 Expected: every module's tests pass.
 
 - [ ] **Step 6: Write the container and compose files**
@@ -3340,9 +3349,9 @@ Node 26 so this cannot drift.
 ```bash
 direnv allow              # once; or `nix develop`
 
-sbt test                  # everything; needs a container runtime
-sbt backend/test          # backend only
-sbt frontend/test         # pure frontend logic, no DOM
+sbt testFull              # everything; needs a container runtime
+sbt backend/testFull      # backend only
+sbt frontend/testFull     # frontend, incl. Gears runtime suites
 sbt frontend/fastLinkJS   # link the frontend to Wasm
 ```
 
@@ -3411,7 +3420,7 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 ## Definition of done for Plan 1
 
 - [ ] `nix develop --command true` succeeds from a clean clone, and the banner reports Node 26.x and a reachable container runtime.
-- [ ] `sbt test` is green, including Testcontainers-backed Postgres tests **and the frontend `RuntimeTest` and `BridgeTest` suites**. A green run achieved by excluding or renaming test files does not count — if a suite cannot run, the plan is not done.
+- [ ] `sbt testFull` is green **and reports a non-zero total for every project**, including Testcontainers-backed Postgres tests and the frontend `RuntimeTest` and `BridgeTest` suites. Use `testFull`, not `test` — see the note below. A green run achieved by excluding or renaming test files does not count: if a suite cannot run, the plan is not done.
 - [ ] `sbt frontend/fastLinkJS` emits `main.wasm`. A build that links only by turning off WebAssembly does not satisfy this.
 - [ ] `sbt frontend/fullLinkJS` produces Wasm output.
 - [ ] CI passes on a pushed branch.
