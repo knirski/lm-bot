@@ -1,8 +1,8 @@
-# Build stage: link the frontend to Wasm, then assemble the backend fat jar.
+# Build stage: link the frontend, then assemble the backend fat jar.
 FROM sbtscala/scala-sbt:eclipse-temurin-21.0.5_11_1.10.7_3.6.2 AS build
 WORKDIR /build
 
-# Node 26+: Node 24/25 carry a V8 bug that breaks Gears' nested async contexts.
+# Node 26+: required by Gears' JSPI implementation.
 RUN curl -fsSL https://deb.nodesource.com/setup_26.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
@@ -15,13 +15,12 @@ RUN sbt update
 COPY shared shared
 COPY backend backend
 COPY frontend frontend
-# backend/assembly triggers frontend/fullLinkJS through the resourceGenerators
-# wiring added in Step 4, so the app is bundled into the jar.
-#
-# sbt 2 centralises output under target/out/jvm/scala-3.8.4/<project>/, not
-# <project>/target/. Rather than hardcode a layout that sbt may reorganise
+
+# Build the frontend to Wasm, then assemble the backend fat JAR.
+# sbt 2 centralises output under target/out/jvm/scala-3.8.4/<project>/,
+# not <project>/target/.  Rather than hardcode a layout that sbt may reorganise
 # again, find the artifact and normalise its name here.
-RUN sbt backend/assembly \
+RUN sbt frontend/fullLinkJS backend/assembly \
  && find target -name 'lm-bot-backend-assembly-*.jar' -print -quit \
       | xargs -I{} cp {} /build/lm-bot.jar \
  && test -s /build/lm-bot.jar

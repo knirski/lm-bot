@@ -2,6 +2,7 @@ package lmbot.frontend
 
 import gears.async.*
 import gears.async.default.given
+import gears.async.js.JsAsyncFromSync
 import lmbot.frontend.elm.{Effect, Runtime, Transition}
 
 class RuntimeTest extends munit.FunSuite:
@@ -21,8 +22,10 @@ class RuntimeTest extends munit.FunSuite:
     assertEquals(counterUpdate(5, Msg.Add(3)).state, 8)
     assertEquals(counterUpdate(0, Msg.Inc).effects, Nil)
 
+  // JsAsyncFromSync wraps the body in js.async and returns a
+  // scala.concurrent.Future[T], which MUnit accepts as a test result.
   test("dispatched messages are folded into the store in order"):
-    Async.fromSync:
+    JsAsyncFromSync:
       Async.group:
         val rt   = new Runtime[Int, Msg](0, counterUpdate)
         val loop = Future(rt.run)
@@ -39,10 +42,9 @@ class RuntimeTest extends munit.FunSuite:
         ()
 
   test("an effect's resulting message is fed back into the loop"):
-    Async.fromSync:
+    JsAsyncFromSync:
       Async.group:
         def update(state: Int, msg: Msg): Transition[Int, Msg] = msg match
-          // Inc bumps the counter and schedules an effect that adds 100.
           case Msg.Inc =>
             val eff = new Effect[Msg]:
               def run(using Async): Option[Msg] = Some(Msg.Add(100))
@@ -61,7 +63,7 @@ class RuntimeTest extends munit.FunSuite:
         ()
 
   test("an effect that yields no message still leaves state consistent"):
-    Async.fromSync:
+    JsAsyncFromSync:
       Async.group:
         def update(state: Int, msg: Msg): Transition[Int, Msg] = msg match
           case Msg.Inc =>
@@ -81,7 +83,7 @@ class RuntimeTest extends munit.FunSuite:
         ()
 
   test("an effect that throws kills only its own fiber, not the loop"):
-    Async.fromSync:
+    JsAsyncFromSync:
       Async.group:
         def update(state: Int, msg: Msg): Transition[Int, Msg] = msg match
           case Msg.Inc =>

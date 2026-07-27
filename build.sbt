@@ -82,14 +82,18 @@ lazy val sharedJS = project
   )
 
 /** Gears on Scala.js needs the WebAssembly backend so JSPI can suspend (spec
-  * §5.1). Wasm implies ES modules *and* at least ES2022 — the linker refuses
-  * outright otherwise, with "The WebAssembly backend requires ECMAScript 2022
-  * or later". `withUseWebAssembly` is the current spelling;
+  * §5.1). Wasm implies ES modules *and* at least ES2022.
+  * `withUseWebAssembly` is the current spelling;
   * `withExperimentalUseWebAssembly` is deprecated as of Scala.js 1.22.0.
+  *
+  * `withUseJSPI(true)` is critical — it defaults to false and the linker
+  * rejects all js.async/js.await usage without it.  The error "Uses an async
+  * block without JSPI support in WebAssembly" means exactly this flag.
   */
 lazy val wasmConfig: org.scalajs.linker.interface.StandardConfig => org.scalajs.linker.interface.StandardConfig =
   _.withModuleKind(ModuleKind.ESModule)
     .withESFeatures(_.withESVersion(ESVersion.ES2022).withUseWebAssembly(true))
+    .withWasmFeatures(_.withUseJSPI(true))
 
 lazy val backend = project
   .in(file("backend"))
@@ -115,6 +119,18 @@ lazy val backend = project
     javacOptions ++= Seq("-source", "21", "-target", "21"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
+    // Package the linked frontend as classpath resources under `web/`, which is
+    // where StaticRoutes looks (served at /assets). Without this the backend
+    // serves index.html but 404s /assets/main.js, so the page loads blank —
+    // linking the frontend is not the same as shipping it.
+    Compile / resourceGenerators += Def.task {
+      val linkedDir = (frontend / Compile / fullLinkJSOutput).value
+      val webDir    = (Compile / resourceManaged).value / "web"
+      IO.copyDirectory(linkedDir, webDir, overwrite = true)
+      (webDir ** "*").get().filter(_.isFile)
+    }.taskValue,
+
+
     assembly / mainClass := Some("lmbot.backend.Main"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", _*)      => MergeStrategy.discard
@@ -131,13 +147,10 @@ lazy val frontend = project
   .settings(
     name := "lm-bot-frontend",
     scalaJSUseMainModuleInitializer := true,
-    // §5.1 fallback: Wasm/JSPI path failed, so frontend uses the JS backend
-    // (CommonJSModule) with scala.concurrent.Future for async effects.
-    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule)
-      .withESFeatures(_.withESVersion(ESVersion.ES2022)) },
-    Test / scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule)
-      .withESFeatures(_.withESVersion(ESVersion.ES2022)) },
+    scalaJSLinkerConfig ~= wasmConfig,
+    Test / scalaJSLinkerConfig ~= wasmConfig,
     libraryDependencies ++= Seq(
+      jsDep("ch.epfl.lamp", "gears", Vgears),
       jsDep("com.raquo", "laminar", Vlaminar),
       jsDep("org.scala-js", "scalajs-dom", VscalajsDom),
       jsDep("com.softwaremill.sttp.tapir", "tapir-sttp-client", Vtapir),

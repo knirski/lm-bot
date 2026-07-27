@@ -1,22 +1,18 @@
 package lmbot.frontend
 
-import gears.async.*
-import gears.async.default.given
+import gears.async.js.JsAsyncFromSync
 import lmbot.frontend.bridge.Bridge
 
 import scala.concurrent.Future as StdFuture
 
 class BridgeTest extends munit.FunSuite:
 
-  // On Scala.js, `Async.fromSync` is backed by JsAsyncFromSync, whose
-  // `Output[T]` is `scala.concurrent.Future[T]`. MUnit accepts a Future return
-  // directly, so tests hand it straight back rather than blocking.
   test("a successful std Future becomes a Right"):
-    Async.fromSync:
+    JsAsyncFromSync:
       assertEquals(Bridge.await(StdFuture.successful(42)), Right(42))
 
   test("a failed std Future becomes a Left carrying the throwable"):
-    Async.fromSync:
+    JsAsyncFromSync:
       val boom = new RuntimeException("boom")
       Bridge.await(StdFuture.failed(boom)) match
         case Left(e)  => assertEquals(e.getMessage, "boom")

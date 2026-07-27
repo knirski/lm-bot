@@ -18,7 +18,7 @@ Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
   cannot provide one. Testcontainers needs it for the backend tests; the
   devShell wires it up for Podman automatically.
 - **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
-  to WebAssembly.
+  to WebAssembly via Scala.js + JSPI.
 
 Node's version is not a preference: Node 24 and 25 contain a V8 bug that
 stack-overflows in the nested async contexts Gears relies on. The flake pins
@@ -32,7 +32,8 @@ direnv allow              # once; or `nix develop`
 sbt test                  # everything; needs a container runtime
 sbt backend/test          # backend only
 sbt frontend/test         # pure frontend logic, no DOM
-sbt frontend/fastLinkJS   # link the frontend to Wasm
+sbt frontend/fastLinkJS   # link the frontend to Wasm (development)
+sbt frontend/fullLinkJS   # link the frontend to Wasm (production)
 ```
 
 The build runs on **sbt 2** (declared in `project/build.properties`); the sbt

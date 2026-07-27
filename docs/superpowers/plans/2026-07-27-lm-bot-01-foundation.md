@@ -388,7 +388,12 @@ Expected: all four projects compile; `frontend/fastLinkJS` emits `main.wasm` und
 
 **If linking fails, check `withUseJSPI(true)` is present in `wasmConfig` before concluding anything else.** It defaults to `false`, and its absence produces errors that read exactly like upstream incompatibilities — "Uses an async block without JSPI support in WebAssembly", or, with Wasm off, "Uses an orphan await (outside of an async block) without targeting WebAssembly" — with traces pointing deep into Gears (`WasmJSPISuspend`, `JsAsyncScheduler`, `NumberedLockImpl.lock`). Those traces are misleading: the flag is the cause and Gears is not at fault. This exact misdiagnosis has already cost one implementation attempt.
 
-Verified working: Gears 0.3.1 on Scala.js 1.22.0 with all three flags set — `fastLinkJS` and `fullLinkJS` both emit `main.wasm`, and the `Runtime` and `Bridge` suites pass under Node 26. Neither a `setTimeout` deferral in `@main` nor a particular `FromSync` variant is needed; those are red herrings if JSPI is off and unnecessary once it is on.
+Verified working: Gears 0.3.1 on Scala.js 1.22.0 with all three flags set — `fastLinkJS` and `fullLinkJS` both emit `main.wasm`, and the `Runtime` and `Bridge` suites pass under Node 26.
+
+**Linking successfully is not evidence that the frontend works.** JSPI has a second requirement that the linker cannot check: a suspension is legal only if the Wasm stack was entered through a `WebAssembly.promising` wrapper. A synchronous `@main` export and a DOM event callback both fail that test at *runtime*, with `SuspendError: trying to suspend without WebAssembly.promising`. Two consequences:
+
+- Use `JsAsyncFromSync` in `Main`, **not** `UnsafeJsAsyncFromSync`. The latter's name is the warning: it assumes a surrounding async context, which `@main` does not provide, so the app renders and then hangs on its first suspension. Both variants link identically, so only Task 12 Step 7 catches the difference.
+- Effects spawned in response to a DOM event may still fail even so — see the §5.1 note in Task 12 Step 7. Do not treat green tests plus a clean link as a working frontend.
 
 If linking still fails *after* all three flags are confirmed, that is the risk called out in spec §5.1 and §10. Two rules then apply. Do not silently drop to the JS backend. And note that switching `ModuleKind` to `CommonJSModule` while leaving Gears in the source is **not** the documented fallback — it yields a build in which Gears' own async cannot link, forcing you to disable tests to stay green. The real fallback removes Gears from the frontend: keep Laminar and the Elm architecture, and run effects on `scala.concurrent.Future`. Either way, stop and report so the choice is deliberate.
 
@@ -2864,7 +2869,7 @@ package lmbot.frontend
 
 import com.raquo.laminar.api.L.{render, *}
 import gears.async.*
-import gears.async.js.{JsAsyncOperations, UnsafeJsAsyncFromSync}
+import gears.async.js.{JsAsyncFromSync, JsAsyncOperations}
 import lmbot.frontend.api.ApiClient
 import lmbot.frontend.elm.{Effect, Runtime}
 import lmbot.frontend.view.AppView
@@ -2885,11 +2890,16 @@ import sttp.model.Uri
 
   // `Async.blocking` is JVM-only — it needs `FromSync.Blocking`. On Scala.js the
   // loop starts through `fromSync`, suspending via JSPI instead of blocking a
-  // thread. `UnsafeJsAsyncFromSync` is chosen over the default `JsAsyncFromSync`
-  // because its `Output[T]` is `T` rather than a `scala.concurrent.Future`,
-  // which keeps std Future out of this file entirely (spec §5.7.1). We are
-  // starting a top-level loop and never observe a result, so nothing is lost.
-  given Async.FromSync = UnsafeJsAsyncFromSync
+  // thread.
+  //
+  // `JsAsyncFromSync` — NOT `UnsafeJsAsyncFromSync`. The unsafe variant's
+  // `Output[T]` is `T`, which is tempting because it keeps `Future` out of this
+  // file (spec §5.7.1), but it skips the `js.async` wrapper and so provides no
+  // `WebAssembly.promising` context. The app then renders and hangs on its first
+  // suspension with `SuspendError`. Both variants link, so the compiler and the
+  // test suite will not catch this — only Task 12 Step 7 will. The returned
+  // Future is discarded; that is the price of a legal async boundary.
+  given Async.FromSync = JsAsyncFromSync
   given AsyncOperations = JsAsyncOperations
 
   Async.fromSync:
@@ -3150,7 +3160,7 @@ lazy val backend = project
       IO.copyDirectory(outDir, target, overwrite = true)
       IO.copyFile(baseDirectory.value / ".." / "frontend" / "index.html", target / "index.html")
       val _ = linked
-      (target ** "*").get.filter(_.isFile)
+      (target ** "*").get().filter(_.isFile)   // sbt 2: PathFinder.get needs ()
     }.taskValue
   )
 ```
@@ -3309,7 +3319,19 @@ curl -s -o /dev/null -w '%{http_code}\n' -b /tmp/lmbot-cookies localhost:8080/ap
 # Expected: 401
 ```
 
-Finally, open `http://localhost:8080` in a JSPI-capable browser (recent Chrome or Firefox), sign in as `admin`, confirm the dashboard renders and "Sign out" returns you to the login form. Check the browser console for Wasm or JSPI errors; if the app does not boot, that is the §5.1 risk materialising — report it rather than working around it.
+Finally — **this step is the one that decides whether the frontend works at all, so do not skip or infer it.** Open `http://localhost:8080` in a JSPI-capable browser (recent Chrome or Firefox), sign in as `admin`, confirm the dashboard renders, and confirm "Sign out" returns you to the login form. Keep the console open and treat any `SuspendError` as a failure even if the page looks fine.
+
+Verify each of these separately, because they fail independently:
+
+1. `/assets/main.js` and `/assets/main.wasm` return **200**. If they 404, the `resourceGenerators` wiring in Step 4 is missing — the page will render an empty `<div id="app">` and nothing else. Linking the frontend does not ship it.
+2. The login form appears (not a stuck "Loading…"). A permanent "Loading…" means the session-restore effect threw; check for `SuspendError` and confirm `Main` uses `JsAsyncFromSync`.
+3. Typing updates the field — proves `dispatch` and the event loop work.
+4. **Submitting reaches the dashboard.** This is the critical assertion. A `POST /api/auth/login` returning 200 is *not* sufficient: the server can authenticate successfully while `Msg.LoginSucceeded` is never dispatched, leaving the UI on the login form. Watch the rendered state, not the network tab.
+5. Sign out returns to the login form.
+
+**Known failure mode at the time of writing.** Step 4 fails on Gears 0.3.1 + Scala.js 1.22.0: effects spawned from a DOM handler cannot suspend, because the handler enters Wasm without a `WebAssembly.promising` wrapper. The fetch is issued and the cookie is set, but the continuation never resumes, so the dashboard appears only after a manual reload. This is structural — spec §5.6 routes DOM handlers through a channel into effect-running fibers, which is exactly the path JSPI forbids — and it is tracked upstream as [scala-js#5393](https://github.com/scala-js/scala-js/issues/5393) (milestone `v2.x (not planned)`).
+
+If you reproduce it, **stop and report; do not improvise.** This is the §5.1 fallback's trigger condition, and the choice belongs to the spec's owner. The documented fallback keeps Laminar and the Elm architecture and runs frontend effects on `scala.concurrent.Future`, removing Gears from the frontend; `update`, `AppState`, `Msg` and the views are unaffected, and the change is confined to `Runtime`'s effect execution, `Bridge`, and `ApiClient`'s signatures.
 
 Then `docker compose down -v`.
 
@@ -3425,7 +3447,7 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 - [ ] `sbt frontend/fullLinkJS` produces Wasm output.
 - [ ] CI passes on a pushed branch.
 - [ ] `docker compose up --build` yields a working app on `localhost:8080`.
-- [ ] A human can sign in through the browser as the bootstrapped admin, see the dashboard, and sign out.
+- [ ] A human can sign in through the browser as the bootstrapped admin, see the dashboard, and sign out — with `/assets/main.wasm` returning 200 and no `SuspendError` in the console. **Watch the rendered state, not the network tab:** a 200 from `/api/auth/login` while the UI stays on the login form is a failure, and is the currently-known failure mode (Task 12 Step 7).
 - [ ] No `scala.concurrent.Future` appears outside `frontend/.../bridge/`. Verify: `grep -rn "scala.concurrent" --include=*.scala shared backend frontend | grep -v /bridge/` returns nothing.
 - [ ] No Airstream combinator outside the store and view projections. Verify by reading `frontend/src/main/scala/lmbot/frontend/view/AppView.scala` and confirming `-->` appears only in event handlers.
 - [ ] Secrets do not appear in logs. Verify: `docker compose logs backend | grep -iE "devadminpw|devpassword"` returns nothing.

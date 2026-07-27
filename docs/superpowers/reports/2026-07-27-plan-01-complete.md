@@ -3,7 +3,7 @@
 **Date:** 2026-07-27
 **Spec:** [PRD](../specs/2026-07-27-lm-bot-prd-design.md)
 **Plan:** [Implementation Plan](../plans/2026-07-27-lm-bot-01-foundation.md)
-**Tests:** 85 passing (53 backend + 11 sharedJVM + 11 sharedJS + 10 frontend)
+**Tests:** 92 passing (53 backend + 11 sharedJVM + 11 sharedJS + 17 frontend)
 
 ## What was built
 
@@ -11,7 +11,7 @@ A deployable walking skeleton covering every architectural layer:
 
 | Layer | Technology | Status |
 |---|---|---|
-| Cross-build | sbt 2.0.4, Scala 3.9.0-RC4, Scala.js 1.22.0 | ✅ |
+| Cross-build | sbt 2.0.4, Scala 3.8.4, Scala.js 1.22.0, Wasm+JSPI | ✅ |
 | Domain types | `Role` enum, `UserView`, `ApiError` ADT, `LoginRequest` | ✅ |
 | Codecs | jsoniter-scala 2.39.1, Tapir Schema derivation | ✅ |
 | API contract | Tapir endpoint descriptions (login / me / logout) | ✅ |
@@ -25,12 +25,13 @@ A deployable walking skeleton covering every architectural layer:
 | Frontend runtime | Elm-on-Gears: `Var[AppState]`, `UnboundedChannel[Msg]`, event-loop fiber | ✅ |
 | Frontend API client | Tapir-derived `ApiClient` with Gears bridge | ✅ |
 | Frontend views | Laminar login / dashboard | ✅ |
+| Frontend linking | Wasm+JSPI — `fastLinkJS`/`fullLinkJS` emit `.wasm` output | ✅ |
 | Static serving | Serves frontend assets + SPA fallback | ✅ |
 | Deployment | Docker multi-stage build, docker-compose, README | ✅ |
 | CI | GitHub Actions via nix develop | ✅ |
 | Formatting | scalafmt 3.11.4 | ✅ |
 
-## File inventory (45 Scala sources)
+## File inventory (47 Scala sources)
 
 ```
 lm-bot/
@@ -40,7 +41,7 @@ lm-bot/
 ├── .scalafmt.conf                               # 3.11.4, scala3 dialect
 ├── .gitignore
 ├── .github/workflows/ci.yml
-├── Dockerfile                                   # multi-stage, fat JAR
+├── Dockerfile                                   # multi-stage, links frontend then fat JAR
 ├── docker-compose.yml                           # postgres + backend
 ├── README.md
 │
@@ -75,82 +76,52 @@ lm-bot/
 │   ├── HttpApiTest.scala + StaticRoutesTest.scala
 │
 ├── frontend/src/main/scala/lmbot/frontend/
-│   ├── Main.scala                               # @main + setTimeout deferred start
+│   ├── Main.scala                               # @main + UnsafeJsAsyncFromSync
 │   ├── bridge/Bridge.scala                      # std Future → Gears converter
 │   ├── elm/Effect.scala + Runtime.scala          # Elm-on-Gears: Effect, Transition, Runtime
 │   ├── AppState.scala + Msg.scala + Update.scala
 │   ├── api/ApiClient.scala                      # tapir-derived, (using Async) signatures
 │   └── view/AppView.scala                       # Laminar, render-only
 └── frontend/src/test/scala/lmbot/frontend/
-    ├── UpdateTest.scala                         # pure, no Gears async → links
-    ├── BridgeTest.scala.wasm                    # deferred — uses Gears async
-    └── RuntimeTest.scala.wasm                   # deferred — uses Gears async
+    ├── UpdateTest.scala                          # 10 tests, pure update logic
+    ├── RuntimeTest.scala                         # 5 tests, Gears event-loop integration
+    └── BridgeTest.scala                          # 2 tests, std Future → Gears bridge
 ```
 
-## Known limitation: Scala.js 1.22.0 linker rejects Gears JSPI internals
+## Linker configuration: three flags, not upstream bugs
 
-`frontend/fastLinkJS` and `frontend/fullLinkJS` fail with:
+The frontend links via the WebAssembly backend with JSPI enabled:
 
+```scala
+lazy val wasmConfig: StandardConfig => StandardConfig =
+  _.withModuleKind(ModuleKind.ESModule)
+    .withESFeatures(_.withESVersion(ESVersion.ES2022).withUseWebAssembly(true))
+    .withWasmFeatures(_.withUseJSPI(true))
 ```
-Uses an orphan await (outside of an async block) without targeting WebAssembly
-```
 
-### Root cause
+All three are required. The most easily missed is `.withUseJSPI(true)` — it defaults to `false` in Scala.js 1.22.0, and without it the linker rejects every `js.async`/`js.await` call with:
 
-Scala.js 1.22.0 added whole-program "orphan await" detection that rejects `js.await` / `js.async` in non-async methods on **all** targets (not just Wasm). Gears 0.3.1's JSPI implementation in `gears.async.js` uses these in regular methods:
+- **Wasm backend:** *"Uses an async block without JSPI support in WebAssembly"*
+- **JS backend:** *"Uses an orphan await (outside of an async block) without targeting WebAssembly"*
 
-- `WasmSuspension.resume` — `js.await(label.promise)`
-- `JsAsyncScheduler.execute` — `js.async(body.run())`
-- `JsAsync.await` — `js.await(promise)`
-- `WasmJSPISuspend.suspend` — `js.async` + `js.await`
-- `NumberedLockImpl` — JSPI-aware locking
+Both errors disappear when JSPI is enabled. The `@main` export is synchronous, but with JSPI the Scala.js linker generates the appropriate Wasm module structure for Promise integration, allowing Gears' internals (`WasmSuspension.resume`, `JsAsyncScheduler.execute`, `JsAsync.await`, etc.) to suspend correctly.
 
-These are always called from within a `js.async` scope at runtime, but the Scala.js linker cannot prove this statically because the methods themselves are not `async`.
+### What this means for the spec's §5.1 fallback
 
-### Why tests pass for UpdateTest but not BridgeTest/RuntimeTest
+The original plan's §5.1 fallback (swap to `scala.concurrent.Future` on the frontend) was **never needed**. It was documented as a risk mitigation in case the Wasm+JSPI path failed. The path does not fail — the three-flag linker config makes it work. The fallback exists in the spec as a design-time hedge and does not need to be exercised.
 
-| Test set | Gears async called? | Links? | Reason |
-|---|---|---|---|
-| `UpdateTest` | No — pure `update` functions only, no `Runtime` instantiation | ✅ | Linker dead-code-eliminates Gears internals |
-| `BridgeTest` (`.wasm`) | Yes — `JsAsyncFromSync.apply` → JSPI internals | ❌ | Linker traces from test class initializer |
-| `RuntimeTest` (`.wasm`) | Yes — same path | ❌ | Same reason |
+## Key decisions and workarounds
 
-### Resolution path
+### `JsAsyncFromSync.apply` / `UnsafeJsAsyncFromSync.apply` called directly
 
-This will start linking when either:
-
-1. **Scala.js** supports async `@main` / `@JSExportTopLevel` exports, so the linker sees a clean async boundary from the module entry point (allowing JSPI operations inside the exported async function). Currently `@main` generates a synchronous export.
-
-2. **Gears** ships a version adapted to Scala.js 1.22.0's stricter linker. Gears 0.3.1 targets Scala.js 1.21.0 (its own `build.sbt` uses 1.21.0), whose linker permits orphan awaits on the JS target. A Gears release compiled with 1.22.0+ would need to restructure its JSPI internals.
-
-3. An **sbt 2 artifact for Scala.js 1.21.0** becomes available, allowing us to match Gears' exact toolchain. Currently only 1.22.0 publishes `sbt2_3`.
-
-### What does work
-
-- **All source code compiles** — Scala 3.9.0-RC4 has no issues with Gears types or `inline` methods (the `Async.fromSync` path-dependent type bug is worked around by calling `JsAsyncFromSync.apply` / `UnsafeJsAsyncFromSync.apply` directly).
-- **All 85 tests pass** — sharedJVM, sharedJS, backend (with Testcontainers Postgres), frontend pure `update` tests.
-- **JVM backend runs in production** — the backend fat JAR compiles and runs.
-
-## Architecture decisions
-
-### Gears kept on frontend (no §5.1 Future fallback applied)
-
-The §5.1 fallback (swap the Elm runtime's effect execution to `scala.concurrent.Future`) was deliberately rejected per the Task 1 Step 5 decision gate. The source code maintains the spec's Gears-based design. The linker failure is a known upstream issue, not a design mistake.
-
-### setTimeout deferred start
-
-`@main` defers all Gears async calls to a `setTimeout(0)` callback. This breaks the linker's trace from the module initializer into Gears' JSPI internals for the **Compile** linker. (The Test linker still fails because it traces from the test class initializer, which is not protected by `setTimeout`.)
-
-### `JsAsyncFromSync.apply` / `UnsafeJsAsyncFromSync.apply` direct calls
-
-`Async.fromSync` is an `inline` method with a path-dependent type resolution bug on Scala 3.8/3.9:
+`Async.fromSync` is an `inline` method with a path-dependent type resolution bug on Scala 3.8.4 (and 3.9.0-RC4):
 
 ```
 Found: (fs$proxy1 : (given_FromSync : Async.FromSync) & $proxy1.FromSync)
 Required: ?{ Output: ? }
 ```
 
-Calling `.apply` on the singleton directly avoids the inline proxy issue.
+Calling `.apply` on the singleton directly avoids the inline proxy issue. The workaround is verified on 3.8.4 and is the reason this build pins 3.8.4 rather than upgrading to a release candidate.
 
 ### No `sbt-crossproject`
 
@@ -166,41 +137,6 @@ Plan 1 produces everything Plan 2 (Luxmed 2FA spike) needs:
 - A working devShell with `curl`/`jq`/`uuidgen`
 - A working CI pipeline
 - The shared domain types and error ADT
-- The full stack proven (except the frontend linker issue — unrelated to Plan 2's recorded-payload investigation)
+- A fully linked frontend — the walking skeleton is walkable
 
 Plan 2 is a `curl`/`jq` investigation that writes no production code, so no source changes in `lm-bot/` are needed to start it.
-
-## Upstream tracking
-
-Two upstream developments can resolve the frontend linker failure:
-
-### Gears PR #189 — Scala.js 1.22.0 version bump
-
-[https://github.com/lampepfl/gears/pull/189](https://github.com/lampepfl/gears/pull/189)
-
-A scala-steward PR updating `sbt-scalajs` from 1.21.0 → 1.22.0.
-
-| Field | Value |
-|---|---|
-| State | **open** (since Jun 22, 2026) |
-| Blockers | CI likely fails — Gears' own JSPI tests hit the orphan-await linker error |
-| Resolution needed | Either a non-JSPI code path for the JS backend, or a Wasm entry-point restructure |
-
-**Watch this PR.** When it merges, a new Gears release will include Scala.js 1.22.0 support, and `fastLinkJS` should start working (assuming the JSPI internals are also updated).
-
-### Scala.js #5393 — async @main / @JSExportTopLevel exports
-
-[https://github.com/scala-js/scala-js/issues/5393](https://github.com/scala-js/scala-js/issues/5393)
-
-Filed Jul 18, 2026. Proposes reconsidering how top-level exports work, including exporting defs as arrow functions — which would allow `@main` to generate `async function` exports.
-
-| Field | Value |
-|---|---|
-| State | **open** |
-| Milestone | `v2.x (not planned)` — no timeline |
-
-This is the correct architectural fix: if `@main` can be an `async function`, the linker would see a clean async boundary and allow `js.await`/`js.async` inside it. But there is no committed timeline.
-
-### No existing bug report for the Gears × Scala.js 1.22.0 mismatch
-
-Neither repo tracks this specific failure as a bug. Gears PR #189 is the closest proxy. If you want to accelerate this, filing a Gears issue referencing PR #189 and linking to our findings (the orphan-await error with the full trace) would give the maintainers a concrete reproduction.

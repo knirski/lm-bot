@@ -39,13 +39,12 @@ class UpdateTest extends munit.FunSuite:
 
     assertEquals(t.state.login.submitting, true)
     assertEquals(t.state.login.error, None)
-    assertEquals(t.asyncEffects.size, 1)
+    assertEquals(t.effects.size, 1)
 
   test("submitting an incomplete form is rejected without a request"):
     val t = update(AppState.initial, Msg.LoginSubmitted)
 
     assertEquals(t.effects, Nil)
-    assertEquals(t.asyncEffects, Nil)
     assertEquals(t.state.login.submitting, false)
     assert(t.state.login.error.isDefined)
 
@@ -55,7 +54,6 @@ class UpdateTest extends munit.FunSuite:
 
     val t = update(busy, Msg.LoginSubmitted)
     assertEquals(t.effects, Nil)
-    assertEquals(t.asyncEffects, Nil)
 
   test("a successful login moves to the dashboard and forgets the password"):
     val filled = update(update(AppState.initial, Msg.UsernameChanged("bob")).state, Msg.PasswordChanged("pw")).state
@@ -97,7 +95,7 @@ class UpdateTest extends munit.FunSuite:
     val dashboard = update(AppState.initial, Msg.SessionRestored(alice)).state
 
     val requested = update(dashboard, Msg.LogoutRequested)
-    assertEquals(requested.asyncEffects.size, 1)
+    assertEquals(requested.effects.size, 1)
 
     val s = update(requested.state, Msg.LoggedOut).state
     assertEquals(s.screen, Screen.Login)
