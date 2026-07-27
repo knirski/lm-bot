@@ -9,6 +9,7 @@ object Database:
   def dataSource(url: String, user: String, password: String): HikariDataSource =
     val config = new HikariConfig()
     config.setJdbcUrl(url)
+    config.setDriverClassName("org.postgresql.Driver")
     config.setUsername(user)
     config.setPassword(password)
     // Family scale: a small pool is plenty. Blocking JDBC runs on virtual
