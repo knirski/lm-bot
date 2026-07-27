@@ -393,7 +393,7 @@ Verified working: Gears 0.3.1 on Scala.js 1.22.0 with all three flags set — `f
 **Linking successfully is not evidence that the frontend works.** JSPI has a second requirement that the linker cannot check: a suspension is legal only if the Wasm stack was entered through a `WebAssembly.promising` wrapper. A synchronous `@main` export and a DOM event callback both fail that test at *runtime*, with `SuspendError: trying to suspend without WebAssembly.promising`. Two consequences:
 
 - Use `JsAsyncFromSync` in `Main`, **not** `UnsafeJsAsyncFromSync`. The latter's name is the warning: it assumes a surrounding async context, which `@main` does not provide, so the app renders and then hangs on its first suspension. Both variants link identically, so only Task 12 Step 7 catches the difference.
-- Effects spawned in response to a DOM event may still fail even so — see the §5.1 note in Task 12 Step 7. Do not treat green tests plus a clean link as a working frontend.
+- With `JsAsyncFromSync` in place, the rest of the architecture — DOM handlers, `dispatch`, the event loop, effect-spawned fibers — is verified working in a browser. A stray `SuspendError` is not by itself grounds to suspect Gears or the design; see Task 12 Step 7.
 
 If linking still fails *after* all three flags are confirmed, that is the risk called out in spec §5.1 and §10. Two rules then apply. Do not silently drop to the JS backend. And note that switching `ModuleKind` to `CommonJSModule` while leaving Gears in the source is **not** the documented fallback — it yields a build in which Gears' own async cannot link, forcing you to disable tests to stay green. The real fallback removes Gears from the frontend: keep Laminar and the Elm architecture, and run effects on `scala.concurrent.Future`. Either way, stop and report so the choice is deliberate.
 
@@ -653,9 +653,11 @@ git commit -m "feat(shared): domain types and API error ADT"
   - `object AuthEndpoints` with `sessionCookieName: String = "lmbot_session"`, and endpoints `login`, `me`, `logout`.
 
 Endpoint types, which Tasks 8, 9 and 11 all bind against:
-- `login: Endpoint[Unit, LoginRequest, ApiError, (UserView, CookieValueWithMeta), Any]`
+- `login: Endpoint[Unit, LoginRequest, ApiError, (UserView, Option[CookieValueWithMeta]), Any]`
 - `me: Endpoint[Option[String], Unit, ApiError, UserView, Any]` (security input is the session cookie)
-- `logout: Endpoint[Option[String], Unit, ApiError, CookieValueWithMeta, Any]`
+- `logout: Endpoint[Option[String], Unit, ApiError, Option[CookieValueWithMeta], Any]`
+
+**The cookie outputs must be `setCookieOpt`, never `setCookie`.** In tapir, `setCookie(name)` is `setCookieOpt(name)` plus a decode that *fails* when the header is absent — and `Set-Cookie` is a forbidden response header for browser JavaScript, which the Fetch spec never exposes. Because the browser client (Task 9) is derived from these same endpoints, `setCookie` makes every **successful** login undecodable on the client: the server returns 200, the browser stores the cookie, and the client still fails with `DecodeResult.Missing` → "Cannot decode: Missing". The optional form decodes to `None` in the browser and `Some(...)` on the server, matching the real asymmetry. This cost a full round of debugging; it presents as a login that silently never completes.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -772,22 +774,26 @@ object AuthEndpoints:
     */
   private val securedBase = base.securityIn(cookie[Option[String]](sessionCookieName))
 
-  val login: Endpoint[Unit, LoginRequest, ApiError, (UserView, CookieValueWithMeta), Any] =
+  /** `setCookieOpt`, not `setCookie`: the latter fails to decode when the header
+    * is absent, and browser JS can never see `Set-Cookie` (forbidden response
+    * header), so the derived client would reject every successful login.
+    */
+  val login: Endpoint[Unit, LoginRequest, ApiError, (UserView, Option[CookieValueWithMeta]), Any] =
     base.post
       .in("login")
       .in(jsonBody[LoginRequest])
       .out(jsonBody[UserView])
-      .out(setCookie(sessionCookieName))
+      .out(setCookieOpt(sessionCookieName))
 
   val me: Endpoint[Option[String], Unit, ApiError, UserView, Any] =
     securedBase.get
       .in("me")
       .out(jsonBody[UserView])
 
-  val logout: Endpoint[Option[String], Unit, ApiError, CookieValueWithMeta, Any] =
+  val logout: Endpoint[Option[String], Unit, ApiError, Option[CookieValueWithMeta], Any] =
     securedBase.post
       .in("logout")
-      .out(setCookie(sessionCookieName))
+      .out(setCookieOpt(sessionCookieName))
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1997,7 +2003,7 @@ class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration)
     AuthEndpoints.login.serverLogicPure[Identity] { req =>
       auth
         .login(req.username, req.password)
-        .map { (view, token) => (view, SessionCookie.issue(token, cookieSecure, sessionTtl)) }
+        .map { (view, token) => (view, Some(SessionCookie.issue(token, cookieSecure, sessionTtl))) }
     }
 
   private val meRoute: ServerEndpoint[Any, Identity] =
@@ -2012,7 +2018,7 @@ class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration)
       .serverSecurityLogicPure[Option[String], Identity](Right(_))
       .serverLogicPure { token => _ =>
         auth.logout(token)
-        Right(SessionCookie.clear(cookieSecure))
+        Right(Some(SessionCookie.clear(cookieSecure)))
       }
 
   val endpoints: List[ServerEndpoint[Any, Identity]] = List(loginRoute, meRoute, logoutRoute)
@@ -3329,9 +3335,16 @@ Verify each of these separately, because they fail independently:
 4. **Submitting reaches the dashboard.** This is the critical assertion. A `POST /api/auth/login` returning 200 is *not* sufficient: the server can authenticate successfully while `Msg.LoginSucceeded` is never dispatched, leaving the UI on the login form. Watch the rendered state, not the network tab.
 5. Sign out returns to the login form.
 
-**Known failure mode at the time of writing.** Step 4 fails on Gears 0.3.1 + Scala.js 1.22.0: effects spawned from a DOM handler cannot suspend, because the handler enters Wasm without a `WebAssembly.promising` wrapper. The fetch is issued and the cookie is set, but the continuation never resumes, so the dashboard appears only after a manual reload. This is structural — spec §5.6 routes DOM handlers through a channel into effect-running fibers, which is exactly the path JSPI forbids — and it is tracked upstream as [scala-js#5393](https://github.com/scala-js/scala-js/issues/5393) (milestone `v2.x (not planned)`).
+**Verified working end to end** on Gears 0.3.1 + Scala.js 1.22.0 + Wasm/JSPI, in headless Chromium 150: login reaches the dashboard, the button shows `Signing in…` while the request is in flight, sign-out returns to the login form, and no exceptions are raised. The Elm-on-Gears architecture in spec §5.6 works in a browser — DOM handlers, the channel, the event loop, and effect-spawned fibers all behave.
 
-If you reproduce it, **stop and report; do not improvise.** This is the §5.1 fallback's trigger condition, and the choice belongs to the spec's owner. The documented fallback keeps Laminar and the Elm architecture and runs frontend effects on `scala.concurrent.Future`, removing Gears from the frontend; `update`, `AppState`, `Msg` and the views are unaffected, and the change is confined to `Runtime`'s effect execution, `Bridge`, and `ApiClient`'s signatures.
+Two traps produced a login that *silently never completed*, and both are already fixed in this plan — if you hit either symptom, check these first rather than suspecting Gears or JSPI:
+
+- **A permanent "Loading…" screen** → `Main` is using `UnsafeJsAsyncFromSync`. Use `JsAsyncFromSync` (Task 11).
+- **Login returns 200 but the UI stays on the form** → a cookie output is declared with `setCookie` instead of `setCookieOpt` (Task 3). The client cannot read `Set-Cookie` and fails with "Cannot decode: Missing".
+
+Neither is an upstream limitation. Earlier drafts of this plan blamed [scala-js#5393](https://github.com/scala-js/scala-js/issues/5393) — that issue is about permitted top-level export *shapes* and is unrelated. JSPI is a finished, browser-tested feature ([#5064](https://github.com/scala-js/scala-js/issues/5064)/[#5130](https://github.com/scala-js/scala-js/pull/5130) implemented it, [#5366](https://github.com/scala-js/scala-js/pull/5366) tests `SuspendError` against Chrome and Firefox, [#5361](https://github.com/scala-js/scala-js/pull/5361) made the Wasm backend non-experimental).
+
+**The §5.1 fallback is therefore not required and should not be applied.** If a genuinely new frontend blocker appears, stop and report rather than improvising — that decision belongs to the spec's owner — but do not reach for the fallback on the strength of a `SuspendError` alone.
 
 Then `docker compose down -v`.
 

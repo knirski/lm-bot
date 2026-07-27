@@ -32,19 +32,30 @@ object AuthEndpoints:
     */
   private val securedBase = base.securityIn(cookie[Option[String]](sessionCookieName))
 
-  val login: Endpoint[Unit, LoginRequest, ApiError, (UserView, CookieValueWithMeta), Any] =
+  /** The session cookie is declared with `setCookieOpt`, not `setCookie`.
+    *
+    * `setCookie` is `setCookieOpt` plus a decode that *fails* when the header is
+    * absent, and `Set-Cookie` is a forbidden response header for browser
+    * JavaScript — the Fetch spec never exposes it. Since the browser client is
+    * derived from this very endpoint, `setCookie` would make every successful
+    * login undecodable on the client (`DecodeResult.Missing`) even though the
+    * request succeeded and the browser stored the cookie. The optional form
+    * decodes to `None` in the browser and `Some(...)` on the server, which is
+    * exactly the asymmetry reality has.
+    */
+  val login: Endpoint[Unit, LoginRequest, ApiError, (UserView, Option[CookieValueWithMeta]), Any] =
     base.post
       .in("login")
       .in(jsonBody[LoginRequest])
       .out(jsonBody[UserView])
-      .out(setCookie(sessionCookieName))
+      .out(setCookieOpt(sessionCookieName))
 
   val me: Endpoint[Option[String], Unit, ApiError, UserView, Any] =
     securedBase.get
       .in("me")
       .out(jsonBody[UserView])
 
-  val logout: Endpoint[Option[String], Unit, ApiError, CookieValueWithMeta, Any] =
+  val logout: Endpoint[Option[String], Unit, ApiError, Option[CookieValueWithMeta], Any] =
     securedBase.post
       .in("logout")
-      .out(setCookie(sessionCookieName))
+      .out(setCookieOpt(sessionCookieName))

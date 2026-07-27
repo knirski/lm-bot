@@ -13,7 +13,7 @@ class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration)
     AuthEndpoints.login.serverLogicPure { req =>
       auth
         .login(req.username, req.password)
-        .map { (view, token) => (view, SessionCookie.issue(token, cookieSecure, sessionTtl)) }
+        .map { (view, token) => (view, Some(SessionCookie.issue(token, cookieSecure, sessionTtl))) }
     }
 
   private val meRoute: ServerEndpoint[Any, sttp.shared.Identity] =
@@ -26,7 +26,7 @@ class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration)
       .serverSecurityLogicPure(token => Right(token))
       .serverLogicPure { token => (_: Unit) =>
         auth.logout(token)
-        Right(SessionCookie.clear(cookieSecure))
+        Right(Some(SessionCookie.clear(cookieSecure)))
       }
 
   val endpoints: List[ServerEndpoint[Any, sttp.shared.Identity]] = List(loginRoute, meRoute, logoutRoute)
