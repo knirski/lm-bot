@@ -1,18 +1,38 @@
 {
   description = "lm-bot — development environment (Scala 3 / sbt 2 / Scala.js Wasm / Postgres)";
 
-  # Unstable, because two of this project's requirements are recent: nodejs_26
-  # (Node 24/25 carry a V8 bug that breaks Gears' nested async contexts) and a
-  # Scala toolchain new enough for Scala 3.8.
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
-  # Deliberately no flake-parts here, unlike the nix-config flake: this project
-  # exposes a single devShell and a formatter, so the module system would add an
-  # input and a layer of indirection without buying anything. Revisit if
-  # treefmt/git-hooks ever get folded in — that is where flake-parts earns its
-  # keep.
+    # Pre-commit hooks (from cachix/git-hooks.nix — yes, the "cachix" in the
+    # name is the same Cachix that provides binary caches).
+    git-hooks.url = "github:cachix/git-hooks.nix";
+    git-hooks.inputs.nixpkgs.follows = "nixpkgs";
+
+    # Unified Nix formatter runner (nixfmt, etc.)
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  # Use the project Cachix binary cache as a substituter so local builds and CI
+  # pull pre-built artifacts where possible, reducing duplicate compilation.
+  nixConfig = {
+    extra-substituters = [
+      "https://cache.nixos.org"
+      "https://knirski-lm-bot.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "knirski-lm-bot.cachix.org-1:AQwy+9/SNoZ0pIkfUTKnHVO0CXxW+8Cd8KDWVt/PVpE="
+    ];
+  };
+
+  # Deliberately no flake-parts: this project exposes a single devShell, a
+  # formatter, and a handful of checks, so the module-system indirection buys
+  # nothing. git-hooks.nix and treefmt-nix are used through their library APIs
+  # instead (via `lib.${system}.run` and `lib.evalModule`).
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, git-hooks, treefmt-nix }:
     let
       systems = [
         "x86_64-linux"
@@ -20,8 +40,55 @@
         "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      # Per-system helpers that need pkgs available.
+      perSystem =
+        pkgs: let
+          system = pkgs.system;
+        in rec {
+          # -- pre-commit hooks (cachix/git-hooks.nix) -----------------------
+          pre-commit = git-hooks.lib.${system}.run {
+            src = self;
+            hooks = {
+              # Nix formatting via nixfmt.
+              treefmt.enable = true;
+              # Detect dead Nix code.
+              deadnix.enable = true;
+              # Lint Nix expressions.
+              statix.enable = true;
+              # Catch typos in code and docs.
+              typos.enable = true;
+              # Block accidental merge conflict markers.
+              check-merge-conflicts.enable = true;
+              # Ensure every file ends with a newline.
+              end-of-file-fixer.enable = true;
+              # Validate GitHub Actions workflow files.
+              actionlint.enable = true;
+              # Lint shell scripts (shellHook, CI scripts).
+              shellcheck.enable = true;
+            };
+          };
+
+          # -- treefmt (numtide/treefmt-nix) --------------------------------
+          treefmt-eval = treefmt-nix.lib.evalModule pkgs {
+            projectRootFile = "flake.nix";
+            programs.nixfmt.enable = true;
+          };
+        };
     in
     {
+      # -- checks ------------------------------------------------------------
+      checks = forAllSystems (pkgs: {
+        # Pre-commit hooks run in a Nix derivation so CI can gate on them
+        # without needing a mutable checkout.
+        pre-commit = (perSystem pkgs).pre-commit;
+
+        # Treefmt formatting check (same treefmt config used by the formatter
+        # below and the pre-commit hook above).
+        formatting = (perSystem pkgs).treefmt-eval.config.build.check self;
+      });
+
+      # -- dev shell ---------------------------------------------------------
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           name = "lm-bot";
@@ -66,7 +133,7 @@
             git
           ];
 
-          shellHook = ''
+          shellHook = (perSystem pkgs).pre-commit.shellHook + ''
             export JAVA_HOME="${pkgs.temurin-bin-21}"
             # Keep sbt's own heap modest; the compile-heavy work is in forked JVMs.
             export SBT_OPTS="''${SBT_OPTS:--Xmx2G -Xss4M}"
@@ -108,6 +175,7 @@
         };
       });
 
-      formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
+      # -- formatter (nixfmt via treefmt) ------------------------------------
+      formatter = forAllSystems (pkgs: (perSystem pkgs).treefmt-eval.config.build.wrapper);
     };
 }

@@ -12,6 +12,7 @@ lives in the spec, and neither is repeated here.
 | What order, and what is in scope now? | `docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md` |
 | Exactly how to build the current piece | the numbered plan in `docs/superpowers/plans/` |
 | What Luxmed's API actually does | `docs/superpowers/reports/2026-07-27-luxmed-api-analysis.md` |
+| How is the flake / CI / Cachix infra configured? | `flake.nix` + `.github/actions/setup-nix/` + `.github/workflows/ci.yml` |
 
 **The spec is the source of truth.** When you find it wrong — and you will —
 amend the spec, commit that, then build against the corrected version. Do not
@@ -32,12 +33,19 @@ Temurin 21, the sbt launcher, **Node 26**, Metals, scalafmt, and `psql`.
   valid Docker environment". Never add a `docker` CLI to the devShell — it would
   shadow the working Podman shim. Because Ryuk is disabled, a hard-killed JVM
   can leave containers behind: `podman ps` after a crash.
+- **The Cachix binary cache `knirski-lm-bot` is wired into `nixConfig`**, so
+  every `nix develop` and `nix build` automatically pulls pre-built closures
+  from `https://knirski-lm-bot.cachix.org` before building locally. CI pushes
+  the devShell closure there on every main-branch push.
 
 ## Workflow
 
 - One change → one branch → one PR. Stack only for explicit dependencies.
 - Branch: `feat/`, `fix/`, `docs/` prefix. Commit: `feat:`, `fix:`, `refactor:`, `chore:`, etc.
-- Format-before-commit (see above), then run pre-commit checks. Do not commit until they pass.
+- Format before commit: `nix fmt` for Nix files, `sbt scalafmtAll` for Scala.
+  The pre-commit hooks installed by `nix develop` (treefmt, deadnix, statix,
+  typos, end-of-file-fixer, shellcheck, actionlint) catch the rest. Do not
+  commit until `nix flake check` passes.
 - PR title must be conventional commit. Squash+merge only. Merge when CI is green and no "changes requested" review is active (approval not required).
 - Before merging: verify CI green, all review threads resolved, bot comments addressed, no stale CI.
 - When resolving review comments: reply explaining fix, then resolve thread.
@@ -67,6 +75,7 @@ Every commit on `main` triggers a release via semantic-release. PR title must be
 ## Run tests with `testFull`, never `test`
 
 ```bash
+nix flake check           # pre-commit hooks + Nix formatting
 sbt testFull              # everything (96 tests)
 sbt backend/testFull      # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
