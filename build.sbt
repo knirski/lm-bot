@@ -6,6 +6,14 @@ ThisBuild / scalaVersion := scala3
 ThisBuild / organization := "dev.knirski"
 ThisBuild / version      := "0.1.0-SNAPSHOT"
 
+// --- Development mode ---
+// When true (default), the backend resource generator triggers fastLinkJS and
+// reads from its output — much faster for iterative work.  Set to false for
+// production assembly (Dockerfile does this explicitly).
+val useFastLinkForAssets =
+  settingKey[Boolean]("Use fastLinkJS output for backend assets (default: true)")
+ThisBuild / useFastLinkForAssets := true
+
 val Vgears          = "0.3.1"
 val Vtapir          = "1.13.29"
 val Vsttp           = "3.11.0"
@@ -119,17 +127,44 @@ lazy val backend = project
     javacOptions ++= Seq("-source", "21", "-target", "21"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
+    // --- Local development ---
+    // Scope to Compile so tests are unaffected (no unnecessary forking, no env
+    // pollution).
+    Compile / fork := true,
+    Compile / envVars := Map(
+      // Sensible defaults for local dev; a real env var in the shell wins.
+      "DATABASE_URL"      -> sys.env.getOrElse("DATABASE_URL",      "jdbc:postgresql://localhost:5432/lmbot"),
+      "DATABASE_USER"     -> sys.env.getOrElse("DATABASE_USER",     "lmbot"),
+      "DATABASE_PASSWORD"  -> sys.env.getOrElse("DATABASE_PASSWORD",  "lmbot"),
+      "COOKIE_SECURE"     -> sys.env.getOrElse("COOKIE_SECURE",     "false"),
+      "ADMIN_USERNAME"    -> sys.env.getOrElse("ADMIN_USERNAME",    "admin"),
+      "ADMIN_PASSWORD"    -> sys.env.getOrElse("ADMIN_PASSWORD",    "admin"),
+      "HTTP_PORT"         -> sys.env.getOrElse("HTTP_PORT",         "8080"),
+      "HTTP_HOST"         -> sys.env.getOrElse("HTTP_HOST",         "127.0.0.1"),
+      "SESSION_TTL_DAYS"  -> sys.env.getOrElse("SESSION_TTL_DAYS",  "7")
+    ),
+    // Watch frontend and shared sources too, so `~backend/run` restarts on
+    // any source change in the project — frontend, backend, or shared.
+    // (sharedJS and sharedJVM compile the same directory; we only need one.)
+    watchSources ++= (frontend / Compile / unmanagedSources).value ++
+      (sharedJVM / Compile / unmanagedSources).value,
+
     // Package the linked frontend as classpath resources under `web/`, which is
     // where StaticRoutes looks (served at /assets). Without this the backend
     // serves index.html but 404s /assets/main.js, so the page loads blank —
     // linking the frontend is not the same as shipping it.
     Compile / resourceGenerators += Def.task {
-      val linkedDir = (frontend / Compile / fullLinkJSOutput).value
-      val webDir    = (Compile / resourceManaged).value / "web"
+      if ((ThisBuild / useFastLinkForAssets).value)
+        (frontend / Compile / fastLinkJS).value  // trigger dev link
+      val linkedDir =
+        if ((ThisBuild / useFastLinkForAssets).value)
+          (frontend / Compile / fastLinkJSOutput).value
+        else
+          (frontend / Compile / fullLinkJSOutput).value
+      val webDir = (Compile / resourceManaged).value / "web"
       IO.copyDirectory(linkedDir, webDir, overwrite = true)
       (webDir ** "*").get().filter(_.isFile)
     }.taskValue,
-
 
     assembly / mainClass := Some("lmbot.backend.Main"),
     assembly / assemblyMergeStrategy := {
@@ -162,4 +197,25 @@ lazy val frontend = project
 lazy val root = project
   .in(file("."))
   .aggregate(sharedJVM, sharedJS, backend, frontend)
-  .settings(name := "lm-bot", publish / skip := true)
+  .settings(
+    name := "lm-bot",
+    publish / skip := true,
+
+    commands += Command.command("startDev") { state =>
+      val log = state.log
+      log.info("Starting development environment…")
+      log.info("  → linking frontend (fastLinkJS)")
+      log.info(
+        "  → starting backend (forked JVM, sources watched — restart on change)"
+      )
+      log.info("")
+      log.info(
+        "Make sure PostgreSQL is running:"
+      )
+      log.info("  docker compose up -d postgres")
+      log.info("")
+      // The resource generator triggers fastLinkJS on first compile, so we
+      // don't run it explicitly here.
+      "~backend/run" :: state
+    }
+  )
