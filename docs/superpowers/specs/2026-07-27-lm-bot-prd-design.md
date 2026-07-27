@@ -1,14 +1,18 @@
 # lm-bot — Product Requirements Document
 
 **Date:** 2026-07-27
-**Status:** Approved design, pre-implementation
-**Predecessors:** [dyrkin/luxmed-bot](https://github.com/dyrkin/luxmed-bot) (feature reference), [knirski/lmassist](https://github.com/knirski/lmassist) (prototype; source of Luxmed API research, domain dictionary, and mock-server approach)
+**Status:** Approved design, pre-implementation (amended 2026-07-27 after verifying the API against a working client — see §5.4)
+**Predecessors:**
+- [dyrkin/luxmed-bot](https://github.com/dyrkin/luxmed-bot) — feature reference **and the authoritative source for Luxmed request/response shapes, endpoint paths, and the auth/XSRF flow**. It is a live, working Scala client.
+- [knirski/lmassist](https://github.com/knirski/lmassist) — prototype; source of the narrative API research (`docs/backend-plan/02-luxmed-api-research.md`), the domain dictionary, and the mock-server *approach*.
 
 ## 1. Overview
 
 lm-bot is a self-hosted web application for monitoring and booking Luxmed medical appointments. A small circle of users (family scale) log in with internal accounts, link one or more Luxmed patient-portal accounts, and create **monitors** — persistent watches for appointment slots matching their criteria. When a monitor finds a match, lm-bot notifies the user via Telegram and, if the monitor has auto-booking enabled, books the slot automatically.
 
-The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.luxmed.pp`); lm-bot ports the API knowledge documented in lmassist (`docs/backend-plan/02-luxmed-api-research.md`) and its domain dictionary.
+The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.luxmed.pp`).
+
+**Sourcing rule (important).** lmassist's *prose* research is sound, but its Rust DTOs and endpoint paths are not: they are snake_case (`schedule_id`, `lock_token`) against paths (`/NewPortal/API/termsIndex`, `/API/reservation/lock`) that contradict lmassist's own research document, because the client was written against a mock server that lmassist itself authored, using hand-invented fixtures. **Do not port shapes from lmassist.** All concrete shapes, paths, headers, and the auth sequence come from dyrkin/luxmed-bot, which talks to the real service. The real API is camelCase (`scheduleId`, `dateTimeFrom`, `temporaryReservationId`), and login is form-encoded with `client_id="Android"` — there is no `account_id` UUID.
 
 ### Goals
 
@@ -43,15 +47,25 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 - Account status surfaced in UI: `active` / `auth_failed` / `disabled`.
 
 ### 3.3 Monitors
-- **Create** via a guided flow driven by live Luxmed dictionaries: city → service/variant → optional facilities → optional doctors; plus date range, time-of-day window, days-of-week, auto-book toggle, check interval (default ~5 min).
+- **Create** via a guided flow driven by live Luxmed dictionaries: city → service/variant → optional facilities → optional doctors; plus date range, time-of-day window, days-of-week, auto-book toggle, check interval (**default 10 min, minimum 5 min enforced in validation** — see the fair-use risk in §10).
 - **Browse** all own monitors with state and last-check summary; **edit**, **pause/resume**, **delete**.
 - **Detail view** shows the event log: slots found, notifications sent, booking attempts, errors.
 - Monitor states: `active`, `paused`, `completed` (auto-booked or date range passed), `failed`.
 
 ### 3.4 Auto-booking
-- When enabled, the first new slot matching all filters is booked: **lock** (temporary reservation) → **confirm**.
+
+When enabled, the first new slot matching all filters is booked as **lock → validate → confirm or release**.
+
+The middle step is forced by the API: price and referral requirements are **not** in the terms-search response. They arrive only in the `lockterm` response (`valuations[].isReferralRequired`, `valuations[].requireReferralForPP`, `valuations[].price`, `askForReferral`). So the sequence is:
+
+1. **Lock** the slot (`reservation/lockterm`) → yields `temporaryReservationId` and `valuations`.
+2. **Validate** the lock response. Abort if any valuation shows `price > 0`, `isReferralRequired`, or `requireReferralForPP`, or if `askForReferral` is set, or if `hasErrors`.
+3. **Confirm** (`reservation/confirm`) — echoing back the chosen `valuation` object from the lock response — **or, on abort, `reservation/releaseterm?reservationId=<temporaryReservationId>`**.
+
+Releasing on abort is mandatory: a temporary reservation that is neither confirmed nor released keeps holding the slot, so bailing out without releasing would deny the slot to the user (and to everyone else) — the exact opposite of the feature's purpose. Release is also attempted on the error path, best-effort, and the outcome logged either way.
+
 - On success: monitor → `completed`, a `bookings` record is written, user notified with full slot details.
-- On failure (slot taken, payment required, referral required): fall back to notify-only; monitor stays active. Services requiring payment or a referral are never auto-booked.
+- On abort or failure (slot taken, payment required, referral required): fall back to notify-only; monitor stays active. Services requiring payment or a referral are never confirmed.
 - Auto-book never books a different slot in the same check without re-validating filters against it.
 
 ### 3.5 Telegram notifications
@@ -83,6 +97,26 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 | Frontend UI | Laminar |
 | Database | PostgreSQL, Flyway migrations; Magnum over blocking JDBC on virtual threads |
 | JSON | jsoniter-scala (Scala 3-native, cross-compiles to Scala.js) |
+
+**Verified versions** (checked against Maven Central 2026-07-27; all three platforms confirmed published where needed):
+
+| Dependency | Version | Note |
+|---|---|---|
+| Scala | 3.8.4 | latest stable 3.8.x |
+| Scala.js | 1.22.0 | Wasm backend |
+| Gears | 0.3.1 | `gears_3` + `gears_sjs1_3` both published |
+| Tapir | 1.13.29 | `tapir-jdkhttp-server_3`, `tapir-core_sjs1_3`, `tapir-jsoniter-scala` |
+| sttp client3 | 3.11.0 | JVM + Scala.js |
+| jsoniter-scala | 2.39.1 | JVM + Scala.js |
+| Laminar / Airstream | 17.2.1 | |
+| scalajs-dom | 2.8.1 | |
+| Magnum | 2.0.0-M3 | milestone only — accepted |
+| Flyway | 11.8.2 | |
+| PostgreSQL JDBC | 42.7.7 | |
+| Testcontainers | 1.21.3 | |
+| MUnit | 1.3.4 | |
+| argon2-jvm | 2.12 | |
+| logback-classic | 1.6.0 | |
 
 **Gears-on-JS caveats (accepted):** requires the Scala.js WebAssembly backend and a JSPI-capable browser (recent Chrome/Firefox; Safari support to be verified during setup). Dev/test tooling must avoid Node 24/25 (V8 stack-overflow bug in nested async contexts) — use Node 26+. Fallback if this bites in practice: keep Laminar and the Elm architecture (§5.6) and run frontend effects on `scala.concurrent.Future` instead of Gears — the change is isolated to the effect runner and the API-client wiring; `update` and views are unaffected.
 
@@ -121,16 +155,50 @@ Rules:
 - All Luxmed-facing dates and times (slot times, monitor date ranges, time-of-day windows) are interpreted in `Europe/Warsaw`, regardless of server or browser time zone.
 - Every resource is reachable only through its owning user; ownership checked in the service layer on every operation.
 - Deleting a Luxmed account cascades to its monitors (UI confirms first).
-- Luxmed JWTs live in memory only.
+- A Luxmed session is **more than a JWT**: it is `(accessToken, tokenType, jwtToken, cookieJar)`. The cookie jar is accumulated across all three auth steps and must be replayed on every subsequent call, merged with XSRF cookies for reservation operations (§5.4). The whole session, cookies included, lives in memory only and is never persisted.
 
 ### 5.4 Luxmed client
 
 - One client per linked account; sttp + Gears `Async`.
-- Auth flow as documented in lmassist research: `POST /PatientPortalMobileAPI/api/token` → `GET /PatientPortal/Account/LogInToApp` → JWT for `/PatientPortal/NewPortal/*` (dictionaries, terms search, reservation lock/confirm/cancel).
+- Two base URLs: `oldApi = https://portalpacjenta.luxmed.pl/PatientPortalMobileAPI/api`, `newApi = https://portalpacjenta.luxmed.pl/PatientPortal`.
 - `Custom-User-Agent` app version string is **configurable via env var** — Luxmed rejects outdated versions (401 / 409 "old app version") and this must be changeable without redeploy.
-- In-memory session cache per account; re-login on 401.
+- In-memory session cache per account; re-login on 401 or on a detected session expiry.
 - Per-account rate limiter and mutex: one in-flight request per Luxmed account, minimum spacing between calls.
-- Any response that fails to decode is logged with the raw payload — the early-warning system for upstream API changes.
+- Redirects are **not** followed automatically; a 302 is a signal, not a hop (see session-expiry detection below).
+- Any response that fails to decode is logged with the raw payload — the early-warning system for upstream API changes. Credentials and tokens are masked in all such output (§6).
+
+**Auth flow (three steps, then XSRF on demand):**
+
+1. `POST {oldApi}/token` — **form-encoded** body `client_id=Android`, `grant_type=password`, `username`, `password`. Returns `access_token`, `expires_in`, `refresh_token`, `token_type`.
+2. `GET {newApi}/Account/LogInToApp?app=search&client=3&lang=pl` — header `Authorization: <access_token>` (**no** `Bearer` prefix) plus `X-Requested-With: pl.luxmed.pp`. Sets session cookies, including the JWT.
+3. `GET {newApi}/NewPortal/Page/Reservation` — replays the cookies from step 2 and accumulates the remainder.
+
+Authenticated `NewPortal/*` calls then use header `authorization-token: Bearer <jwt>` plus the cookie jar.
+
+**XSRF is required for every reservation-mutating call.** `GET {newApi}/security/getforgerytoken` returns a token and its own cookies. `reservation/lockterm`, `reservation/confirm`, `reservation/changeterm`, and `reservation/releaseterm` each need the `xsrf-token` header **and** the session cookies merged with the XSRF cookies. Read-only endpoints do not.
+
+**Endpoints used in v1:**
+
+| Purpose | Call |
+|---|---|
+| Cities | `GET {newApi}/NewPortal/Dictionary/cities` → `[{id, name}]` |
+| Services | `GET {newApi}/NewPortal/Dictionary/serviceVariantsGroups` |
+| Facilities + doctors | `GET {newApi}/NewPortal/Dictionary/facilitiesAndDoctors?cityId&serviceVariantId` |
+| Terms search | `GET {newApi}/NewPortal/terms/index` |
+| Lock | `POST {newApi}/NewPortal/reservation/lockterm` (XSRF) |
+| Confirm | `POST {newApi}/NewPortal/reservation/confirm` (XSRF) |
+| Release | `POST {newApi}/NewPortal/reservation/releaseterm?reservationId=<id>` (XSRF) |
+
+`terms/index` takes a wide, fiddly parameter set that must be sent in full: `searchPlace.id` (city), `searchPlace.type=0`, `serviceVariantId`, `languageId=10`, `searchDateFrom`, `searchDateTo`, `searchDatePreset=14`, `processId` (fresh UUID per call), `serviceVariantSource=0`, `facilitiesIds`, `doctorsIds`, `nextSearch=false`, `searchByMedicalSpecialist=false`, `delocalized=false`.
+
+**Datetime quirk.** `dateTimeFrom` / `dateTimeTo` / `day` are returned *sometimes* with a zone offset (`2021-05-21T18:45:00+02:00`) and *sometimes* as a bare local datetime (`2021-05-21T18:45:00`). The decoder must accept both and normalise to `Europe/Warsaw` (§5.3). A decoder that assumes either form alone will fail intermittently in production — luxmed-bot models this explicitly rather than hoping.
+
+**Error taxonomy from the wire** (drives `LuxmedError` in §7):
+- `302` whose body or `Location` contains `/LogOn` or `/UniversalLink` → session expired → re-login and retry once.
+- `409` whose body contains `nieprawidłowy login lub hasło` / `invalid login or password` → credentials are wrong → `AuthFailed`.
+- Error bodies come in three shapes and all must be tried: `{"errors":[{code,message}]}`, `{"errors":{field:[msg]}}`, `{"error":{code,message}}`.
+- A message containing `session has expired` → session expired, regardless of status.
+- `429` → `RateLimited`. `5xx` → transient. Old-app-version rejection → `VersionRejected` (notifies admin).
 
 ### 5.5 Monitor engine
 
@@ -186,7 +254,8 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 ## 8. Testing
 
 - **shared/domain:** pure unit tests (slot filtering, dedup, monitor state transitions) — most logic lives here by design.
-- **Luxmed client:** tested against a mock Luxmed server with recorded fixtures (auth flow, terms, lock/confirm, error variants including version rejection), replicating lmassist's `luxmed-mock-server` approach.
+- **Luxmed client:** tested against a mock Luxmed server, replicating lmassist's `luxmed-mock-server` *approach* — but with fixtures transcribed from the shapes documented in luxmed-bot's model sources, **not** from lmassist's invented ones (§1). Coverage: the three-step auth flow, XSRF acquisition, dictionaries, terms search (including both datetime forms in one response), lock → confirm, lock → release, and each error variant (session-expiry 302, bad-credentials 409, all three error-body shapes, 429, version rejection).
+- Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated.
 - **Backend API:** integration tests with real Postgres (Testcontainers) against Tapir endpoints in-process.
 - **Frontend:** domain logic unit-tested; minimal DOM smoke tests in v1.
 - TDD throughout; CI runs everything on every push.
@@ -203,5 +272,6 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 |---|---|
 | Luxmed API changes without notice | Configurable app version; decode failures logged with raw payloads; admin notified on version rejection; mock-server fixtures document current behavior |
 | Gears is experimental; Scala.js Wasm/JSPI browser support | Documented frontend fallback (§5.1): swap the effect runner to `Future`; `update`, views, and the backend are unaffected |
-| Aggressive polling triggers Luxmed countermeasures | Per-account rate limiting + mutex, jittered intervals, browser-like headers |
+| **Fair-use policy locks the account.** LuxMed temporarily locks an account (reported: ~1 day for a first breach) for excessive querying. A lock takes out every monitor on that account at once, and looks like an auth failure. | 10-min default interval with a 5-min enforced floor (§3.3), ±20% jitter, per-account rate limiting + mutex so monitors sharing an account queue rather than multiply, browser-like headers. Treat a sudden auth failure on a previously-working account as a possible lock, not only a bad password — surface it as such so the user does not "fix" it by re-entering correct credentials in a loop. |
+| Aggressive polling triggers other Luxmed countermeasures | Per-account rate limiting + mutex, jittered intervals, browser-like headers |
 | Auto-booking books the wrong thing | Strict filter re-validation before lock; payment/referral services excluded; full details in notification; bookings recorded and visible |
