@@ -32,9 +32,51 @@ direnv allow              # once; or `nix develop`
 sbt testFull              # everything; needs a container runtime
 sbt backend/testFull      # backend only
 sbt frontend/testFull     # frontend, incl. the Gears runtime suites
-sbt frontend/fastLinkJS   # link the frontend to Wasm (development)
-sbt frontend/fullLinkJS   # link the frontend to Wasm (production)
 ```
+
+### Local server (hot reload)
+
+**One terminal, one command** — starts everything, watches all sources (frontend,
+backend, shared), and auto-restarts the backend on any change.
+
+```bash
+docker compose up -d postgres   # start the database (one-time or keep running)
+sbt startDev                    # link frontend → run backend → watch
+```
+
+`startDev` runs with sensible env defaults — no environment file needed:
+
+| Variable | Dev default |
+|---|---|
+| `COOKIE_SECURE` | `false` (plain-HTTP safe) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` |
+| `DATABASE_URL` / `USER` / `PASSWORD` | `localhost:5432/lmbot` / `lmbot` / `lmbot` |
+| `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` |
+
+Override any variable from the shell — the forked JVM inherits it:
+
+```bash
+ADMIN_PASSWORD=hunter2 sbt startDev
+```
+
+### Full hot reload (two terminals)
+
+If you want the frontend to re-link independently without a backend restart, run
+the watches separately:
+
+```bash
+# Terminal 1: frontend
+sbt ~frontend/fastLinkJS
+
+# Terminal 2: backend
+sbt ~backend/run
+```
+
+Changes to any source file now trigger the relevant re-link or restart.
+
+### Other commands
+
+sbt frontend/fullLinkJS   # link the frontend to Wasm (production-style)
 
 The build runs on **sbt 2** (declared in `project/build.properties`); the sbt
 binary from the flake is only a launcher. Build output is centralised under

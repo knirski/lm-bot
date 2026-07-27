@@ -20,7 +20,11 @@ COPY frontend frontend
 # sbt 2 centralises output under target/out/jvm/scala-3.8.4/<project>/,
 # not <project>/target/.  Rather than hardcode a layout that sbt may reorganise
 # again, find the artifact and normalise its name here.
-RUN sbt frontend/fullLinkJS backend/assembly \
+#
+# Set useFastLinkForAssets to false so the resource generator reads from
+# fullLinkJSOutput (the production link stage) rather than fastLinkJSOutput.
+RUN sbt 'set ThisBuild/useFastLinkForAssets := false' \
+      frontend/fullLinkJS backend/assembly \
  && find target -name 'lm-bot-backend-assembly-*.jar' -print -quit \
       | xargs -I{} cp {} /build/lm-bot.jar \
  && test -s /build/lm-bot.jar
