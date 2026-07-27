@@ -10,10 +10,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: DeterminateSystems/nix-installer-action@main
-
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.CACHIX_AUTH_TOKEN || '' }}
 
       - name: Cache sbt and coursier
         uses: actions/cache@v4
@@ -37,3 +39,12 @@ jobs:
 
       - name: Check formatting
         run: nix develop --command scalafmt --list --mode diff-ref=HEAD
+
+      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
+        run: nix flake check
+
+      - name: Push devShell closure to Cachix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          nix copy --to 'https://knirski-lm-bot.cachix.org' \
+            .#devShells.x86_64-linux.default

@@ -57,4 +57,3 @@ class ApiClient(baseUri: Uri):
     val message = Option(err.getMessage).getOrElse("network request failed")
     dom.console.error(s"lm-bot: API call failed: $message")
     ApiError.Unexpected(message)
-

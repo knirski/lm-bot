@@ -1,0 +1,44 @@
+# Composite action that installs Nix and configures Cachix caching.
+# Used by every CI job to avoid repeating the same setup.
+#
+# Example usage:
+#   # PR / non-main push (no auth token — pull-only cache access)
+#   - uses: ./.github/actions/setup-nix
+#
+#   # main push (auth token enables push access to Cachix)
+#   - uses: ./.github/actions/setup-nix
+#     with:
+#       cachix-auth-token: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+name: Setup Nix
+description: Install Nix with DeterminateSystems installer and configure Cachix caching
+
+inputs:
+  cachix-auth-token:
+    description: |
+      Cachix authentication token for write access.
+      Pass only on main-branch pushes to avoid leaking the token on PRs from forks.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+    - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      with:
+        use-flakehub: false
+
+    # When no auth token is provided, configure Cachix for pull-only access.
+    # This is safe for PRs from forks (no secret exposure).
+    - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+      if: ${{ inputs.cachix-auth-token == '' }}
+      with:
+        name: knirski-lm-bot
+
+    # With an auth token, push access is enabled so other CI jobs and local
+    # developers benefit from pre-built artifacts.
+    - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+      if: ${{ inputs.cachix-auth-token != '' }}
+      with:
+        name: knirski-lm-bot
+        authToken: '${{ inputs.cachix-auth-token }}'
