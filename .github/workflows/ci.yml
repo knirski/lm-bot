@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    # GitHub's runners ship a working Docker, which Testcontainers finds on its
+    # own. No postgres service is declared: Testcontainers starts its own.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Cache sbt and coursier
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.sbt
+          key: ${{ runner.os }}-sbt-${{ hashFiles('build.sbt', 'project/**') }}
+
+      # The devShell supplies the JDK, the sbt launcher and Node 26. It only
+      # overrides DOCKER_HOST when a Podman socket exists, so on this runner it
+      # correctly falls through to the host Docker.
+      - name: Compile everything
+        run: nix develop --command sbt compile Test/compile
+
+      - name: Test
+        run: nix develop --command sbt test
+
+      - name: Link frontend (Wasm)
+        run: nix develop --command sbt frontend/fullLinkJS
+
+      - name: Check formatting
+        run: nix develop --command scalafmt --list --mode diff-ref=HEAD
