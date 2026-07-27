@@ -280,14 +280,24 @@ lazy val sharedJS = project
   )
 
 /** Gears on Scala.js needs the WebAssembly backend so JSPI can suspend (spec
-  * §5.1). Wasm implies ES modules *and* at least ES2022 — the linker refuses
-  * outright otherwise, with "The WebAssembly backend requires ECMAScript 2022
-  * or later". `withUseWebAssembly` is the current spelling;
-  * `withExperimentalUseWebAssembly` is deprecated as of Scala.js 1.22.0.
+  * §5.1). Three settings are required and all three are load-bearing:
+  *
+  *   - `withUseWebAssembly(true)` selects the Wasm backend.
+  *     (`withExperimentalUseWebAssembly` is deprecated as of Scala.js 1.22.0.)
+  *   - `ESVersion.ES2022` — Wasm refuses outright below it, with "The
+  *     WebAssembly backend requires ECMAScript 2022 or later".
+  *   - `withUseJSPI(true)` — **this one defaults to `false`**, and without it
+  *     the linker rejects every `js.async`/`js.await` in Gears' internals with
+  *     "Uses an async block without JSPI support in WebAssembly", or, if Wasm
+  *     is off, "Uses an orphan await (outside of an async block) without
+  *     targeting WebAssembly". Those two errors are the same missing flag wearing
+  *     different hats. Gears cannot link on Scala.js without it, and no amount
+  *     of restructuring the entry point substitutes for it.
   */
 lazy val wasmConfig: org.scalajs.linker.interface.StandardConfig => org.scalajs.linker.interface.StandardConfig =
   _.withModuleKind(ModuleKind.ESModule)
     .withESFeatures(_.withESVersion(ESVersion.ES2022).withUseWebAssembly(true))
+    .withWasmFeatures(_.withUseJSPI(true))
 
 lazy val backend = project
   .in(file("backend"))
@@ -374,9 +384,13 @@ Expected: PASS — 1 test.
 - [ ] **Step 5: Verify the whole build compiles, including the Wasm frontend**
 
 Run: `sbt compile Test/compile frontend/fastLinkJS`
-Expected: all four projects compile; `frontend/fastLinkJS` emits `.wasm` output under `frontend/target/scala-3.8.4/frontend-fastopt/`.
+Expected: all four projects compile; `frontend/fastLinkJS` emits `main.wasm` under `target/out/sjs1/scala-3.8.4/lm-bot-frontend/lm-bot-frontend-fastopt/` (sbt 2 centralises output — see above).
 
-If `fastLinkJS` fails on the Wasm backend, that is the risk called out in spec §5.1 and §10. Do not silently drop to the JS backend — stop and report, so the documented fallback (keep Laminar and the Elm architecture, run effects on `Future`) is chosen deliberately.
+**If linking fails, check `withUseJSPI(true)` is present in `wasmConfig` before concluding anything else.** It defaults to `false`, and its absence produces errors that read exactly like upstream incompatibilities — "Uses an async block without JSPI support in WebAssembly", or, with Wasm off, "Uses an orphan await (outside of an async block) without targeting WebAssembly" — with traces pointing deep into Gears (`WasmJSPISuspend`, `JsAsyncScheduler`, `NumberedLockImpl.lock`). Those traces are misleading: the flag is the cause and Gears is not at fault. This exact misdiagnosis has already cost one implementation attempt.
+
+Verified working: Gears 0.3.1 on Scala.js 1.22.0 with all three flags set — `fastLinkJS` and `fullLinkJS` both emit `main.wasm`, and the `Runtime` and `Bridge` suites pass under Node 26. Neither a `setTimeout` deferral in `@main` nor a particular `FromSync` variant is needed; those are red herrings if JSPI is off and unnecessary once it is on.
+
+If linking still fails *after* all three flags are confirmed, that is the risk called out in spec §5.1 and §10. Two rules then apply. Do not silently drop to the JS backend. And note that switching `ModuleKind` to `CommonJSModule` while leaving Gears in the source is **not** the documented fallback — it yields a build in which Gears' own async cannot link, forcing you to disable tests to stay green. The real fallback removes Gears from the frontend: keep Laminar and the Elm architecture, and run effects on `scala.concurrent.Future`. Either way, stop and report so the choice is deliberate.
 
 - [ ] **Step 6: Add CI**
 
@@ -3397,7 +3411,8 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 ## Definition of done for Plan 1
 
 - [ ] `nix develop --command true` succeeds from a clean clone, and the banner reports Node 26.x and a reachable container runtime.
-- [ ] `sbt test` is green, including Testcontainers-backed Postgres tests.
+- [ ] `sbt test` is green, including Testcontainers-backed Postgres tests **and the frontend `RuntimeTest` and `BridgeTest` suites**. A green run achieved by excluding or renaming test files does not count — if a suite cannot run, the plan is not done.
+- [ ] `sbt frontend/fastLinkJS` emits `main.wasm`. A build that links only by turning off WebAssembly does not satisfy this.
 - [ ] `sbt frontend/fullLinkJS` produces Wasm output.
 - [ ] CI passes on a pushed branch.
 - [ ] `docker compose up --build` yields a working app on `localhost:8080`.
