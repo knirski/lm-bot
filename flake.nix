@@ -50,7 +50,7 @@
       perSystem =
         pkgs:
         let
-          inherit (pkgs) system;
+          system = pkgs.stdenv.hostPlatform.system;
         in
         rec {
           # -- pre-commit hooks (cachix/git-hooks.nix) -----------------------
@@ -142,18 +142,7 @@
             # README note into a guarantee.
             nodejs_26
 
-            # --- Database ---
-            # For psql against the docker-compose Postgres. The server itself
-            # runs in a container; this is just the client.
-            postgresql_17
-
-            # --- Containers ---
-            # Deliberately NO docker-client here. The container runtime is a host
-            # service, not something a devShell can provide, and shipping a
-            # docker CLI would shadow the host's own (Podman, in this project's
-            # case) and break Testcontainers rather than help it. See shellHook.
-
-            # --- Spike + scripting (docs/superpowers/plans/*-2fa-spike.md) ---
+            # --- Scripting ---
             curl
             jq
             util-linux # uuidgen, for the spike's stable device identity
@@ -165,39 +154,19 @@
             # Keep sbt's own heap modest; the compile-heavy work is in forked JVMs.
             export SBT_OPTS="''${SBT_OPTS:--Xmx2G -Xss4M}"
 
-            # Testcontainers (used by the backend integration tests) speaks the
-            # Docker API and does not discover Podman's rootless socket on its
-            # own. Point it at the socket if one is running and the user has not
-            # already chosen a DOCKER_HOST.
-            podman_sock="$XDG_RUNTIME_DIR/podman/podman.sock"
-            if [ -z "''${DOCKER_HOST:-}" ] && [ -S "$podman_sock" ]; then
-              export DOCKER_HOST="unix://$podman_sock"
-              # Ryuk, Testcontainers' reaper sidecar, needs privileges that
-              # rootless Podman will not grant, so it is disabled. Trade-off:
-              # containers can outlive a hard-killed JVM. `podman ps` after a
-              # crash, and prune if needed.
-              export TESTCONTAINERS_RYUK_DISABLED=true
-              # Containers that bind-mount the socket still expect the canonical
-              # path inside themselves.
-              export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-            fi
+            # Database env vars (override via environment if using an external PG).
+            # When running via `sbt startDev`, the forked JVM gets EMBEDDED_PG=true
+            # from build.sbt's Compile / envVars, which starts an embedded PG.
+            export DATABASE_URL="jdbc:postgresql://localhost:15432/lmbot"
+            export DATABASE_USER="lmbot"
+            export DATABASE_PASSWORD="lmbot"
 
             echo "lm-bot dev shell"
             echo "  jdk    $(java -version 2>&1 | head -1)"
             echo "  sbt    $(sbt --script-version 2>/dev/null || echo 'launcher present') (launches sbt 2 per project/build.properties)"
             echo "  node   $(node --version)"
             echo "  scala  3.8.4 (per build.sbt)"
-
-            if [ -n "''${DOCKER_HOST:-}" ]; then
-              echo "  ctr    $DOCKER_HOST (ryuk disabled)"
-            elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-              echo "  ctr    host docker"
-            else
-              echo
-              echo "  ⚠ no container runtime reachable — Testcontainers tests will fail."
-              echo "    Start one on the host: 'systemctl --user start podman.socket'"
-              echo "    (or enable Docker: virtualisation.docker.enable = true)."
-            fi
+            echo "  pg     embedded (auto-started by sbt startDev, or set DATABASE_URL for external)"
           '';
         };
       });

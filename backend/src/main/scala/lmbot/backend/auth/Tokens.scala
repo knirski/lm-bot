@@ -5,7 +5,7 @@ import java.security.{MessageDigest, SecureRandom}
 import java.util.Base64
 
 object Tokens:
-  private val rng     = new SecureRandom()
+  private val rng = new SecureRandom()
   private val encoder = Base64.getUrlEncoder.withoutPadding
 
   /** 256 bits of entropy, URL-safe so it can live in a cookie unescaped. The
@@ -21,5 +21,6 @@ object Tokens:
     * nothing to slow down a guesser about, and lookups stay cheap.
     */
   def hash(token: String): String =
-    val digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(UTF_8))
+    val digest =
+      MessageDigest.getInstance("SHA-256").digest(token.getBytes(UTF_8))
     encoder.encodeToString(digest)

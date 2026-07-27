@@ -1,7 +1,10 @@
 package lmbot.shared.api
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import com.github.plokhotnyuk.jsoniter_scala.macros.{CodecMakerConfig, JsonCodecMaker}
+import com.github.plokhotnyuk.jsoniter_scala.macros.{
+  CodecMakerConfig,
+  JsonCodecMaker
+}
 import lmbot.shared.domain.{Role, UserView}
 import sttp.tapir.Schema
 
@@ -23,14 +26,16 @@ object Codecs:
     * mislead any non-Scala consumer.
     */
   private inline def config =
-    CodecMakerConfig.withTransientDefault(false).withDiscriminatorFieldName(None)
+    CodecMakerConfig
+      .withTransientDefault(false)
+      .withDiscriminatorFieldName(None)
 
-  given JsonValueCodec[Role]         = JsonCodecMaker.make(config)
-  given JsonValueCodec[UserView]     = JsonCodecMaker.make(config)
+  given JsonValueCodec[Role] = JsonCodecMaker.make(config)
+  given JsonValueCodec[UserView] = JsonCodecMaker.make(config)
   given JsonValueCodec[LoginRequest] = JsonCodecMaker.make(config)
-  given JsonValueCodec[ErrorBody]    = JsonCodecMaker.make(config)
+  given JsonValueCodec[ErrorBody] = JsonCodecMaker.make(config)
 
-  given Schema[Role]         = Schema.derivedEnumeration[Role].defaultStringBased
-  given Schema[UserView]     = Schema.derived
+  given Schema[Role] = Schema.derivedEnumeration[Role].defaultStringBased
+  given Schema[UserView] = Schema.derived
   given Schema[LoginRequest] = Schema.derived
-  given Schema[ErrorBody]    = Schema.derived
+  given Schema[ErrorBody] = Schema.derived

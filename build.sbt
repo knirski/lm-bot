@@ -2,32 +2,36 @@ import org.scalajs.linker.interface.{ESVersion, ModuleKind, StandardConfig}
 
 val scala3 = "3.8.4"
 
+val pgPort = "15432"
+
 ThisBuild / scalaVersion := scala3
 ThisBuild / organization := "dev.knirski"
-ThisBuild / version      := "0.1.0-SNAPSHOT"
+ThisBuild / version := "0.1.0-SNAPSHOT"
 
 // --- Development mode ---
 // When true (default), the backend resource generator triggers fastLinkJS and
 // reads from its output — much faster for iterative work.  Set to false for
 // production assembly (Dockerfile does this explicitly).
 val useFastLinkForAssets =
-  settingKey[Boolean]("Use fastLinkJS output for backend assets (default: true)")
+  settingKey[Boolean](
+    "Use fastLinkJS output for backend assets (default: true)"
+  )
 ThisBuild / useFastLinkForAssets := true
 
-val Vgears          = "0.3.1"
-val Vtapir          = "1.13.29"
-val Vsttp           = "3.11.0"
-val Vjsoniter       = "2.39.1"
-val Vlaminar        = "17.2.1"
-val VscalajsDom     = "2.8.1"
-val Vmagnum         = "1.3.1"
-val Vflyway         = "11.8.2"
-val Vpostgres       = "42.7.7"
-val Vhikari         = "7.1.0"
-val Vargon2         = "2.12"
-val Vlogback        = "1.6.0"
-val Vmunit          = "1.3.4"
-val Vtestcontainers = "1.21.3"
+val Vgears = "0.3.1"
+val Vtapir = "1.13.29"
+val Vsttp = "3.11.0"
+val Vjsoniter = "2.39.1"
+val Vlaminar = "17.2.1"
+val VscalajsDom = "2.8.1"
+val Vmagnum = "1.3.1"
+val Vflyway = "11.8.2"
+val Vpostgres = "42.7.7"
+val Vhikari = "7.1.0"
+val Vargon2 = "2.12"
+val Vlogback = "1.6.0"
+val Vmunit = "1.3.4"
+val VembeddedPg = "2.2.2"
 
 /** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
   * encodes Scala.js 1.x + Scala 3, both pinned by this build.
@@ -49,8 +53,12 @@ lazy val commonSettings = Seq(
 // The shared module's real sources live in one place; the two platform projects
 // below both compile them. This is what sbt-crossproject would have generated,
 // written out by hand because it has no sbt 2 build.
-lazy val sharedSources    = Def.setting((ThisBuild / baseDirectory).value / "shared" / "src" / "main" / "scala")
-lazy val sharedTestSources = Def.setting((ThisBuild / baseDirectory).value / "shared" / "src" / "test" / "scala")
+lazy val sharedSources = Def.setting(
+  (ThisBuild / baseDirectory).value / "shared" / "src" / "main" / "scala"
+)
+lazy val sharedTestSources = Def.setting(
+  (ThisBuild / baseDirectory).value / "shared" / "src" / "test" / "scala"
+)
 
 lazy val sharedSettings = commonSettings ++ Seq(
   Compile / unmanagedSourceDirectories += sharedSources.value,
@@ -63,12 +71,12 @@ lazy val sharedJVM = project
   .settings(
     name := "lm-bot-shared",
     libraryDependencies ++= Seq(
-      "ch.epfl.lamp"                          %% "gears"                 % Vgears,
-      "com.softwaremill.sttp.tapir"           %% "tapir-core"            % Vtapir,
-      "com.softwaremill.sttp.tapir"           %% "tapir-jsoniter-scala"  % Vtapir,
-      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"   % Vjsoniter,
+      "ch.epfl.lamp" %% "gears" % Vgears,
+      "com.softwaremill.sttp.tapir" %% "tapir-core" % Vtapir,
+      "com.softwaremill.sttp.tapir" %% "tapir-jsoniter-scala" % Vtapir,
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % Vjsoniter,
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % Vjsoniter,
-      "org.scalameta"                         %% "munit"                 % Vmunit % Test
+      "org.scalameta" %% "munit" % Vmunit % Test
     )
   )
 
@@ -82,23 +90,32 @@ lazy val sharedJS = project
       jsDep("ch.epfl.lamp", "gears", Vgears),
       jsDep("com.softwaremill.sttp.tapir", "tapir-core", Vtapir),
       jsDep("com.softwaremill.sttp.tapir", "tapir-jsoniter-scala", Vtapir),
-      jsDep("com.github.plokhotnyuk.jsoniter-scala", "jsoniter-scala-core", Vjsoniter),
-      jsDep("com.github.plokhotnyuk.jsoniter-scala", "jsoniter-scala-macros", Vjsoniter),
+      jsDep(
+        "com.github.plokhotnyuk.jsoniter-scala",
+        "jsoniter-scala-core",
+        Vjsoniter
+      ),
+      jsDep(
+        "com.github.plokhotnyuk.jsoniter-scala",
+        "jsoniter-scala-macros",
+        Vjsoniter
+      ),
       jsDep("org.scalameta", "munit", Vmunit) % Test
     ),
     scalaJSLinkerConfig ~= wasmConfig
   )
 
 /** Gears on Scala.js needs the WebAssembly backend so JSPI can suspend (spec
-  * §5.1). Wasm implies ES modules *and* at least ES2022.
-  * `withUseWebAssembly` is the current spelling;
-  * `withExperimentalUseWebAssembly` is deprecated as of Scala.js 1.22.0.
+  * §5.1). Wasm implies ES modules *and* at least ES2022. `withUseWebAssembly`
+  * is the current spelling; `withExperimentalUseWebAssembly` is deprecated as
+  * of Scala.js 1.22.0.
   *
   * `withUseJSPI(true)` is critical — it defaults to false and the linker
-  * rejects all js.async/js.await usage without it.  The error "Uses an async
+  * rejects all js.async/js.await usage without it. The error "Uses an async
   * block without JSPI support in WebAssembly" means exactly this flag.
   */
-lazy val wasmConfig: org.scalajs.linker.interface.StandardConfig => org.scalajs.linker.interface.StandardConfig =
+lazy val wasmConfig
+    : org.scalajs.linker.interface.StandardConfig => org.scalajs.linker.interface.StandardConfig =
   _.withModuleKind(ModuleKind.ESModule)
     .withESFeatures(_.withESVersion(ESVersion.ES2022).withUseWebAssembly(true))
     .withWasmFeatures(_.withUseJSPI(true))
@@ -111,18 +128,23 @@ lazy val backend = project
     name := "lm-bot-backend",
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-jdkhttp-server" % Vtapir,
-      "com.softwaremill.sttp.tapir" %% "tapir-files"          % Vtapir,
-      "com.augustnagro"             %% "magnum"               % Vmagnum,
-      "org.flywaydb"                 % "flyway-core"          % Vflyway,
-      "org.flywaydb"                 % "flyway-database-postgresql" % Vflyway,
-      "org.postgresql"               % "postgresql"           % Vpostgres,
-      "com.zaxxer"                   % "HikariCP"             % Vhikari,
-      "de.mkammerer"                 % "argon2-jvm"           % Vargon2,
-      "ch.qos.logback"               % "logback-classic"      % Vlogback,
-      "org.scalameta"                %% "munit"                % Vmunit          % Test,
-      "org.testcontainers"           % "postgresql"           % Vtestcontainers % Test,
-      "com.softwaremill.sttp.client3" %% "core"               % Vsttp           % Test
+      "com.softwaremill.sttp.tapir" %% "tapir-files" % Vtapir,
+      "com.augustnagro" %% "magnum" % Vmagnum,
+      "org.flywaydb" % "flyway-core" % Vflyway,
+      "org.flywaydb" % "flyway-database-postgresql" % Vflyway,
+      "org.postgresql" % "postgresql" % Vpostgres,
+      "com.zaxxer" % "HikariCP" % Vhikari,
+      "de.mkammerer" % "argon2-jvm" % Vargon2,
+      "ch.qos.logback" % "logback-classic" % Vlogback,
+      "io.zonky.test" % "embedded-postgres" % VembeddedPg,
+      "org.scalameta" %% "munit" % Vmunit % Test,
+      "com.softwaremill.sttp.client3" %% "core" % Vsttp % Test
     ),
+    // Each test suite manages its own embedded PostgreSQL on a random port
+    // (fully isolated).  Suites run serially because they share the embedded-postgres
+    // binary cache at /tmp/embedded-pg/.
+    Test / parallelExecution := false,
+
     // Virtual threads and Testcontainers both want a real JVM 25+.
     javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
@@ -132,25 +154,27 @@ lazy val backend = project
     // pollution).
     Compile / fork := true,
     Compile / envVars := Map(
-      // Sensible defaults for local dev; a real env var in the shell wins.
-      "DATABASE_URL"      -> sys.env.getOrElse("DATABASE_URL",      "jdbc:postgresql://localhost:5432/lmbot"),
-      "DATABASE_USER"     -> sys.env.getOrElse("DATABASE_USER",     "lmbot"),
-      "DATABASE_PASSWORD"  -> sys.env.getOrElse("DATABASE_PASSWORD",  "lmbot"),
-      "COOKIE_SECURE"     -> sys.env.getOrElse("COOKIE_SECURE",     "false"),
-      "ADMIN_USERNAME"    -> sys.env.getOrElse("ADMIN_USERNAME",    "admin"),
-      "ADMIN_PASSWORD"    -> sys.env.getOrElse("ADMIN_PASSWORD",    "admin"),
-      "HTTP_PORT"         -> sys.env.getOrElse("HTTP_PORT",         "8080"),
-      "HTTP_HOST"         -> sys.env.getOrElse("HTTP_HOST",         "127.0.0.1"),
-      "SESSION_TTL_DAYS"  -> sys.env.getOrElse("SESSION_TTL_DAYS",  "7")
+      "DATABASE_URL" -> s"jdbc:postgresql://localhost:$pgPort/lmbot",
+      "DATABASE_USER" -> sys.env.getOrElse("DATABASE_USER", "lmbot"),
+      "DATABASE_PASSWORD" -> sys.env.getOrElse("DATABASE_PASSWORD", "lmbot"),
+      "EMBEDDED_PG" -> "true",
+      "COOKIE_SECURE" -> sys.env.getOrElse("COOKIE_SECURE", "false"),
+      "ADMIN_USERNAME" -> sys.env.getOrElse("ADMIN_USERNAME", "admin"),
+      "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
+      "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
+      "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
+      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7")
     ),
 
     // Watch frontend and shared sources too, so `~backend/run` restarts on
     // any source change in the project — frontend, backend, or shared.
     // (sharedJS and sharedJVM compile the same directory; we only need one.)
-    watchSources ++= Def.uncached(Def.task {
-      (frontend / Compile / unmanagedSources).value ++
-        (sharedJVM / Compile / unmanagedSources).value
-    }).value,
+    watchSources ++= Def
+      .uncached(Def.task {
+        (frontend / Compile / unmanagedSources).value ++
+          (sharedJVM / Compile / unmanagedSources).value
+      })
+      .value,
 
     // Package the linked frontend as classpath resources under `web/`, which is
     // where StaticRoutes looks (served at /assets). Without this the backend
@@ -158,7 +182,7 @@ lazy val backend = project
     // linking the frontend is not the same as shipping it.
     Compile / resourceGenerators += Def.task {
       if ((ThisBuild / useFastLinkForAssets).value)
-        (frontend / Compile / fastLinkJS).value  // trigger dev link
+        (frontend / Compile / fastLinkJS).value // trigger dev link
       val linkedDir =
         if ((ThisBuild / useFastLinkForAssets).value)
           (frontend / Compile / fastLinkJSOutput).value
@@ -173,7 +197,7 @@ lazy val backend = project
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", _*)      => MergeStrategy.discard
       case PathList("module-info.class") => MergeStrategy.discard
-      case x                             => (assembly / assemblyMergeStrategy).value(x)
+      case x => (assembly / assemblyMergeStrategy).value(x)
     }
   )
 
@@ -213,9 +237,8 @@ lazy val root = project
       )
       log.info("")
       log.info(
-        "Make sure PostgreSQL is running:"
+        "Embedded PostgreSQL starts automatically on port 15432"
       )
-      log.info("  docker compose up -d postgres")
       log.info("")
       // The resource generator triggers fastLinkJS on first compile, so we
       // don't run it explicitly here.

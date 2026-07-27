@@ -10,7 +10,7 @@ class UserRepoTest extends PostgresSuite:
     assertEquals(UserRepo(xa).count(), 0L)
 
   test("an inserted user can be found by username and by id"):
-    val repo   = UserRepo(xa)
+    val repo = UserRepo(xa)
     val stored = repo.insert("krzysiek", "Krzysiek", "hash-1", Role.Admin)
 
     assertEquals(repo.count(), 1L)

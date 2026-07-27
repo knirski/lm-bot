@@ -14,8 +14,8 @@ object AppView:
     div(
       cls := "app",
       child <-- state.map(s => (s.booting, s.screen)).distinct.map {
-        case (true, _)              => booting
-        case (false, Screen.Login)  => loginPage(rt)
+        case (true, _)                 => booting
+        case (false, Screen.Login)     => loginPage(rt)
         case (false, Screen.Dashboard) => dashboard(rt)
       }
     )
@@ -29,7 +29,9 @@ object AppView:
       cls := "login",
       h1("lm-bot"),
       form(
-        onSubmit.preventDefault.mapTo(Msg.LoginSubmitted) --> (m => rt.dispatch(m)),
+        onSubmit.preventDefault.mapTo(Msg.LoginSubmitted) --> (m =>
+          rt.dispatch(m)
+        ),
         label(
           "Username",
           input(
@@ -51,9 +53,14 @@ object AppView:
         button(
           tpe := "submit",
           disabled <-- formSignal.map(_.submitting).distinct,
-          child.text <-- formSignal.map(f => if f.submitting then "Signing in…" else "Sign in").distinct
+          child.text <-- formSignal
+            .map(f => if f.submitting then "Signing in…" else "Sign in")
+            .distinct
         ),
-        child.maybe <-- formSignal.map(_.error).distinct.map(_.map(msg => p(cls := "error", role := "alert", msg)))
+        child.maybe <-- formSignal
+          .map(_.error)
+          .distinct
+          .map(_.map(msg => p(cls := "error", role := "alert", msg)))
       )
     )
 
@@ -63,6 +70,9 @@ object AppView:
       cls := "dashboard",
       h1("lm-bot"),
       child.maybe <-- user.map(_.map(u => p(s"Signed in as ${u.displayName}"))),
-      button("Sign out", onClick.mapTo(Msg.LogoutRequested) --> (m => rt.dispatch(m))),
+      button(
+        "Sign out",
+        onClick.mapTo(Msg.LogoutRequested) --> (m => rt.dispatch(m))
+      ),
       p(cls := "placeholder", "Monitors will appear here.")
     )

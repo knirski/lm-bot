@@ -13,7 +13,11 @@ object Server:
     * style in the services safe: handlers block freely, and Gears is used
     * inside them (spec §5.1).
     */
-  def start(host: String, port: Int, endpoints: List[ServerEndpoint[Any, Identity]]): HttpServer =
+  def start(
+      host: String,
+      port: Int,
+      endpoints: List[ServerEndpoint[Any, Identity]]
+  ): HttpServer =
     JdkHttpServer()
       .host(host)
       .port(port)

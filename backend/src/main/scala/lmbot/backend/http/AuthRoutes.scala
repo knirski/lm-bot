@@ -7,13 +7,19 @@ import sttp.tapir.server.ServerEndpoint
 import java.time.Duration
 
 /** Translates HTTP to service calls and back. No policy lives here. */
-class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration):
+class AuthRoutes(
+    auth: AuthService,
+    cookieSecure: Boolean,
+    sessionTtl: Duration
+):
 
   private val loginRoute: ServerEndpoint[Any, sttp.shared.Identity] =
     AuthEndpoints.login.serverLogicPure { req =>
       auth
         .login(req.username, req.password)
-        .map { (view, token) => (view, Some(SessionCookie.issue(token, cookieSecure, sessionTtl))) }
+        .map { (view, token) =>
+          (view, Some(SessionCookie.issue(token, cookieSecure, sessionTtl)))
+        }
     }
 
   private val meRoute: ServerEndpoint[Any, sttp.shared.Identity] =
@@ -29,4 +35,5 @@ class AuthRoutes(auth: AuthService, cookieSecure: Boolean, sessionTtl: Duration)
         Right(Some(SessionCookie.clear(cookieSecure)))
       }
 
-  val endpoints: List[ServerEndpoint[Any, sttp.shared.Identity]] = List(loginRoute, meRoute, logoutRoute)
+  val endpoints: List[ServerEndpoint[Any, sttp.shared.Identity]] =
+    List(loginRoute, meRoute, logoutRoute)

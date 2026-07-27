@@ -18,7 +18,9 @@ class PasswordsTest extends munit.FunSuite:
     assert(hash.startsWith("$argon2id$"), s"not argon2id: $hash")
     assert(!hash.contains("s3cret"))
 
-  test("hashing the same password twice yields different hashes (unique salts)"):
+  test(
+    "hashing the same password twice yields different hashes (unique salts)"
+  ):
     assertNotEquals(Passwords.hash("same"), Passwords.hash("same"))
 
   test("verify returns false for a malformed hash instead of throwing"):
