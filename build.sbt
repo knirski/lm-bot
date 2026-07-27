@@ -1,4 +1,4 @@
-import org.scalajs.linker.interface.{ESVersion, ModuleKind}
+import org.scalajs.linker.interface.{ESVersion, ModuleKind, StandardConfig}
 
 val scala3 = "3.8.4"
 
@@ -113,7 +113,14 @@ lazy val backend = project
     ),
     // Virtual threads and Testcontainers both want a real JVM 21+.
     javacOptions ++= Seq("-source", "21", "-target", "21"),
-    Compile / mainClass := Some("lmbot.backend.Main")
+    Compile / mainClass := Some("lmbot.backend.Main"),
+
+    assembly / mainClass := Some("lmbot.backend.Main"),
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", _*)      => MergeStrategy.discard
+      case PathList("module-info.class") => MergeStrategy.discard
+      case x                             => (assembly / assemblyMergeStrategy).value(x)
+    }
   )
 
 lazy val frontend = project
@@ -124,13 +131,13 @@ lazy val frontend = project
   .settings(
     name := "lm-bot-frontend",
     scalaJSUseMainModuleInitializer := true,
-    scalaJSLinkerConfig ~= wasmConfig,
-    // No jsEnv override. Node 26 enables JSPI by default (WebAssembly.Suspending
-    // is present with no flags) and *rejects* `--experimental-wasm-jspi` with
-    // "node: bad option", so passing that flag would break every test.
-    // flake.nix pins Node 26, so the default jsEnv is already correct.
+    // §5.1 fallback: Wasm/JSPI path failed, so frontend uses the JS backend
+    // (CommonJSModule) with scala.concurrent.Future for async effects.
+    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule)
+      .withESFeatures(_.withESVersion(ESVersion.ES2022)) },
+    Test / scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.CommonJSModule)
+      .withESFeatures(_.withESVersion(ESVersion.ES2022)) },
     libraryDependencies ++= Seq(
-      jsDep("ch.epfl.lamp", "gears", Vgears),
       jsDep("com.raquo", "laminar", Vlaminar),
       jsDep("org.scala-js", "scalajs-dom", VscalajsDom),
       jsDep("com.softwaremill.sttp.tapir", "tapir-sttp-client", Vtapir),

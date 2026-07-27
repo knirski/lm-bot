@@ -1,14 +1,17 @@
 package lmbot.frontend
 
-import gears.async.Async
 import lmbot.frontend.api.ApiClient
-import lmbot.frontend.elm.{Effect, Transition}
+import lmbot.frontend.elm.{AsyncEffect, Transition}
 import lmbot.shared.api.{ApiError, LoginRequest}
+
+import scala.concurrent.{ExecutionContext, Future}
 
 /** Every decision the frontend makes lives here, and this function is pure:
   * it returns the next state plus a description of what to do, never doing it.
   */
 class Update(api: ApiClient):
+
+  private given ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
 
   def apply(state: AppState, msg: Msg): Transition[AppState, Msg] = msg match
 
@@ -28,12 +31,12 @@ class Update(api: ApiClient):
         )
       else
         val request = LoginRequest(form.username, form.password)
-        val effect = new Effect[Msg]:
-          def run(using Async): Option[Msg] = Some:
-            api.login(request) match
-              case Right(user) => Msg.LoginSucceeded(user)
-              case Left(err)   => Msg.LoginFailed(err)
-        Transition(state.copy(login = form.copy(submitting = true, error = None)), List(effect))
+        val effect = new AsyncEffect[Msg]:
+          def run(): Future[Option[Msg]] =
+            api.login(request).map:
+              case Right(user) => Some(Msg.LoginSucceeded(user))
+              case Left(err)   => Some(Msg.LoginFailed(err))
+        Transition(state.copy(login = form.copy(submitting = true, error = None)), Nil, List(effect))
 
     case Msg.LoginSucceeded(user) =>
       // Drop the password as soon as it has served its purpose.
@@ -58,12 +61,10 @@ class Update(api: ApiClient):
       Transition(state.copy(screen = Screen.Login, user = None, booting = false), Nil)
 
     case Msg.LogoutRequested =>
-      val effect = new Effect[Msg]:
-        def run(using Async): Option[Msg] =
-          api.logout()
-          // Whether or not the server agreed, this browser is now signed out.
-          Some(Msg.LoggedOut)
-      Transition(state, List(effect))
+      val effect = new AsyncEffect[Msg]:
+        def run(): Future[Option[Msg]] =
+          api.logout().map(_ => Some(Msg.LoggedOut))
+      Transition(state, Nil, List(effect))
 
     case Msg.LoggedOut =>
       Transition(AppState(Screen.Login, LoginForm(), None, booting = false), Nil)
