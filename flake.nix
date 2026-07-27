@@ -56,7 +56,14 @@
           # -- pre-commit hooks (cachix/git-hooks.nix) -----------------------
           pre-commit = git-hooks.lib.${system}.run {
             src = self;
+            # Point the treefmt hook at the treefmt-nix wrapper so it carries
+            # the nixfmt config defined below — no standalone treefmt.toml.
+            tools = {
+              treefmt = treefmt-eval.config.build.wrapper;
+            };
             hooks = {
+              # Nix formatting via nixfmt (uses the treefmt-nix wrapper).
+              treefmt.enable = true;
               # Detect dead Nix code.
               deadnix.enable = true;
               # Lint Nix expressions.
