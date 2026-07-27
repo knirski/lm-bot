@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -26,13 +27,13 @@ jobs:
           key: ${{ runner.os }}-sbt-${{ hashFiles('build.sbt', 'project/**') }}
 
       - name: Compile everything
-        run: nix develop --command sbt compile Test/compile
+        run: nix develop --command sbt "compile; Test/compile"
 
       - name: Test
-        # testFull, not test: in sbt 2 `test` is `testQuick`, which consults a
-        # global action cache and can legitimately run nothing. CI must prove the
+        # Test/test, not test: in sbt 2 bare `test` is `testQuick`, which consults
+        # a global action cache and can legitimately run nothing. CI must prove the
         # whole suite passes for this commit regardless of cache state.
-        run: nix develop --command sbt testFull
+        run: nix develop --command sbt Test/test
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS

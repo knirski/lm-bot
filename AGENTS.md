@@ -72,16 +72,16 @@ Every commit on `main` triggers a release via semantic-release. PR title must be
 
 `docs:`, `chore:`, `style:`, `refactor:`, `test:`, `ci:`, `build:` — no release unless a `BREAKING CHANGE:` footer exists.
 
-## Run tests with `testFull`, never `test`
+## Run tests with `Test/test`, never `test`
 
 ```bash
 nix flake check           # pre-commit hooks + Nix formatting
-sbt testFull              # everything (96 tests)
-sbt backend/testFull      # one module
+sbt Test/test             # everything (96 tests)
+sbt backend/Test/test     # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
 ```
 
-In sbt 2, `test` **is** `testQuick`. It runs only what changed, judged by
+In sbt 2, bare `test` **is** `testQuick`. It runs only what changed, judged by
 content hashing against a global cache in `~/.cache/sbt/v2` that survives
 `clean` **and** deleting `target/`. Re-running it on an unchanged tree prints
 `Passed: Total 0` and `[success]`. That is correct behaviour and a trap: never
