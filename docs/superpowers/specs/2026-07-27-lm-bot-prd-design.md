@@ -77,15 +77,15 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 | Language | Scala 3.8 (JVM 21+ backend; Scala.js **Wasm** backend frontend) |
 | Concurrency | Gears (direct style) on both platforms |
 | API contract | Tapir endpoint definitions in a shared cross-compiled module |
-| HTTP server | tapir-netty-server-sync (handlers are plain functions on virtual threads) |
+| HTTP server | tapir-jdkhttp-server (`Identity` interpreter) on a virtual-thread executor |
 | HTTP client | sttp (backend: Luxmed + Telegram; frontend: Tapir-derived API client) |
 | Frontend UI | Laminar |
 | Database | PostgreSQL, Flyway migrations; Magnum over blocking JDBC on virtual threads |
 | JSON | jsoniter-scala (Scala 3-native, cross-compiles to Scala.js) |
 
-**Gears-on-JS caveats (accepted):** requires the Scala.js WebAssembly backend and a JSPI-capable browser (recent Chrome/Firefox; Safari support to be verified during setup). Dev/test tooling must avoid Node 24/25 (V8 stack-overflow bug in nested async contexts) — use Node 26+. Fallback if this bites in practice: keep Laminar and drop to `scala.concurrent.Future` at the frontend HTTP boundary; this decision is isolated to the frontend API-client wiring.
+**Gears-on-JS caveats (accepted):** requires the Scala.js WebAssembly backend and a JSPI-capable browser (recent Chrome/Firefox; Safari support to be verified during setup). Dev/test tooling must avoid Node 24/25 (V8 stack-overflow bug in nested async contexts) — use Node 26+. Fallback if this bites in practice: keep Laminar and the Elm architecture (§5.6) and run frontend effects on `scala.concurrent.Future` instead of Gears — the change is isolated to the effect runner and the API-client wiring; `update` and views are unaffected.
 
-**netty-sync note:** tapir-netty-server-sync internally depends on Ox (mainly websockets/streaming). Plain request-response handlers run as direct-style functions on virtual threads, where Gears (`Async.blocking`) is used freely. Ox stays confined to the HTTP boundary.
+**HTTP server note:** tapir-jdkhttp-server was chosen over tapir-netty-server-sync specifically to keep Gears as the *only* concurrency library in the process — netty-sync would pull in Ox (a second direct-style runtime). Handlers are synchronous functions executed on virtual threads, inside which Gears is used freely. Trade-off accepted: no websockets/streaming support; if v2 needs live updates (e.g. monitor status push), the interpreter choice gets revisited then. `com.sun.net.httpserver` behind the operator's reverse proxy is adequate at family scale.
 
 ### 5.2 Modules
 
@@ -98,12 +98,12 @@ lm-bot/
 
 - **shared** is the single source of truth for the API: domain model (`User`, `LuxmedAccount`, `Monitor`, `BookingSlot`, …), every REST endpoint as a Tapir endpoint (path, auth, request/response/error types), JSON codecs.
 - **backend** layers (plain classes, constructor injection, no DI framework):
-  - HTTP: netty-sync interpreter of shared endpoints; session-cookie auth interceptor.
+  - HTTP: jdkhttp interpreter of shared endpoints; session-cookie auth interceptor.
   - Services: auth/users, Luxmed accounts, monitors, notifications.
   - Luxmed client (§5.4), monitor engine (§5.5).
   - Persistence: repositories via Magnum; Flyway migrations.
   - Serves the built frontend as static assets.
-- **frontend** pages: login; dashboard (active monitors + lm-bot bookings); monitor wizard; monitor detail/edit; Luxmed accounts; settings (password, Telegram link); admin (users).
+- **frontend** pages: login; dashboard (active monitors + lm-bot bookings); monitor wizard; monitor detail/edit; Luxmed accounts; settings (password, Telegram link); admin (users). Structured as Elm-on-Gears (§5.6).
 
 ### 5.3 Domain model & persistence
 
@@ -141,6 +141,31 @@ Rules:
   - Version rejection: notify admin.
   - A crashing check kills only its own fiber, never the supervisor.
 - State transitions are persisted; restart resumes the active set exactly. Single process, no distributed coordination.
+
+### 5.6 Frontend architecture: Elm-on-Gears
+
+The frontend follows the Elm architecture, implemented directly on Gears, with Laminar reduced to a pure render layer. (Tyrian was considered and rejected: it provides this architecture but runs on Cats Effect, which would reintroduce the effect monad this design excludes. The Elm machinery is small enough to own — on the order of 100 lines.)
+
+- **One store:** a single `Var[AppState]` — the only Airstream state in the app.
+- **One message channel:** a Gears `Channel[Msg]`. DOM event handlers do exactly one thing: send a `Msg`. No logic in listeners.
+- **One event loop**, a direct-style Gears fiber:
+  1. read a `Msg` from the channel;
+  2. apply the pure `update(state, msg): (AppState, List[Effect])`;
+  3. write the new state to the `Var`;
+  4. run each `Effect` (API calls via the shared Tapir client, timers, storage) in a spawned fiber as ordinary sequential Gears code with typed errors; results come back as new `Msg`s on the channel.
+- **Laminar renders only:** views are functions of `Signal[AppState]` projections (`stateSignal.map(_.monitors).distinct` for fine-grained DOM updates). Business logic never touches an `EventStream` combinator.
+
+`update` and all view-model derivation are pure and unit-tested without a DOM.
+
+### 5.7 Programming style conventions (stack-wide)
+
+The whole codebase is **direct-style functional Scala**: immutable data, pure domain logic, errors as values, side effects executed directly on virtual threads (JVM) / JSPI (Wasm) under Gears structured concurrency. No effect monads anywhere. Concretely:
+
+1. **Gears is the only async vocabulary.** `scala.concurrent.Future` and JS `Promise` are banned from application signatures. Foreign async APIs are adapted once, at the edge, in a single small `bridge` package (Gears resolver/adapter utilities).
+2. **Errors are values** (Scala 3 union types / `Either`); exceptions mean bugs and crash the failing fiber, never the supervisor.
+3. **Airstream vocabulary is allowed in exactly one place:** the store `Var` and view projections (`Signal.map`/`distinct`). An `observe` or stream combinator anywhere else is a review flag.
+4. **Declarative leaf layers carry no control flow:** Tapir endpoint descriptions and Laminar view templates describe structure; behavior lives in services (backend) and `update`/effects (frontend).
+5. **No DI framework, no reflection:** plain classes wired by constructors; codecs and schemas derived at compile time.
 
 ## 6. Security
 
