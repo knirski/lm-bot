@@ -33,6 +33,37 @@ Temurin 21, the sbt launcher, **Node 26**, Metals, scalafmt, and `psql`.
   shadow the working Podman shim. Because Ryuk is disabled, a hard-killed JVM
   can leave containers behind: `podman ps` after a crash.
 
+## Workflow
+
+- One change → one branch → one PR. Stack only for explicit dependencies.
+- Branch: `feat/`, `fix/`, `docs/` prefix. Commit: `feat:`, `fix:`, `refactor:`, `chore:`, etc.
+- Format-before-commit (see above), then run pre-commit checks. Do not commit until they pass.
+- PR title must be conventional commit. Squash+merge only. Merge when CI is green and no "changes requested" review is active (approval not required).
+- Before merging: verify CI green, all review threads resolved, bot comments addressed, no stale CI.
+- When resolving review comments: reply explaining fix, then resolve thread.
+- Final response format:
+  ```text
+  changed-files:
+  verification-run:
+  skipped-checks:
+  branch:
+  pr:
+  blocker:
+  ```
+
+## Commit Convention (semantic-release)
+
+Every commit on `main` triggers a release via semantic-release. PR title must be conventional commit. Use squash+merge.
+
+| Prefix | Bump | Example |
+|---|---|---|
+| `feat:` | minor | `feat: add search bar` |
+| `fix:` | patch | `fix: crash on empty list` |
+| `perf:` | patch | `perf: optimize image loading` |
+| `feat!:` / `fix!:` | major | `feat!: drop API v1` |
+
+`docs:`, `chore:`, `style:`, `refactor:`, `test:`, `ci:`, `build:` — no release unless a `BREAKING CHANGE:` footer exists.
+
 ## Run tests with `testFull`, never `test`
 
 ```bash
