@@ -32,7 +32,12 @@
   # nothing. git-hooks.nix and treefmt-nix are used through their library APIs
   # instead (via `lib.${system}.run` and `lib.evalModule`).
   outputs =
-    { self, nixpkgs, git-hooks, treefmt-nix }:
+    {
+      self,
+      nixpkgs,
+      git-hooks,
+      treefmt-nix,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -43,21 +48,36 @@
 
       # Per-system helpers that need pkgs available.
       perSystem =
-        pkgs: let
-          system = pkgs.system;
-        in rec {
+        pkgs:
+        let
+          inherit (pkgs) system;
+        in
+        rec {
           # -- pre-commit hooks (cachix/git-hooks.nix) -----------------------
           pre-commit = git-hooks.lib.${system}.run {
             src = self;
             hooks = {
-              # Nix formatting via nixfmt.
-              treefmt.enable = true;
               # Detect dead Nix code.
               deadnix.enable = true;
               # Lint Nix expressions.
               statix.enable = true;
               # Catch typos in code and docs.
-              typos.enable = true;
+              typos = {
+                enable = true;
+                settings.config = {
+                  default = {
+                    "extend-words" = {
+                      # In Scala.js/Laminar, `tpe` is the standard SVG/HTML
+                      # attribute name because `type` is a reserved word in
+                      # Scala.  Not a typo.
+                      tpe = "tpe";
+                      # Luxmed's API literally returns this misspelling in its
+                      # JSON responses; the docs and code quote the API.
+                      succeded = "succeded";
+                    };
+                  };
+                };
+              };
               # Block accidental merge conflict markers.
               check-merge-conflicts.enable = true;
               # Ensure every file ends with a newline.
@@ -81,7 +101,7 @@
       checks = forAllSystems (pkgs: {
         # Pre-commit hooks run in a Nix derivation so CI can gate on them
         # without needing a mutable checkout.
-        pre-commit = (perSystem pkgs).pre-commit;
+        inherit ((perSystem pkgs)) pre-commit;
 
         # Treefmt formatting check (same treefmt config used by the formatter
         # below and the pre-commit hook above).

@@ -44,8 +44,6 @@ jobs:
         run: nix flake check
 
       - name: Push devShell closure to Cachix
-
-      - name: Push devShell closure to Cachix
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           nix copy --to 'https://knirski-lm-bot.cachix.org' \
