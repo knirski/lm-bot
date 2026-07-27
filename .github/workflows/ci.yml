@@ -40,6 +40,11 @@ jobs:
       - name: Check formatting
         run: nix develop --command scalafmt --list --mode diff-ref=HEAD
 
+      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
+        run: nix flake check
+
+      - name: Push devShell closure to Cachix
+
       - name: Push devShell closure to Cachix
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
