@@ -81,7 +81,7 @@ sbt backend/testFull      # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
 ```
 
-In sbt 2, `test` **is** `testQuick`. It runs only what changed, judged by
+In sbt 2, bare `test` **is** `testQuick`. It runs only what changed, judged by
 content hashing against a global cache in `~/.cache/sbt/v2` that survives
 `clean` **and** deleting `target/`. Re-running it on an unchanged tree prints
 `Passed: Total 0` and `[success]`. That is correct behaviour and a trap: never

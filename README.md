@@ -82,11 +82,11 @@ The build runs on **sbt 2** (declared in `project/build.properties`); the sbt
 binary from the flake is only a launcher. Build output is centralised under
 `target/out/`.
 
-Use `testFull`, not `test`. In sbt 2, `test` is `testQuick`: it runs only what
-changed, judged by content hashing against a global cache in `~/.cache/sbt/v2`
+Use `testFull`, not `test`. In sbt 2, bare `test` is `testQuick`: it runs only
+what changed, judged by content hashing against a global cache in `~/.cache/sbt/v2`
 that survives `clean` and deleting `target/`. Re-running it on an unchanged tree
 prints `Passed: Total 0` and `[success]` — correct, but easy to misread as "the
-suite passed". `testFull` ignores the cache.
+suite passed". `testFull` runs the full suite unconditionally.
 
 If Testcontainers reports "Could not find a valid Docker environment", you are
 outside the devShell — that is where `DOCKER_HOST` gets pointed at Podman.
