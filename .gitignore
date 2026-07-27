@@ -15,6 +15,5 @@ result-*
 
 # local secrets and spike output (tokens, cookies)
 .env
-spike/out/
-spike/device-uuid
-spike/attempt-count
+spike/
+!spike/.gitkeep
