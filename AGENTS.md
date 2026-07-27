@@ -72,12 +72,12 @@ Every commit on `main` triggers a release via semantic-release. PR title must be
 
 `docs:`, `chore:`, `style:`, `refactor:`, `test:`, `ci:`, `build:` — no release unless a `BREAKING CHANGE:` footer exists.
 
-## Run tests with `Test/test`, never `test`
+## Run tests with `testFull`, never `test`
 
 ```bash
 nix flake check           # pre-commit hooks + Nix formatting
-sbt Test/test             # everything (96 tests)
-sbt backend/Test/test     # one module
+sbt testFull              # everything (96 tests)
+sbt backend/testFull      # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
 ```
 

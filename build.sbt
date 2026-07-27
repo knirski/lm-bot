@@ -144,6 +144,14 @@ lazy val backend = project
       "SESSION_TTL_DAYS"  -> sys.env.getOrElse("SESSION_TTL_DAYS",  "7")
     ),
 
+    // Watch frontend and shared sources too, so `~backend/run` restarts on
+    // any source change in the project — frontend, backend, or shared.
+    // (sharedJS and sharedJVM compile the same directory; we only need one.)
+    watchSources ++= Def.uncached(Def.task {
+      (frontend / Compile / unmanagedSources).value ++
+        (sharedJVM / Compile / unmanagedSources).value
+    }).value,
+
     // Package the linked frontend as classpath resources under `web/`, which is
     // where StaticRoutes looks (served at /assets). Without this the backend
     // serves index.html but 404s /assets/main.js, so the page loads blank —
