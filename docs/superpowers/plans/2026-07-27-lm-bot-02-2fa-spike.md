@@ -26,14 +26,17 @@
 
 ## Step 1: Set up the scratch harness
 
+The scripts below need `curl`, `jq` and `uuidgen`, all provided by the repository's flake devShell — run these from inside it (`direnv allow`, or `nix develop`) and nothing needs installing.
+
 - [ ] **Create the spike directory, outside the build**
 
 These files are throwaway and deliberately not part of the sbt project — nothing here graduates into production. Plan 3 transcribes the *findings* into fixtures, not this code.
 
 ```bash
 mkdir -p spike/out
-printf 'spike/out/\n' >> .gitignore
 ```
+
+The repository `.gitignore` already excludes `spike/out/`, `spike/device-uuid` and `spike/attempt-count`, so tokens and cookies cannot be committed by accident.
 
 - [ ] **Write the shared harness**
 

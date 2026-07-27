@@ -6,7 +6,39 @@
 
 **Architecture:** Three modules. `shared` cross-compiles to JVM and Scala.js and owns the domain types, the Tapir endpoint descriptions, and the jsoniter codecs — it is the single source of truth for the API contract. `backend` interprets those endpoints with tapir's `Identity` interpreter on a `com.sun.net.httpserver` server running a virtual-thread executor, talks to Postgres through Magnum over blocking JDBC, and serves the linked frontend as static resources. `frontend` is a Scala.js/Wasm Laminar app structured as Elm-on-Gears: one `Var[AppState]`, one `Channel[Msg]`, one event-loop fiber, pure `update`.
 
-**Tech Stack:** Scala 3.8.4, Gears 0.3.1, Tapir 1.13.29, sttp 3.11.0, jsoniter-scala 2.39.1, Laminar 17.2.1, Magnum 1.3.1, Flyway 11.8.2, PostgreSQL 17, MUnit 1.3.4, sbt 1.12.14, Scala.js 1.22.0.
+**Tech Stack:** Scala 3.8.4, Gears 0.3.1, Tapir 1.13.29, sttp 3.11.0, jsoniter-scala 2.39.1, Laminar 17.2.1, Magnum 1.3.1, Flyway 11.8.2, PostgreSQL 17, MUnit 1.3.4, **sbt 2.0.4**, Scala.js 1.22.0. Development environment from `flake.nix` + direnv.
+
+## Prerequisites
+
+`flake.nix` and `.envrc` already exist at the repository root and are the source of truth for the toolchain — Temurin 21, the sbt launcher, Node 26, Metals, scalafmt, `psql`, and the `curl`/`jq`/`uuidgen` the Plan 2 spike needs. Nothing in this plan installs tools by hand.
+
+- [ ] **Enter the shell**
+
+```bash
+direnv allow     # once per clone; or `nix develop` if you prefer it explicit
+```
+
+You should see the banner naming the JDK, sbt, and Node versions.
+
+- [ ] **Confirm a container runtime is reachable**
+
+The banner's `ctr` line must not be a warning. Testcontainers drives the Postgres used from Task 4 onward, and it speaks the Docker API.
+
+**On this project's dev machine that runtime is rootless Podman, not Docker.** Testcontainers does not discover Podman's socket by itself, so the devShell exports `DOCKER_HOST`, `TESTCONTAINERS_RYUK_DISABLED=true`, and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` when it finds `$XDG_RUNTIME_DIR/podman/podman.sock`. Without that, Task 4 fails with "Could not find a valid Docker environment". If the warning appears:
+
+```bash
+systemctl --user start podman.socket
+```
+
+Because Ryuk (Testcontainers' reaper) is disabled under rootless Podman, a hard-killed JVM can leave containers behind. `podman ps` after a crash; prune if needed.
+
+- [ ] **Sanity-check the toolchain**
+
+```bash
+node --version     # must be v26.x — Node 24/25 break Gears (spec §5.1)
+java -version      # 21
+sbt --script-version
+```
 
 ## Global Constraints
 
@@ -33,10 +65,11 @@ Every task's requirements implicitly include this section. Values are copied ver
 
 ```
 lm-bot/
+├── flake.nix                                   # ALREADY EXISTS — pins the whole toolchain
+├── .envrc                                      # ALREADY EXISTS — direnv: use flake
 ├── build.sbt                                   # cross-build, all three modules, pinned versions
-├── project/build.properties                    # sbt 1.12.14
-├── project/plugins.sbt                         # sbt-scalajs, sbt-crossproject
-├── .nvmrc                                      # node 26 — guards the V8 bug
+├── project/build.properties                    # sbt 2.0.4
+├── project/plugins.sbt                         # sbt-scalajs, sbt-assembly (no crossproject: no sbt 2 build)
 ├── .gitignore
 ├── docker-compose.yml                          # backend + postgres
 ├── Dockerfile                                  # builds frontend, then backend, then runs
@@ -106,13 +139,13 @@ lm-bot/
 ### Task 1: Cross-build skeleton and CI
 
 **Files:**
-- Create: `build.sbt`, `project/build.properties`, `project/plugins.sbt`, `.gitignore`, `.nvmrc`, `.github/workflows/ci.yml`
+- Create: `build.sbt`, `project/build.properties`, `project/plugins.sbt`, `.gitignore`, `.github/workflows/ci.yml`
 - Create: `shared/src/main/scala/lmbot/shared/BuildInfo.scala`
 - Test: `shared/src/test/scala/lmbot/shared/BuildInfoTest.scala`
 
 **Interfaces:**
 - Consumes: nothing (first task).
-- Produces: sbt projects `shared` (crossProject JVM+JS, aggregated as `sharedJVM` / `sharedJS`), `backend`, `frontend`. Object `lmbot.shared.BuildInfo` with `val name: String = "lm-bot"`.
+- Produces: sbt projects `sharedJVM` and `sharedJS` (two projects over one shared source directory), `backend`, `frontend`, plus a `jsDep` helper and a `wasmConfig` linker function used by both Scala.js projects. Object `lmbot.shared.BuildInfo` with `val name: String = "lm-bot"`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -136,29 +169,32 @@ Expected: FAIL — sbt cannot load the build (no `build.sbt`), or `BuildInfo` is
 `project/build.properties`:
 
 ```
-sbt.version=1.12.14
+sbt.version=2.0.4
 ```
 
-`project/plugins.sbt`:
+`project/plugins.sbt` — **two plugins, both carrying their weight.** sbt 2 resolves plugins as `_sbt2_3` artifacts; both of these publish one (verified on Maven Central):
 
 ```scala
-addSbtPlugin("org.scala-js"       % "sbt-scalajs"              % "1.22.0")
-addSbtPlugin("org.portable-scala" % "sbt-scalajs-crossproject" % "1.3.2")
-addSbtPlugin("com.eed3si9n"       % "sbt-assembly"             % "2.3.1")
+// Essential: there is no other way to build Scala.js.
+addSbtPlugin("org.scala-js" % "sbt-scalajs"  % "1.22.0")
+// Earns its place: produces the single fat jar the runtime image copies,
+// instead of shipping a classpath plus a coursier cache (Task 12).
+addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.4.1")
 ```
 
-sbt 1.x is used deliberately rather than sbt 2.x: `sbt-scalajs` and `sbt-crossproject` are published against sbt 1 as `_2.12_1.0` artifacts, and this build has no need for anything sbt 2 adds.
+**`sbt-crossproject` is deliberately absent — it is not published for sbt 2** (only `_2.12_1.0` exists). The cross-build is therefore hand-rolled below: two ordinary projects sharing one source directory, about six lines. That is a plugin the build is better off without, not a workaround.
 
-`.nvmrc` — Gears' own README warns that Node 24 and 25 carry a V8 bug that stack-overflows in nested async contexts, which Gears uses heavily:
+Two sbt-2 consequences that follow from dropping it, both verified by building a probe before this plan was written:
 
-```
-26
-```
+- **`%%%` is not available.** It comes from the crossproject plugin's auto-import, and sbt-scalajs on sbt 2 does not surface it — even with an explicit `import org.scalajs.sbtplugin.ScalaJSPlugin.autoImport.*`. Scala.js artifacts are named explicitly through a small `jsDep` helper. Both suffixes are pinned by this build anyway.
+- **Output lives under `target/out/`.** sbt 2 centralises build output as `target/out/{jvm,sjs1}/scala-3.8.4/<project>/`, not `<project>/target/scala-3.8.4/`. Task 12's Dockerfile depends on this.
+
+No `.nvmrc`: the Node version is pinned by `flake.nix` (see Prerequisites), and a second declaration would only drift from it.
 
 `build.sbt`:
 
 ```scala
-import org.scalajs.linker.interface.ModuleKind
+import org.scalajs.linker.interface.{ESVersion, ModuleKind}
 
 val scala3 = "3.8.4"
 
@@ -183,6 +219,12 @@ lazy val v = new {
   val testcontainers = "1.21.3"
 }
 
+/** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
+  * encodes Scala.js 1.x + Scala 3, both pinned by this build.
+  */
+def jsDep(org: String, artifact: String, version: String): ModuleID =
+  org % s"${artifact}_sjs1_3" % version
+
 lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
     "-deprecation",
@@ -191,27 +233,61 @@ lazy val commonSettings = Seq(
     "-Wunused:all",
     "-Xfatal-warnings",
     "-source:3.8"
-  ),
-  libraryDependencies += "org.scalameta" %%% "munit" % v.munit % Test
+  )
 )
 
-lazy val shared = crossProject(JVMPlatform, JSPlatform)
-  .crossType(CrossType.Pure)
-  .in(file("shared"))
-  .settings(commonSettings)
+// The shared module's real sources live in one place; the two platform projects
+// below both compile them. This is what sbt-crossproject would have generated,
+// written out by hand because it has no sbt 2 build.
+lazy val sharedSources    = Def.setting((ThisBuild / baseDirectory).value / "shared" / "src" / "main" / "scala")
+lazy val sharedTestSources = Def.setting((ThisBuild / baseDirectory).value / "shared" / "src" / "test" / "scala")
+
+lazy val sharedSettings = commonSettings ++ Seq(
+  Compile / unmanagedSourceDirectories += sharedSources.value,
+  Test / unmanagedSourceDirectories += sharedTestSources.value
+)
+
+lazy val sharedJVM = project
+  .in(file("shared/.jvm"))
+  .settings(sharedSettings)
   .settings(
     name := "lm-bot-shared",
     libraryDependencies ++= Seq(
-      "ch.epfl.lamp"                          %%% "gears"                 % v.gears,
-      "com.softwaremill.sttp.tapir"           %%% "tapir-core"            % v.tapir,
-      "com.softwaremill.sttp.tapir"           %%% "tapir-jsoniter-scala"  % v.tapir,
-      "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-core"   % v.jsoniter,
-      "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-macros" % v.jsoniter
+      "ch.epfl.lamp"                          %% "gears"                 % v.gears,
+      "com.softwaremill.sttp.tapir"           %% "tapir-core"            % v.tapir,
+      "com.softwaremill.sttp.tapir"           %% "tapir-jsoniter-scala"  % v.tapir,
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"   % v.jsoniter,
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % v.jsoniter,
+      "org.scalameta"                         %% "munit"                 % v.munit % Test
     )
   )
 
-lazy val sharedJVM = shared.jvm
-lazy val sharedJS  = shared.js
+lazy val sharedJS = project
+  .in(file("shared/.js"))
+  .enablePlugins(ScalaJSPlugin)
+  .settings(sharedSettings)
+  .settings(
+    name := "lm-bot-shared-js",
+    libraryDependencies ++= Seq(
+      jsDep("ch.epfl.lamp", "gears", v.gears),
+      jsDep("com.softwaremill.sttp.tapir", "tapir-core", v.tapir),
+      jsDep("com.softwaremill.sttp.tapir", "tapir-jsoniter-scala", v.tapir),
+      jsDep("com.github.plokhotnyuk.jsoniter-scala", "jsoniter-scala-core", v.jsoniter),
+      jsDep("com.github.plokhotnyuk.jsoniter-scala", "jsoniter-scala-macros", v.jsoniter),
+      jsDep("org.scalameta", "munit", v.munit) % Test
+    ),
+    scalaJSLinkerConfig ~= wasmConfig
+  )
+
+/** Gears on Scala.js needs the WebAssembly backend so JSPI can suspend (spec
+  * §5.1). Wasm implies ES modules *and* at least ES2022 — the linker refuses
+  * outright otherwise, with "The WebAssembly backend requires ECMAScript 2022
+  * or later". `withUseWebAssembly` is the current spelling;
+  * `withExperimentalUseWebAssembly` is deprecated as of Scala.js 1.22.0.
+  */
+lazy val wasmConfig: org.scalajs.linker.interface.StandardConfig => org.scalajs.linker.interface.StandardConfig =
+  _.withModuleKind(ModuleKind.ESModule)
+    .withESFeatures(_.withESVersion(ESVersion.ES2022).withUseWebAssembly(true))
 
 lazy val backend = project
   .in(file("backend"))
@@ -229,6 +305,7 @@ lazy val backend = project
       "com.zaxxer"                   % "HikariCP"             % v.hikari,
       "de.mkammerer"                 % "argon2-jvm"           % v.argon2,
       "ch.qos.logback"               % "logback-classic"      % v.logback,
+      "org.scalameta"                %% "munit"                % v.munit          % Test,
       "org.testcontainers"           % "postgresql"           % v.testcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core"               % v.sttp           % Test
     ),
@@ -245,22 +322,18 @@ lazy val frontend = project
   .settings(
     name := "lm-bot-frontend",
     scalaJSUseMainModuleInitializer := true,
-    // Gears on Scala.js requires the WebAssembly backend (which implies ES modules)
-    // so that JSPI can suspend. See spec 5.1.
-    scalaJSLinkerConfig ~= {
-      _.withExperimentalUseWebAssembly(true)
-        .withModuleKind(ModuleKind.ESModule)
-    },
-    jsEnv := {
-      import org.scalajs.jsenv.nodejs.NodeJSEnv
-      new NodeJSEnv(NodeJSEnv.Config().withArgs(List("--experimental-wasm-jspi")))
-    },
+    scalaJSLinkerConfig ~= wasmConfig,
+    // No jsEnv override. Node 26 enables JSPI by default (WebAssembly.Suspending
+    // is present with no flags) and *rejects* `--experimental-wasm-jspi` with
+    // "node: bad option", so passing that flag would break every test.
+    // flake.nix pins Node 26, so the default jsEnv is already correct.
     libraryDependencies ++= Seq(
-      "ch.epfl.lamp"                %%% "gears"              % v.gears,
-      "com.raquo"                   %%% "laminar"            % v.laminar,
-      "org.scala-js"                %%% "scalajs-dom"        % v.scalajsDom,
-      "com.softwaremill.sttp.tapir" %%% "tapir-sttp-client"  % v.tapir,
-      "com.softwaremill.sttp.client3" %%% "core"             % v.sttp
+      jsDep("ch.epfl.lamp", "gears", v.gears),
+      jsDep("com.raquo", "laminar", v.laminar),
+      jsDep("org.scala-js", "scalajs-dom", v.scalajsDom),
+      jsDep("com.softwaremill.sttp.tapir", "tapir-sttp-client", v.tapir),
+      jsDep("com.softwaremill.sttp.client3", "core", v.sttp),
+      jsDep("org.scalameta", "munit", v.munit) % Test
     )
   )
 
@@ -309,6 +382,8 @@ If `fastLinkJS` fails on the Wasm backend, that is the risk called out in spec �
 
 `.github/workflows/ci.yml`:
 
+CI runs everything **inside the same flake devShell** used locally. That parity is worth more here than on an average project: the stack depends on an exact Node major, a JSPI-capable runtime, and a Scala.js Wasm linker, and "works on my machine" would otherwise be a real failure mode.
+
 ```yaml
 name: CI
 
@@ -318,54 +393,47 @@ on:
 
 jobs:
   build:
+    # GitHub's runners ship a working Docker, which Testcontainers finds on its
+    # own. No postgres service is declared: Testcontainers starts its own.
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: lmbot
-          POSTGRES_PASSWORD: lmbot
-          POSTGRES_DB: lmbot_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Cache sbt and coursier
+        uses: actions/cache@v4
         with:
-          distribution: temurin
-          java-version: '21'
-          cache: sbt
+          path: |
+            ~/.cache/coursier
+            ~/.sbt
+          key: ${{ runner.os }}-sbt-${{ hashFiles('build.sbt', 'project/**') }}
 
-      - uses: sbt/setup-sbt@v1
-
-      # Node 26+: Node 24/25 ship a V8 bug that stack-overflows in the
-      # nested async contexts Gears relies on.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26'
-
+      # The devShell supplies the JDK, the sbt launcher and Node 26. It only
+      # overrides DOCKER_HOST when a Podman socket exists, so on this runner it
+      # correctly falls through to the host Docker.
       - name: Compile everything
-        run: sbt compile Test/compile
+        run: nix develop --command sbt compile Test/compile
 
       - name: Test
-        run: sbt test
+        run: nix develop --command sbt test
 
       - name: Link frontend (Wasm)
-        run: sbt frontend/fullLinkJS
+        run: nix develop --command sbt frontend/fullLinkJS
+
+      - name: Check formatting
+        run: nix develop --command scalafmt --list --mode diff-ref=HEAD
 ```
+
+`scalafmt` comes from the devShell rather than an sbt plugin — same result, one fewer plugin. Add a `.scalafmt.conf` with `version = 3.11.4` and `runner.dialect = scala3` when you first run it.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add build.sbt project .gitignore .nvmrc .github shared
+git add build.sbt project .gitignore .github shared
 git commit -m "build: cross-compiled sbt skeleton with Wasm frontend and CI"
 ```
 
@@ -1033,7 +1101,9 @@ class SessionRepo(xa: Transactor):
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `sbt "backend/testOnly lmbot.backend.UserRepoTest lmbot.backend.SessionRepoTest"`
-Expected: PASS — 9 tests. Docker must be running for Testcontainers.
+Expected: PASS — 9 tests.
+
+A container runtime must be reachable. If this fails with "Could not find a valid Docker environment", you are outside the devShell — it is what points Testcontainers at rootless Podman (see Prerequisites). Re-enter with `direnv allow` or `nix develop` and confirm `$DOCKER_HOST` is set.
 
 - [ ] **Step 6: Commit**
 
@@ -3041,6 +3111,7 @@ lazy val backend = project
       "com.zaxxer"                   % "HikariCP"             % v.hikari,
       "de.mkammerer"                 % "argon2-jvm"           % v.argon2,
       "ch.qos.logback"               % "logback-classic"      % v.logback,
+      "org.scalameta"                %% "munit"                % v.munit          % Test,
       "org.testcontainers"           % "postgresql"           % v.testcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core"               % v.sttp           % Test
     ),
@@ -3106,14 +3177,23 @@ COPY backend backend
 COPY frontend frontend
 # backend/assembly triggers frontend/fullLinkJS through the resourceGenerators
 # wiring added in Step 4, so the app is bundled into the jar.
-RUN sbt backend/assembly
+#
+# sbt 2 centralises output under target/out/jvm/scala-3.8.4/<project>/, not
+# <project>/target/. Rather than hardcode a layout that sbt may reorganise
+# again, find the artifact and normalise its name here.
+RUN sbt backend/assembly \
+ && find target -name 'lm-bot-backend-assembly-*.jar' -print -quit \
+      | xargs -I{} cp {} /build/lm-bot.jar \
+ && test -s /build/lm-bot.jar
 
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
-COPY --from=build /build/backend/target/scala-3.8.4/lm-bot-backend-assembly-*.jar /app/lm-bot.jar
+COPY --from=build /build/lm-bot.jar /app/lm-bot.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/lm-bot.jar"]
 ```
+
+The `test -s` matters: without it a layout change would silently produce an image containing no jar, and you would only find out at `docker run`.
 
 `docker-compose.yml`:
 
@@ -3178,6 +3258,8 @@ POSTGRES_PASSWORD=devpassword ADMIN_USERNAME=admin ADMIN_PASSWORD=devadminpw \
   docker compose up --build -d
 ```
 
+On this dev machine `docker` is Podman, so that is `podman compose` under the hood; if the subcommand is unavailable, use `podman compose` explicitly or install a compose provider. The compose file itself is runtime-agnostic.
+
 Then check each of these:
 
 ```bash
@@ -3226,21 +3308,36 @@ Plan 1 of 6 complete: foundation and authentication. No Luxmed integration yet.
 
 ## Requirements
 
-- JDK 21+
-- Docker (for tests and deployment)
-- Node 26+ — Node 24 and 25 contain a V8 bug that breaks Gears' nested async
-  contexts
-- A JSPI-capable browser (recent Chrome or Firefox) — the frontend is compiled
-  to WebAssembly
+- **Nix with flakes**, and ideally **direnv** (plus `nix-direnv` for caching).
+  The flake pins everything else: Temurin 21, the sbt launcher, Node 26,
+  Metals, scalafmt, `psql`.
+- **A container runtime on the host** — rootless Podman or Docker. A devShell
+  cannot provide one. Testcontainers needs it for the backend tests; the
+  devShell wires it up for Podman automatically.
+- **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
+  to WebAssembly.
+
+Node's version is not a preference: Node 24 and 25 contain a V8 bug that
+stack-overflows in the nested async contexts Gears relies on. The flake pins
+Node 26 so this cannot drift.
 
 ## Development
 
 ```bash
-sbt test                  # everything; needs Docker for Testcontainers
+direnv allow              # once; or `nix develop`
+
+sbt test                  # everything; needs a container runtime
 sbt backend/test          # backend only
 sbt frontend/test         # pure frontend logic, no DOM
 sbt frontend/fastLinkJS   # link the frontend to Wasm
 ```
+
+The build runs on **sbt 2** (declared in `project/build.properties`); the sbt
+binary from the flake is only a launcher. Build output is centralised under
+`target/out/`.
+
+If Testcontainers reports "Could not find a valid Docker environment", you are
+outside the devShell — that is where `DOCKER_HOST` gets pointed at Podman.
 
 ## Configuration
 
@@ -3299,6 +3396,7 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 
 ## Definition of done for Plan 1
 
+- [ ] `nix develop --command true` succeeds from a clean clone, and the banner reports Node 26.x and a reachable container runtime.
 - [ ] `sbt test` is green, including Testcontainers-backed Postgres tests.
 - [ ] `sbt frontend/fullLinkJS` produces Wasm output.
 - [ ] CI passes on a pushed branch.

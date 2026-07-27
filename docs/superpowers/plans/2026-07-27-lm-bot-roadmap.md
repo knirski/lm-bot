@@ -45,6 +45,15 @@ The `lock → validate → confirm or release` sequence from the amended §3.4, 
 ### Plan 7 — Hardening & ops
 Admin user management UI; password change and reset; the remaining error surfaces and empty states; structured logging review with a secret-masking audit; ops notifications to admin; docker-compose and deployment documentation polish; a pass over accessibility and responsive layout.
 
+## Development environment
+
+`flake.nix` + `.envrc` at the repository root pin the entire toolchain (Temurin 21, sbt launcher, Node 26, Metals, scalafmt, `psql`, and the spike's `curl`/`jq`/`uuidgen`). Every plan assumes you are inside that shell; CI runs the same shell via `nix develop`, so local and CI cannot diverge — which matters more than usual given the stack's dependence on an exact Node major and a JSPI-capable runtime.
+
+Two things the flake deliberately does **not** provide:
+
+- **A container runtime.** That is a host service. On this dev machine it is rootless Podman, which Testcontainers cannot discover unaided, so the devShell exports `DOCKER_HOST` and disables Ryuk when it finds the Podman socket.
+- **sbt itself, in the version that matters.** The nixpkgs `sbt` is only a launcher; `project/build.properties` declares **sbt 2.0.4**, which the launcher starts.
+
 ## Conventions that apply to every plan
 
 These come from spec §5.7 and are not repeated in each task:

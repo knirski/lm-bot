@@ -1,0 +1,20 @@
+# sbt 2 centralises build output under target/out/
+target/
+project/target/
+project/project/
+.bsp/
+.metals/
+.bloop/
+node_modules/
+*.log
+
+# nix / direnv
+.direnv/
+result
+result-*
+
+# local secrets and spike output (tokens, cookies)
+.env
+spike/out/
+spike/device-uuid
+spike/attempt-count
