@@ -25,7 +25,7 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 ## 2. Users & deployment model
 
 - **Self-hosted, family scale.** One admin runs the instance for themself plus family/friends; tens of users at most.
-- **Admin-created accounts.** The first user is bootstrapped as admin; the admin creates and disables accounts. No self-registration, no email verification, no password reset flow in v1 (admin resets passwords).
+- **Admin-created accounts.** On first start with an empty `users` table, the admin account is created from `ADMIN_USERNAME`/`ADMIN_PASSWORD` env vars; the admin creates and disables further accounts. No self-registration, no email verification, no password reset flow in v1 (admin resets passwords).
 - **Roles:** `admin` (user management + ops notifications) and `user`. Admin does **not** see other users' monitors or Luxmed accounts.
 - Deployed via docker-compose (backend + Postgres) behind the operator's own HTTPS reverse proxy.
 
@@ -59,6 +59,7 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 - Linking: settings page shows a one-time deep-link (`t.me/<bot>?start=<code>`); the bot receives `/start <code>` via long polling and the backend stores the chat id. This is the only inbound Telegram interaction in v1 (no public webhook).
 - Notification types: new slots found, auto-book success/failure, Luxmed account auth failure (once, with monitors paused), monitor completed/expired. Version-rejection errors from Luxmed notify the **admin** (ops event).
 - Per-monitor dedup: a given slot is notified at most once (keyed by slot identity within a lookback window).
+- A user without a linked Telegram chat can still run monitors: events are logged and visible in the UI, and the UI warns that no notifications will be delivered. Auto-booking works regardless.
 
 ## 4. Future versions (designed-for, not built)
 
@@ -117,6 +118,7 @@ lm-bot/
 | `bookings` | v1-minimal record of auto-booked appointments (reservation id, slot details, monitor id) |
 
 Rules:
+- All Luxmed-facing dates and times (slot times, monitor date ranges, time-of-day windows) are interpreted in `Europe/Warsaw`, regardless of server or browser time zone.
 - Every resource is reachable only through its owning user; ownership checked in the service layer on every operation.
 - Deleting a Luxmed account cascades to its monitors (UI confirms first).
 - Luxmed JWTs live in memory only.
@@ -139,6 +141,7 @@ Rules:
   - Transient (network, 5xx): exponential backoff within the loop.
   - Auth failure: mark account `auth_failed`, pause its monitors, notify owner once.
   - Version rejection: notify admin.
+  - Persistent unexpected errors (repeated decode failures or check crashes beyond the retry budget): monitor → `failed`, owner notified once; resuming it is a manual action in the UI.
   - A crashing check kills only its own fiber, never the supervisor.
 - State transitions are persisted; restart resumes the active set exactly. Single process, no distributed coordination.
 
@@ -191,7 +194,7 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 ## 9. Observability & ops
 
 - Structured logging (slf4j/logback), `/health` endpoint, monitor status visible in the UI. No metrics stack in v1.
-- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string.
+- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty).
 - docker-compose: backend container (API + static frontend) + Postgres.
 
 ## 10. Risks
@@ -199,6 +202,6 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 | Risk | Mitigation |
 |---|---|
 | Luxmed API changes without notice | Configurable app version; decode failures logged with raw payloads; admin notified on version rejection; mock-server fixtures document current behavior |
-| Gears is experimental; Scala.js Wasm/JSPI browser support | Gears confined behind small seams; documented frontend fallback to `Future` at the HTTP boundary |
+| Gears is experimental; Scala.js Wasm/JSPI browser support | Documented frontend fallback (§5.1): swap the effect runner to `Future`; `update`, views, and the backend are unaffected |
 | Aggressive polling triggers Luxmed countermeasures | Per-account rate limiting + mutex, jittered intervals, browser-like headers |
 | Auto-booking books the wrong thing | Strict filter re-validation before lock; payment/referral services excluded; full details in notification; bookings recorded and visible |
