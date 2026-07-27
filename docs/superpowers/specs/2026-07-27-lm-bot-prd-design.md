@@ -1,7 +1,7 @@
 # lm-bot — Product Requirements Document
 
 **Date:** 2026-07-27
-**Status:** Approved design, pre-implementation. Amended 2026-07-27 twice: first after verifying the API against a working client (§5.4), then to incorporate Luxmed's new two-factor authentication (§3.2, §5.3, §5.4, §5.5, §3.5, §6, §10).
+**Status:** Approved design. Plan 1 (foundation) implemented; Plan 2 (API spike) complete. Amended three times on 2026-07-27: after verifying the API against a working client (§5.4); to add a two-factor design; and then — once the spike measured the real API — to **remove most of that two-factor design as unreachable** and replace it with the refresh-token-rotation requirements the spike did find (§3.2, §5.3, §5.4, §5.5, §3.5, §10).
 **Predecessors:**
 - [dyrkin/luxmed-bot](https://github.com/dyrkin/luxmed-bot) — feature reference **and the authoritative source for Luxmed request/response shapes, endpoint paths, and the auth/XSRF flow**. It is a live, working Scala client.
 - [knirski/lmassist](https://github.com/knirski/lmassist) — prototype; source of the narrative API research (`docs/backend-plan/02-luxmed-api-research.md`), the domain dictionary, and the mock-server *approach*.
@@ -44,21 +44,30 @@ The Luxmed API is unofficial and reverse-engineered (from the mobile app `pl.lux
 
 - A user links 1..n Luxmed accounts, each with a label (e.g. "Krzysiek", "Mom").
 - Credentials are verified by a live login at link time and stored encrypted (AES-256-GCM, server master key from env).
-- Account status surfaced in UI: `active` / `awaiting_2fa` / `auth_failed` / `disabled`.
+- Account status surfaced in UI: `active` / `auth_failed` / `disabled`. `auth_failed` carries a **reason** shown to the user, so "wrong password" and "Luxmed wants something from you" are never conflated (see below).
+- Linking is a **single live login**. There is no multi-step enrollment.
 
-**Two-factor authentication (added 2026-07-27).** Luxmed now requires a second factor — a one-time code by SMS or email, or a confirmation tap in the Portal Pacjenta app. **The challenge fires only for devices Luxmed does not recognise**, and Luxmed maintains a per-user trusted-device list. That single fact is what keeps unattended monitoring possible, and the whole design turns on it:
+**Two-factor authentication: not enforced on the API this project uses (verified 2026-07-27).**
 
-1. lm-bot generates a **stable device identity per linked Luxmed account** at link time and persists it. It is presented on every subsequent request for that account and never regenerated.
-2. The first login from that identity raises a challenge. Linking therefore becomes a **two-step, stateful flow**: submit credentials → Luxmed challenges → user supplies the code → lm-bot completes the login. The account sits in `awaiting_2fa` between the steps.
-3. Once a challenge is completed, the device is trusted and later logins for that account proceed unattended.
+An earlier revision of this spec designed a full 2FA enrollment flow — stable device enrollment, an `awaiting_2fa` account state, two-step linking, and one-time codes relayed over Telegram. The Plan 2 spike measured the real API and found none of it is reachable ([the analysis report](../reports/2026-07-27-luxmed-api-analysis.md)):
 
-Consequences that are easy to get wrong:
+| Observation | Old mobile API (our target) | New web API |
+|---|---|---|
+| Login challenged? | No | No |
+| `mfadevicestatus` in JWT | `"Trusted"` — always | `"Untrusted"`, and login still succeeds |
+| Device identity validated? | **No** — any UUID works, including a fresh random one | `PatientPortalDeviceId` cookie, tracked but not gating |
+| `HasAccessToMFA` toggle | Present in the JWT, not enforced | Present, not enforced |
 
-- **Losing the device identity means re-enrolling.** It is the most important thing in the database to preserve — more so than the session. A regenerated identity presents as a new device and triggers a fresh challenge. Any code path that recreates it silently is a bug.
-- **`awaiting_2fa` is not `auth_failed`.** Reporting a challenge as an authentication failure invites the user to retype credentials that were always correct — the same failure mode called out for account lockout in §10. The two states have different causes, different UI, and different remedies.
-- **A challenge can also appear mid-life**, not only at linking: trust may be revoked or expire server-side. The engine must handle a challenge arriving at any login (§5.5), not just the first.
+That machinery is therefore **cut**. Building an enrollment subsystem for a challenge that never arrives would be speculative complexity in the most security-sensitive part of the app, and it would be untestable — there is no way to exercise a flow the server never initiates.
 
-The predecessor projects have not solved this: [luxmed-bot#113](https://github.com/dyrkin/luxmed-bot/issues/113) has been open and unfixed since 2026-06-25, with the bot simply receiving a 401. It hardcodes a device UUID but cannot complete a challenge, so its device is never enrolled — a stable identity alone is insufficient. There is consequently **no reference implementation to port for this flow**, which is why the exact wire mechanics are established by a dedicated spike before implementation (§5.4, and Plan 2 of the roadmap).
+**What is kept, and why:**
+
+- **A stable device UUID per linked account**, persisted. Not because trust depends on it — it demonstrably does not — but because it is one column, it keeps the `Custom-User-Agent` header plausible, and a value that changed on every request would be the kind of thing risk-scoring notices. Losing it is a non-event; regenerating it is not a bug.
+- **An explicit "unexpected auth response" failure path.** If Luxmed ever does challenge — MFA appears to be account-level opt-in, so another user's account may behave differently, and policy can change — the client must classify it distinctly, not as bad credentials. It sets `auth_failed` with a reason naming what happened, pauses that account's monitors, and notifies the owner that manual attention is needed. **If this fires, stop and design the real flow against the recorded payload rather than guessing** — that is what the earlier revision got wrong.
+
+Reporting a challenge as "wrong password" is the failure worth guarding against: it invites the user to retype credentials that were always correct, and repeated login attempts are exactly what triggers the fair-use lockout in §10.
+
+**Caveats on the evidence.** One account, three login attempts, one day. It establishes that MFA is not *mandatory* on the mobile API; it does not establish that no account can have it enabled. Hence the failure path above rather than an assumption of absence.
 
 ### 3.3 Monitors
 - **Create** via a guided flow driven by live Luxmed dictionaries: city → service/variant → optional facilities → optional doctors; plus date range, time-of-day window, days-of-week, auto-book toggle, check interval (**default 10 min, minimum 5 min enforced in validation** — see the fair-use risk in §10).
@@ -85,9 +94,8 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 ### 3.5 Telegram notifications
 - `NotificationChannel` trait; v1 ships one implementation: Telegram Bot API via plain sttp POST (no bot framework dependency).
 - Linking: settings page shows a one-time deep-link (`t.me/<bot>?start=<code>`); the bot receives `/start <code>` via long polling and the backend stores the chat id.
-- **Inbound Telegram also accepts a two-factor code** (§3.2). When an account is challenged mid-life, the owner is notified and can reply with the code directly, rather than having to open the web UI — a challenge at an inconvenient hour would otherwise stall every monitor on that account until someone reached a browser. Codes are accepted only from the linked chat, only while that user has an account in `awaiting_2fa`, and only within a short window. Both inbound interactions still arrive by long polling; there is no public webhook in v1.
-- Notification types: new slots found, auto-book success/failure, Luxmed account auth failure (once, with monitors paused), **two-factor code required (once per challenge, with monitors paused)**, monitor completed/expired. Version-rejection errors from Luxmed notify the **admin** (ops event).
-- A user with no Telegram linked supplies codes through the web UI instead; the challenge is visible on the accounts page regardless of channel.
+- `/start <code>` remains the **only** inbound Telegram interaction in v1 (no public webhook). An earlier revision added inbound one-time-code relay for 2FA; that is cut along with the rest of the enrollment design (§3.2).
+- Notification types: new slots found, auto-book success/failure, Luxmed account auth failure (once, with monitors paused, **naming the reason** so a challenge or a lockout is not reported as a bad password), monitor completed/expired. Version-rejection errors from Luxmed notify the **admin** (ops event).
 - Per-monitor dedup: a given slot is notified at most once (keyed by slot identity within a lookback window).
 - A user without a linked Telegram chat can still run monitors: events are logged and visible in the UI, and the UI warns that no notifications will be delivered. Auto-booking works regardless.
 
@@ -162,7 +170,7 @@ lm-bot/
 |---|---|
 | `users` | id, username, display name, Argon2id hash, role, telegram chat id (nullable), disabled, timestamps |
 | `sessions` | token hash (opaque token in cookie), user id, expiry, created-at; revocation = row delete |
-| `luxmed_accounts` | id, owner user id, label, Luxmed username, AES-GCM-encrypted password, status, last successful login, **stable device identity, AES-GCM-encrypted persisted session (access + refresh token, JWT, cookie jar), pending-challenge state** |
+| `luxmed_accounts` | id, owner user id, label, Luxmed username, AES-GCM-encrypted password, status, status reason, last successful login, stable device UUID, AES-GCM-encrypted persisted session (access token, **rotating** refresh token, expiry, JWT, cookie jar) |
 | `monitors` | id, luxmed account id, criteria (city/service/facility/doctor ids + denormalized names), date range, time window, days-of-week mask, auto-book flag, state, check interval, timestamps |
 | `monitor_events` | append-only per-monitor log: slots found, notification sent, booking attempted/succeeded/failed, error; powers detail view and slot dedup |
 | `bookings` | v1-minimal record of auto-booked appointments (reservation id, slot details, monitor id) |
@@ -171,9 +179,10 @@ Rules:
 - All Luxmed-facing dates and times (slot times, monitor date ranges, time-of-day windows) are interpreted in `Europe/Warsaw`, regardless of server or browser time zone.
 - Every resource is reachable only through its owning user; ownership checked in the service layer on every operation.
 - Deleting a Luxmed account cascades to its monitors (UI confirms first).
-- A Luxmed session is **more than a JWT**: it is `(accessToken, tokenType, refreshToken, jwtToken, cookieJar)`. The cookie jar is accumulated across all three auth steps and must be replayed on every subsequent call, merged with XSRF cookies for reservation operations (§5.4).
-- **The session and the device identity are persisted, encrypted** (AES-256-GCM, same master key as credentials). This reverses the pre-2FA design, which kept the session in memory only. The reason is §3.2: a login from an unrecognised device raises a challenge that needs a human, so a process restart that discarded sessions and device identities would demand a code for every account on every deploy. Persisting them makes restart resume silently, as §5.5 requires.
-- The device identity is written once at link time and thereafter only read. Rotating it is never automatic and always costs a fresh challenge.
+- A Luxmed session is **more than a JWT**: it is `(accessToken, tokenType, refreshToken, expiresAt, jwtToken, cookieJar)`. The token endpoint itself sets no auth cookies — only Imperva WAF ones — but `LogInToApp` and the `NewPortal/*` calls do, so the jar is accumulated across the auth steps and replayed on every subsequent call, merged with XSRF cookies for reservation operations (§5.4).
+- **The session is persisted, encrypted** (AES-256-GCM, same master key as credentials), reversing the original in-memory-only rule. The reason is no longer 2FA (§3.2) but something firmer: **the refresh token is single-use and rotates on every refresh.** A process that lost its stored session could only recover by a fresh password grant, and repeated password logins are what trip the fair-use lockout in §10. Persisting also lets restart resume silently, as §5.5 requires.
+- **The stored session must be updated atomically on every refresh.** Losing the newly issued refresh token while the old one is already consumed breaks the chain irretrievably and forces a password re-login. This is the single most delicate piece of state in the system.
+- The device UUID is persisted for stability, not for trust (§3.2). It is written at link time and read thereafter; regenerating it has no observed consequence.
 
 ### 5.4 Luxmed client
 
@@ -193,19 +202,18 @@ Rules:
 
 Authenticated `NewPortal/*` calls then use header `authorization-token: Bearer <jwt>` plus the cookie jar.
 
-**Device identity.** `Custom-User-Agent` has the form `Patient Portal; {appVersion}; {deviceUuid}; Android; {apiLevel}; {deviceName}`. The `deviceUuid` is **not** a per-session random value: it is the account's persisted device identity (§3.2), stable for the lifetime of the link. lmassist regenerated it per session, which would present as an unknown device on every login and guarantee a challenge every time — do not copy that. Only `appVersion` comes from env; the UUID comes from the database.
+**Device identity.** `Custom-User-Agent` has the form `Patient Portal; {appVersion}; {deviceUuid}; Android; {apiLevel}; {deviceModel}`. The `deviceUuid` is the account's persisted value (§5.3) rather than a fresh random one per request — stability is hygiene, not a trust requirement, since the spike showed the UUID is not validated at all. `appVersion` comes from env; **`4.44.0` is the floor**, because the refresh grant rejects `4.42.0` even though the password grant accepts it.
 
-**Two-factor challenge.** Since 2026 a login from an unrecognised device is challenged, and the exact wire mechanics are **not documented anywhere and not implemented by any predecessor project** (§3.2). They are therefore established empirically before this client is built. The spike (Plan 2 of the roadmap) must answer, with recorded payloads:
+**Session maintenance is the delicate part.** Verified behaviour:
 
-1. Which step raises the challenge (`POST /token`, or `LogInToApp`), and what the response is — status code, body shape, and any challenge/transaction identifier to carry into the verification call.
-2. Which endpoint verifies the code, with what body, and what it returns on success and on a wrong or expired code.
-3. Whether the method (SMS / email / mobile-app tap) is chosen by the client or dictated by the account's settings, and how a mobile-app confirmation is polled rather than typed.
-4. Which field actually establishes device identity — the `Custom-User-Agent` UUID, the `account_id` / `client_id` in the token request, a long-lived cookie, or a combination.
-5. Whether `grant_type=refresh_token` renews a session without a challenge, and how long trust survives across process restarts, IP changes, and elapsed time.
+- Access token TTL is ~600 s. Refresh **proactively at ~300 s**; do not wait for a 401.
+- `grant_type=refresh_token` (form-encoded, with `client_id=Android`) returns a new access token **and a new refresh token**. The old refresh token is consumed — it is single-use.
+- Reusing a consumed refresh token returns `401` with `ErrorCode: 1`, "You have been logged out due to inactivity."
+- Therefore the stored session must be written **atomically** with each refresh (§5.3). A crash between "old token consumed" and "new token stored" costs a password re-login, and password logins are the rationed operation (§10).
+- A refresh that cannot be recovered falls back to a full password grant. If *that* returns anything challenge-shaped, classify it as an unexpected auth response (§3.2) rather than bad credentials.
 
-Until those are recorded, the client's 2FA code is not written. Everything else in this section is already pinned down and can proceed independently.
+**Two-factor authentication is not enforced on this API** — established by the Plan 2 spike, with the evidence and caveats in §3.2. No enrollment flow is implemented; a single distinct failure path covers the possibility that it appears.
 
-**Session maintenance.** The access token is short-lived (`expires_in` is around 600 seconds). The session is refreshed **proactively on a timer**, not lazily on a 401, because a 401 now means "possibly challenged" rather than merely "expired", and the cheapest challenge is the one never triggered. A refresh failure downgrades to a full re-login; a challenge during that re-login moves the account to `awaiting_2fa` (§5.5).
 
 **XSRF is required for every reservation-mutating call.** `GET {newApi}/security/getforgerytoken` returns a token and its own cookies. `reservation/lockterm`, `reservation/confirm`, `reservation/changeterm`, and `reservation/releaseterm` each need the `xsrf-token` header **and** the session cookies merged with the XSRF cookies. Read-only endpoints do not.
 
@@ -239,8 +247,7 @@ Until those are recorded, the client's 2FA code is not written. Everything else 
 - Intervals are per-monitor with ±20% random jitter; monitors sharing a Luxmed account queue behind its rate limiter rather than running concurrently.
 - Failure policy:
   - Transient (network, 5xx): exponential backoff within the loop.
-  - Auth failure (credentials rejected): mark account `auth_failed`, pause its monitors, notify owner once.
-  - **Two-factor challenge:** mark account `awaiting_2fa`, pause its monitors, notify the owner once with a prompt to supply the code. Monitors resume automatically the moment the challenge is completed — no manual resume, because the user has already acted. This is distinct from `auth_failed`: the credentials are fine and asking the user to re-enter them would be actively misleading (§3.2).
+  - Auth failure: mark account `auth_failed`, pause its monitors, notify owner once — **with the reason**, since the remedy differs. Credentials rejected means retype them; an unexpected challenge-shaped response (§3.2) or a suspected fair-use lockout (§10) means do *not* retype them, because repeated login attempts make a lockout worse. The status carries a reason string precisely so the notification and the UI can say which it was.
   - Version rejection: notify admin.
   - Persistent unexpected errors (repeated decode failures or check crashes beyond the retry budget): monitor → `failed`, owner notified once; resuming it is a manual action in the UI.
   - A crashing check kills only its own fiber, never the supervisor.
@@ -304,8 +311,9 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 
 | Risk | Mitigation |
 |---|---|
-| **Two-factor authentication blocks unattended login.** Luxmed added MFA in 2026; it fires for unrecognised devices and returns a 401 to naive clients. No predecessor project has solved it ([luxmed-bot#113](https://github.com/dyrkin/luxmed-bot/issues/113), open since 2026-06-25), so there is no implementation to port. | Challenges fire **only for unknown devices**, so a stable per-account device identity plus one completed enrollment yields unattended operation thereafter (§3.2). Device identity and session are persisted encrypted so restarts do not re-trigger challenges. Wire mechanics are established by a spike (Plan 2) before any 2FA code is written. Residual risk: if Luxmed later expires device trust aggressively, monitoring degrades to bursts around each re-authorisation — that would be re-planned, not worked around. |
-| Losing a device identity silently re-triggers 2FA for an account | Identity is written once at link time and thereafter read-only; never regenerated on a code path that can run unattended; covered by tests asserting stability across restart |
+| **MFA could be enabled per-account.** The Plan 2 spike found no enforcement on the mobile API, but `HasAccessToMFA` exists as a feature toggle and MFA appears to be account-level opt-in, so another user's account may behave differently — and Luxmed can change policy. | No enrollment flow is built (§3.2); instead a challenge-shaped response is classified distinctly, sets `auth_failed` with a reason, pauses that account's monitors, and asks the owner for manual attention. If it ever fires, the flow gets designed against the recorded payload. This is deliberately less than the earlier revision specified — building an untestable enrollment subsystem for an unreachable code path was the greater risk. |
+| **The old mobile API is showing deprecation signals.** `POST /token` answers a stale `APP_VERSION` with a 409 saying the app "is not supported by the new Patient Portal system", and the web API is the platform's direction. | `APP_VERSION` is env-configurable so a bump needs no redeploy (§5.4); decode failures are logged with raw payloads; the admin is notified on version rejection. Migration to the web API's cookie-based auth is an architectural change, documented in the analysis report and monitored rather than pre-built. |
+| **Refresh-token rotation breaks the session if a write is lost.** The refresh token is single-use; reuse returns 401 and the chain cannot be recovered. | Store the session atomically on every refresh (§5.3), refresh at ~300 s against a ~600 s TTL, and fall back to a password grant — which is rationed, so this must be rare rather than routine. |
 | Luxmed API changes without notice | Configurable app version; decode failures logged with raw payloads; admin notified on version rejection; mock-server fixtures document current behavior |
 | Gears is experimental; Scala.js Wasm/JSPI browser support | Documented frontend fallback (§5.1): swap the effect runner to `Future`; `update`, views, and the backend are unaffected |
 | **Fair-use policy locks the account.** LuxMed temporarily locks an account (reported: ~1 day for a first breach) for excessive querying. A lock takes out every monitor on that account at once, and looks like an auth failure. | 10-min default interval with a 5-min enforced floor (§3.3), ±20% jitter, per-account rate limiting + mutex so monitors sharing an account queue rather than multiply, browser-like headers. Treat a sudden auth failure on a previously-working account as a possible lock, not only a bad password — surface it as such so the user does not "fix" it by re-entering correct credentials in a loop. |

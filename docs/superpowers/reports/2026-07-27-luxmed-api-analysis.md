@@ -134,7 +134,14 @@ client_id=Android
 | `/api/releaseterm` | POST | Release a locked slot |
 | `/api/dictionaries` | GET | Reference data (facilities, specializations) |
 
-*(These last five are documented here from the spec; they were not exercised during the spike.)*
+> ⚠️ **Do not build against this table.** These five paths were **not exercised**
+> during the spike, and they do not match the paths in dyrkin/luxmed-bot, which
+> is a working client: that project uses `NewPortal/terms/index`,
+> `NewPortal/reservation/lockterm`, `NewPortal/reservation/confirm` and
+> `NewPortal/reservation/releaseterm` — under `/PatientPortal`, not
+> `/PatientPortalMobileAPI/api` — and requires an XSRF token plus merged cookies
+> for the mutating ones. Spec §5.4 records the verified set. Treat the rows above
+> as an untested hypothesis about mobile-API equivalents.
 
 ---
 

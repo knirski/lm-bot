@@ -6,10 +6,10 @@ The spec describes a complete application. At the TDD granularity this project u
 
 | # | Plan | Deliverable | Status |
 |---|---|---|---|
-| 1 | Foundation & auth walking skeleton | A deployable app you can log into | **written** — [`2026-07-27-lm-bot-01-foundation.md`](2026-07-27-lm-bot-01-foundation.md) |
-| 2 | **2FA spike** (investigation, not implementation) | Recorded payloads pinning down Luxmed's two-factor flow | **written** — [`2026-07-27-lm-bot-02-2fa-spike.md`](2026-07-27-lm-bot-02-2fa-spike.md) |
-| 3 | Luxmed API client & mock server | A client that authenticates (2FA included) and searches slots against a mock | not yet written — **blocked on Plan 2** |
-| 4 | Luxmed accounts & monitor CRUD | Link accounts (with 2FA enrollment), create/edit monitors | not yet written |
+| 1 | Foundation & auth walking skeleton | A deployable app you can log into | ✅ **complete** — [plan](2026-07-27-lm-bot-01-foundation.md), [review](../reports/2026-07-27-plan-01-review.md) |
+| 2 | **API spike** (investigation, not implementation) | Auth flows, JWT, token rotation measured; MFA found **not enforced** | ✅ **complete** — [plan](2026-07-27-lm-bot-02-2fa-spike.md), [findings](../reports/2026-07-27-luxmed-api-analysis.md) |
+| 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | **next** — not yet written |
+| 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | not yet written |
 | 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | not yet written |
 | 6 | Auto-booking | Matching slots get booked | not yet written |
 | 7 | Hardening & ops | Admin UI, ops notifications, observability, release polish | not yet written |
@@ -27,17 +27,19 @@ Plans 3–6 then follow the data: get slots out of Luxmed, let users describe wh
 ## Scope of the unwritten plans
 
 ### Plan 3 — Luxmed API client & mock server
-Ports the client from dyrkin/luxmed-bot's real shapes (spec §5.4), **not** from lmassist. Covers: the three-step auth flow; **the two-factor challenge and verification flow, and the stable per-account device identity** (§3.2, shapes supplied by Plan 2); the XSRF token flow; the session (`accessToken`, `tokenType`, `refreshToken`, `jwt`, cookie jar) with proactive timer-based refresh; per-account rate limiter and mutex via Gears `Semaphore`; the `LuxmedError` taxonomy extended with a challenge-required variant; a decoder for the dual datetime format; dictionaries; `terms/index` with its full parameter set; and `lockterm` / `confirm` / `releaseterm`. Ships alongside a mock Luxmed server whose fixtures include the 2FA paths recorded in Plan 2. No database, no HTTP API, no UI.
+Ports the client from dyrkin/luxmed-bot's real shapes (spec §5.4), **not** from lmassist. Covers: the three-step auth flow; the XSRF token flow; the session (`accessToken`, `tokenType`, `refreshToken`, `expiresAt`, `jwt`, cookie jar) with **proactive refresh at ~300 s and atomic persistence of the rotating refresh token** — the spike's sharpest finding, and the easiest thing here to get quietly wrong; per-account rate limiter and mutex via Gears `Semaphore`; the `LuxmedError` taxonomy, including one variant for an unexpected challenge-shaped response (§3.2); a decoder for the dual datetime format; dictionaries; `terms/index` with its full parameter set; and `lockterm` / `confirm` / `releaseterm`. Ships alongside a mock Luxmed server. No database, no HTTP API, no UI.
 
-**Blocked on Plan 2.** The non-2FA two thirds of this plan could be built first if useful, but the client's session handling is shaped by what the spike finds, so splitting it risks rework.
+**No 2FA enrollment flow** — the spike showed it is unreachable, and §3.2 now specifies a single failure path instead.
+
+One caution: §1.5 of the analysis report lists mobile-API endpoint paths (`/api/lockterm`, `/api/confirm`, …) that were **not exercised** during the spike and do not match luxmed-bot's verified `NewPortal/*` paths. Use the verified ones from §5.4; treat that table as a hypothesis, not a source.
 
 ### Plan 4 — Luxmed accounts & monitor CRUD
-AES-256-GCM encryption at rest for credentials, **persisted sessions, and device identities**, with the master key from env; the **two-step linking flow** (submit credentials → `awaiting_2fa` → submit code → `active`) in both the API and the wizard, plus code entry over Telegram (§3.5); account status (`active` / `awaiting_2fa` / `auth_failed` / `disabled`); a dictionaries proxy endpoint so the wizard is driven by live Luxmed data; the `monitors` table; monitor create/edit/pause/delete endpoints with service-layer ownership checks; the guided wizard UI and the monitor list. Interval validation enforces the 10-min default / 5-min floor from spec §3.3. Monitors are stored but nothing runs them yet.
+AES-256-GCM encryption at rest for credentials and **persisted sessions**, with the master key from env; **single-step linking** verified by a live login; account status (`active` / `auth_failed` / `disabled`) with a reason string so a challenge or lockout is never surfaced as "wrong password" (§5.5); a dictionaries proxy endpoint so the wizard is driven by live Luxmed data; the `monitors` table; monitor create/edit/pause/delete endpoints with service-layer ownership checks; the guided wizard UI and the monitor list. Interval validation enforces the 10-min default / 5-min floor from spec §3.3. Monitors are stored but nothing runs them yet.
 
-Device-identity stability gets explicit test coverage here — the failure is silent and its cost is a human-visible challenge (§10).
+The session round-trip gets explicit test coverage: store, restart, refresh, and confirm the rotated refresh token survived. Losing that write is unrecoverable without a password grant (§10).
 
 ### Plan 5 — Monitor engine & notifications
-The Gears supervisor and per-monitor check loops; slot filtering (date range, time-of-day, days-of-week, all in `Europe/Warsaw`); `monitor_events` as the append-only log and the basis of slot dedup; the monitor state machine (`active` / `paused` / `completed` / `failed`) with the failure policy from §5.5 (backoff, auth-failure pause, **challenge-required pause with automatic resume on completion**, version rejection to admin, retry budget); jittered per-monitor intervals queued behind each account's rate limiter; restart resuming the active set. Then the `NotificationChannel` trait and the Telegram implementation: plain sttp sends, deep-link `/start <code>` linking over long polling, **inbound 2FA code replies**, per-slot dedup, and the no-Telegram-linked degradation from §3.5. Monitors now find slots and notify.
+The Gears supervisor and per-monitor check loops; slot filtering (date range, time-of-day, days-of-week, all in `Europe/Warsaw`); `monitor_events` as the append-only log and the basis of slot dedup; the monitor state machine (`active` / `paused` / `completed` / `failed`) with the failure policy from §5.5 (backoff, auth-failure pause **carrying a reason**, version rejection to admin, retry budget); jittered per-monitor intervals queued behind each account's rate limiter; restart resuming the active set. Then the `NotificationChannel` trait and the Telegram implementation: plain sttp sends, deep-link `/start <code>` linking over long polling, per-slot dedup, and the no-Telegram-linked degradation from §3.5. Monitors now find slots and notify.
 
 ### Plan 6 — Auto-booking
 The `lock → validate → confirm or release` sequence from the amended §3.4, including mandatory `releaseterm` on every abort and error path; strict filter re-validation before locking; valuation inspection for price/referral exclusion; the `bookings` table; monitor → `completed` on success; notification with full slot details. This plan is small but is the one where a bug has real-world consequences, so it gets the heaviest test scrutiny per line.
