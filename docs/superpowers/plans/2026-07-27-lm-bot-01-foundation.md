@@ -2143,7 +2143,7 @@ class ApiClient(baseUri: Uri):
         Left(ApiError.Unexpected(Option(err.getMessage).getOrElse("network request failed")))
 ```
 
-Decode failures throw rather than becoming values, deliberately: both sides of this contract are generated from the same `shared` module, so a decode failure is a build-level bug, and spec §7 reserves exceptions for exactly that. (The Luxmed client in Plan 2 is the opposite case — there, decode failures are expected and become `ApiChanged` values.)
+Decode failures throw rather than becoming values, deliberately: both sides of this contract are generated from the same `shared` module, so a decode failure is a build-level bug, and spec §7 reserves exceptions for exactly that. (The Luxmed client in Plan 3 is the opposite case — there, decode failures are expected and become `ApiChanged` values.)
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -3280,20 +3280,20 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 
 | Spec section | Plan 1 |
 |---|---|
-| §2 users & deployment | Admin bootstrap, no self-registration, docker-compose behind a proxy — **done**. Admin create/disable/reset-password UI → Plan 6. |
-| §3.1 user management | Login, cookie sessions — **done**. Admin actions and password change → Plan 6. |
-| §3.2–§3.5 Luxmed, monitors, auto-book, Telegram | **None.** Plans 2–5. |
+| §2 users & deployment | Admin bootstrap, no self-registration, docker-compose behind a proxy — **done**. Admin create/disable/reset-password UI → Plan 7. |
+| §3.1 user management | Login, cookie sessions — **done**. Admin actions and password change → Plan 7. |
+| §3.2–§3.5 Luxmed, monitors, auto-book, Telegram | **None.** Plans 3–6. |
 | §4 future versions | Out of scope by definition. |
 | §5.1 stack | **Done and proven** — every layer exercised, including Wasm linking. |
 | §5.2 modules | `shared` / `backend` / `frontend` with the layering described — **done**. |
-| §5.3 domain & persistence | `users` and `sessions` tables, ownership-in-service-layer pattern — **done**. Remaining tables → Plans 3–5. `Europe/Warsaw` handling → Plan 2 (nothing needs it yet). |
-| §5.4 Luxmed client | **None.** Plan 2. |
-| §5.5 monitor engine | **None.** Plan 4. |
+| §5.3 domain & persistence | `users` and `sessions` tables, ownership-in-service-layer pattern — **done**. Remaining tables → Plans 4–6. `Europe/Warsaw` handling → Plan 3 (nothing needs it yet). |
+| §5.4 Luxmed client | **None.** Plans 2 (spike) and 3 (client). |
+| §5.5 monitor engine | **None.** Plan 5. |
 | §5.6 Elm-on-Gears | **Done** — store, channel, loop, pure `update`, render-only views. |
 | §5.7 style conventions | **Done and enforced** by the Definition of Done greps below. |
-| §6 security | Argon2id, hashed opaque tokens, cookie flags, service-layer authorization, no in-app TLS, secret masking — **done**. Credential encryption at rest → Plan 3. |
-| §7 error handling | `ApiError` as values, exceptions only for bugs — **done** for the internal API. `LuxmedError` → Plan 2. |
-| §8 testing | Pure shared tests, Testcontainers backend integration tests, DOM-free frontend tests, CI on every push — **done**. Luxmed mock server → Plan 2. |
+| §6 security | Argon2id, hashed opaque tokens, cookie flags, service-layer authorization, no in-app TLS, secret masking — **done**. Credential encryption at rest, plus session and device-identity encryption → Plan 4. |
+| §7 error handling | `ApiError` as values, exceptions only for bugs — **done** for the internal API. `LuxmedError` → Plan 3. |
+| §8 testing | Pure shared tests, Testcontainers backend integration tests, DOM-free frontend tests, CI on every push — **done**. Luxmed mock server → Plan 3. |
 | §9 observability & ops | Structured logging, `/health`, env config, docker-compose — **done**. |
 | §10 risks | The Gears/Wasm risk is retired or escalated by Task 1 Step 5 and Task 12 Step 7. |
 
@@ -3308,8 +3308,8 @@ What this plan implements, and what it deliberately leaves to later plans, so th
 - [ ] No Airstream combinator outside the store and view projections. Verify by reading `frontend/src/main/scala/lmbot/frontend/view/AppView.scala` and confirming `-->` appears only in event handlers.
 - [ ] Secrets do not appear in logs. Verify: `docker compose logs backend | grep -iE "devadminpw|devpassword"` returns nothing.
 
-## Notes carried forward to Plan 2
+## Notes carried forward
 
 - `Config` gains `LUXMED_APP_VERSION`, `CREDENTIAL_MASTER_KEY`, and `TELEGRAM_BOT_TOKEN`. The `Secret` wrapper introduced in Task 7 is the type to use for all three.
-- The `Europe/Warsaw` normalisation helper has no home yet — it belongs with the Luxmed datetime decoder in Plan 2, not in `shared`, because only Luxmed data needs it.
-- `Runtime.awaitQuiescence` is test-only scaffolding. If Plan 4 introduces long-lived effects (timers, polling), it will need revisiting.
+- The `Europe/Warsaw` normalisation helper has no home yet — it belongs with the Luxmed datetime decoder in Plan 3, not in `shared`, because only Luxmed data needs it.
+- `Runtime.awaitQuiescence` is test-only scaffolding. If Plan 5 introduces long-lived effects (timers, polling), it will need revisiting.
