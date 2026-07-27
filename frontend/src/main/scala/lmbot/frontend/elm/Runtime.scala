@@ -12,14 +12,9 @@ import scala.util.{Failure, Success, Try}
   *   - one event loop fiber, which applies the pure `update` and then runs
   *     each effect in its own fiber via Gears `Future`.
   *
-  * == Linker note ==
-  * This class (specifically `run` and `dispatch`) is the main entry point
-  * into Gears async internals for the linker.  During Compile linking the
-  * Scala.js 1.22.0 linker traces from @main into `Runtime.run` and finds
-  * `Future(...)` → `JsAsyncScheduler.execute` → `js.async`, which triggers
-  * the "orphan await" error.  Test linking avoids this because MUnit provides
-  * its own entry point and the pure `update` tests never instantiate Runtime.
-  * See build.sbt for the full discussion.
+  * Verified working in a browser on Scala.js/Wasm with JSPI enabled — see
+  * `wasmConfig` in build.sbt, where `withUseJSPI(true)` is the load-bearing
+  * setting.
   */
 class Runtime[S, M](initial: S, update: (S, M) => Transition[S, M]):
 

@@ -25,12 +25,26 @@ class AuthService(
   now: () => OffsetDateTime
 ):
 
+  /** Verified against on an unknown username so that "no such user" costs the
+    * same Argon2 work as "wrong password". Without this, a missing user returns
+    * in microseconds while a real one takes ~100 ms, which is a usable oracle
+    * for enumerating usernames — and this instance has no self-registration, so
+    * knowing who exists is genuinely privileged information (spec §2).
+    */
+  private lazy val decoyHash: String = Passwords.hash("no-such-account")
+
   def login(username: String, password: String): Either[ApiError, (UserView, String)] =
+    users.findByUsername(username) match
+      case None =>
+        Passwords.verify(decoyHash, password)
+        Left(ApiError.Unauthorized)
+      case Some(row) => loginAs(row, password)
+
+  private def loginAs(row: UserRow, password: String): Either[ApiError, (UserView, String)] =
     for
-      row  <- users.findByUsername(username).toRight(ApiError.Unauthorized)
-      // Verify before checking `disabled` so that a disabled account and a
-      // wrong password take the same work; the distinction is only revealed
-      // to someone who already knows the password.
+      // Verify before checking `disabled`, so a disabled account and a wrong
+      // password take the same work; the distinction is revealed only to
+      // someone who already knows the password.
       _    <- Either.cond(Passwords.verify(row.passwordHash, password), (), ApiError.Unauthorized)
       _    <- Either.cond(!row.disabled, (), ApiError.Forbidden)
       user <- toAuthed(row)

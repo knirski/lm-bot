@@ -27,7 +27,10 @@ jobs:
         run: nix develop --command sbt compile Test/compile
 
       - name: Test
-        run: nix develop --command sbt test
+        # testFull, not test: in sbt 2 `test` is `testQuick`, which consults a
+        # global action cache and can legitimately run nothing. CI must prove the
+        # whole suite passes for this commit regardless of cache state.
+        run: nix develop --command sbt testFull
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS

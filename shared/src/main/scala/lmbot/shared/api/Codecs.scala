@@ -12,7 +12,18 @@ import sttp.tapir.Schema
 case class ErrorBody(code: String, message: String)
 
 object Codecs:
-  private inline def config = CodecMakerConfig.withTransientDefault(false)
+  /** `discriminatorFieldName = None` is what makes a parameterless Scala 3 enum
+    * serialise as a bare JSON string rather than `{"type":"Admin"}`.
+    *
+    * Without it the codec and the Tapir `Schema` disagree: the schema below
+    * declares `Role` string-based, so the generated description would claim
+    * `"Admin"` while the wire carried an object. Both sides of this API share
+    * the codec, so nothing breaks today — but the declared contract would be a
+    * lie, which defeats the point of §5.1's single shared definition and would
+    * mislead any non-Scala consumer.
+    */
+  private inline def config =
+    CodecMakerConfig.withTransientDefault(false).withDiscriminatorFieldName(None)
 
   given JsonValueCodec[Role]         = JsonCodecMaker.make(config)
   given JsonValueCodec[UserView]     = JsonCodecMaker.make(config)

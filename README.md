@@ -29,9 +29,9 @@ Node 26 so this cannot drift.
 ```bash
 direnv allow              # once; or `nix develop`
 
-sbt test                  # everything; needs a container runtime
-sbt backend/test          # backend only
-sbt frontend/test         # pure frontend logic, no DOM
+sbt testFull              # everything; needs a container runtime
+sbt backend/testFull      # backend only
+sbt frontend/testFull     # frontend, incl. the Gears runtime suites
 sbt frontend/fastLinkJS   # link the frontend to Wasm (development)
 sbt frontend/fullLinkJS   # link the frontend to Wasm (production)
 ```
@@ -39,6 +39,12 @@ sbt frontend/fullLinkJS   # link the frontend to Wasm (production)
 The build runs on **sbt 2** (declared in `project/build.properties`); the sbt
 binary from the flake is only a launcher. Build output is centralised under
 `target/out/`.
+
+Use `testFull`, not `test`. In sbt 2, `test` is `testQuick`: it runs only what
+changed, judged by content hashing against a global cache in `~/.cache/sbt/v2`
+that survives `clean` and deleting `target/`. Re-running it on an unchanged tree
+prints `Passed: Total 0` and `[success]` — correct, but easy to misread as "the
+suite passed". `testFull` ignores the cache.
 
 If Testcontainers reports "Could not find a valid Docker environment", you are
 outside the devShell — that is where `DOCKER_HOST` gets pointed at Podman.
