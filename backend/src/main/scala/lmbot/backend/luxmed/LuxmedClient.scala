@@ -5,6 +5,7 @@ import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.model.WireCodecs.given
 import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
+import java.time.{Duration, Instant}
 
 private enum ClientSessionState:
   case Unloaded
@@ -23,7 +24,8 @@ final class LuxmedClient(
     transport: LuxmedTransport,
     credentials: Credentials,
     gate: AccountGate,
-    store: SessionStore
+    store: SessionStore,
+    now: () => Instant = () => Instant.now()
 ):
 
   private val refreshThresholdSeconds = 300L
@@ -40,16 +42,10 @@ final class LuxmedClient(
     gate.serialized:
       given AccountGatePermit = summon[AccountGatePermit]
       ensureSession() match
+        case Left(LuxmedError.SessionExpired) =>
+          reauthenticateAfterExpiry(op)
         case Left(e)        => Left(e)
-        case Right(session) =>
-          op(summon[AccountGatePermit], session) match
-            case Left(LuxmedError.SessionExpired) =>
-              state = ClientSessionState.Unloaded
-              ensureSession() match
-                case Left(e2)     => Left(e2)
-                case Right(fresh) =>
-                  op(summon[AccountGatePermit], fresh)
-            case other => other
+        case Right(session) => runOperation(op, session)
 
   private def ensureSession()(using
       permit: AccountGatePermit,
@@ -57,7 +53,13 @@ final class LuxmedClient(
   ): Either[LuxmedError, LuxmedSession] =
     state match
       case ClientSessionState.Unloaded =>
-        authenticateInternal()
+        store.load() match
+          case Left(error)          => Left(toLuxmedError(error))
+          case Right(None)          => authenticateInternal()
+          case Right(Some(session)) =>
+            state = ClientSessionState.Ready(session)
+            if isExpiring(session) then refreshAndBootstrap(session)
+            else Right(session)
       case ClientSessionState.Ready(session) =>
         if isExpiring(session) then refreshAndBootstrap(session)
         else Right(session)
@@ -71,37 +73,22 @@ final class LuxmedClient(
         persistSession(expectedRefresh, session)
 
   private def isExpiring(session: LuxmedSession): Boolean =
-    java.time.Duration
-      .between(java.time.Instant.now(), session.expiresAt)
-      .toSeconds < refreshThresholdSeconds
+    Duration.between(now(), session.expiresAt).getSeconds <=
+      refreshThresholdSeconds
 
   private def authenticateInternal()(using
       permit: AccountGatePermit,
       async: Async
   ): Either[LuxmedError, LuxmedSession] =
-    for
-      oauth <- passwordGrant()
-      cookiesAndJwt <- bootstrapNewPortal(oauth.accessToken, CookieJar.empty)
-      (cookies, jwtToken) = cookiesAndJwt
-      expiresAt = java.time.Instant.now().plusSeconds(oauth.expiresIn.toLong)
-      session = LuxmedSession(
-        accessToken = oauth.accessToken,
-        tokenType = oauth.tokenType,
-        refreshToken = oauth.refreshToken,
-        expiresAt = expiresAt,
-        jwtToken = jwtToken,
-        cookies = cookies
-      )
-      _ <- store
-        .replace(None, session)
-        .left
-        .map:
-          case SessionStoreError.Unavailable(m) =>
-            LuxmedError.PersistenceFailed(m)
-          case SessionStoreError.ConcurrentModification =>
-            LuxmedError.PersistenceFailed("CAS conflict on initial login")
-      _ = state = ClientSessionState.Ready(session)
-    yield session
+    passwordGrant() match
+      case Left(error)  => Left(error)
+      case Right(oauth) =>
+        state = ClientSessionState.PendingBootstrap(
+          expectedRefreshToken = None,
+          oauth = oauth,
+          cookies = CookieJar.empty
+        )
+        completeBootstrap(None, oauth, CookieJar.empty)
 
   private def refreshAndBootstrap(
       oldSession: LuxmedSession
@@ -109,29 +96,19 @@ final class LuxmedClient(
       permit: AccountGatePermit,
       async: Async
   ): Either[LuxmedError, LuxmedSession] =
-    for
-      oauth <- refreshGrant(oldSession.refreshToken)
-      cookiesAndJwt <- bootstrapNewPortal(oauth.accessToken, oldSession.cookies)
-      (cookies, jwtToken) = cookiesAndJwt
-      expiresAt = java.time.Instant.now().plusSeconds(oauth.expiresIn.toLong)
-      newSession = LuxmedSession(
-        accessToken = oauth.accessToken,
-        tokenType = oauth.tokenType,
-        refreshToken = oauth.refreshToken,
-        expiresAt = expiresAt,
-        jwtToken = jwtToken,
-        cookies = cookies
-      )
-      _ <- store
-        .replace(Some(oldSession.refreshToken), newSession)
-        .left
-        .map:
-          case SessionStoreError.Unavailable(m) =>
-            LuxmedError.PersistenceFailed(m)
-          case SessionStoreError.ConcurrentModification =>
-            LuxmedError.PersistenceFailed("CAS conflict on refresh")
-      _ = state = ClientSessionState.Ready(newSession)
-    yield newSession
+    refreshGrant(oldSession.refreshToken) match
+      case Left(error)  => Left(error)
+      case Right(oauth) =>
+        state = ClientSessionState.PendingBootstrap(
+          expectedRefreshToken = Some(oldSession.refreshToken),
+          oauth = oauth,
+          cookies = oldSession.cookies
+        )
+        completeBootstrap(
+          Some(oldSession.refreshToken),
+          oauth,
+          oldSession.cookies
+        )
 
   private def completeBootstrap(
       expectedRefreshToken: Option[Secret],
@@ -141,20 +118,22 @@ final class LuxmedClient(
       permit: AccountGatePermit,
       async: Async
   ): Either[LuxmedError, LuxmedSession] =
-    for
-      cookiesAndJwt <- bootstrapNewPortal(oauth.accessToken, cookies)
-      (newCookies, jwtToken) = cookiesAndJwt
-      expiresAt = java.time.Instant.now().plusSeconds(oauth.expiresIn.toLong)
-      session = LuxmedSession(
-        accessToken = oauth.accessToken,
-        tokenType = oauth.tokenType,
-        refreshToken = oauth.refreshToken,
-        expiresAt = expiresAt,
-        jwtToken = jwtToken,
-        cookies = newCookies
-      )
-      _ <- persistSession(expectedRefreshToken, session)
-    yield session
+    bootstrapNewPortal(oauth.accessToken, cookies) match
+      case Left(error)                   => Left(error)
+      case Right((newCookies, jwtToken)) =>
+        val session = LuxmedSession(
+          accessToken = oauth.accessToken,
+          tokenType = oauth.tokenType,
+          refreshToken = oauth.refreshToken,
+          expiresAt = now().plusSeconds(oauth.expiresIn.toLong),
+          jwtToken = jwtToken,
+          cookies = newCookies
+        )
+        state = ClientSessionState.PendingPersistence(
+          expectedRefreshToken,
+          session
+        )
+        persistSession(expectedRefreshToken, session)
 
   private def persistSession(
       expectedRefreshToken: Option[Secret],
@@ -171,6 +150,38 @@ final class LuxmedClient(
         state =
           ClientSessionState.PendingPersistence(expectedRefreshToken, session)
         Left(LuxmedError.PersistenceFailed(m))
+
+  private def runOperation[A](
+      op: (AccountGatePermit, LuxmedSession) => Either[LuxmedError, A],
+      session: LuxmedSession
+  )(using
+      permit: AccountGatePermit,
+      async: Async
+  ): Either[LuxmedError, A] =
+    op(permit, session) match
+      case Left(LuxmedError.SessionExpired) => reauthenticateAfterExpiry(op)
+      case other                            => other
+
+  private def reauthenticateAfterExpiry[A](
+      op: (AccountGatePermit, LuxmedSession) => Either[LuxmedError, A]
+  )(using
+      permit: AccountGatePermit,
+      async: Async
+  ): Either[LuxmedError, A] =
+    state = ClientSessionState.Unloaded
+    store.clear() match
+      case Left(error) => Left(toLuxmedError(error))
+      case Right(())   =>
+        authenticateInternal() match
+          case Left(error)         => Left(error)
+          case Right(freshSession) => op(permit, freshSession)
+
+  private def toLuxmedError(error: SessionStoreError): LuxmedError =
+    error match
+      case SessionStoreError.Unavailable(message) =>
+        LuxmedError.PersistenceFailed(message)
+      case SessionStoreError.ConcurrentModification =>
+        LuxmedError.PersistenceFailed("CAS conflict")
 
   private def passwordGrant()(using
       permit: AccountGatePermit,
