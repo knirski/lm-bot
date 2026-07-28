@@ -206,9 +206,11 @@ types do not enter the browser-facing `shared` module.
   serialization/rate limiting, and the public dictionary, search, XSRF, lock,
   confirm, and release operations.
 - `SessionStore` is scoped to one linked account and exposes `load`, `replace`,
-  and `clear`. `replace(expectedRefreshToken, updatedSession)` is an atomic
-  compare-and-set: it must fail rather than overwrite a session whose refresh
-  token is no longer the expected value.
+  and `clear`.
+  `replace(expectedRefreshToken: Option[Secret], updatedSession)` is an atomic
+  compare-and-set: `None` means that no session may exist (initial login), and
+  `Some(token)` means the stored refresh token must still match. It must fail
+  rather than overwrite a session that no longer has the expected state.
 - Plan 3 supplies an in-memory `SessionStore` and proves the replacement
   protocol. Plan 4 supplies its AES-256-GCM-encrypted PostgreSQL
   implementation and restart round-trip coverage. Plan 3 adds no database,
@@ -239,19 +241,24 @@ Authenticated `NewPortal/*` calls then use header `authorization-token: Bearer <
 
 - Access token TTL is ~600 s. Refresh **proactively at ~300 s**; do not wait for a 401.
 - `grant_type=refresh_token` (form-encoded, with `client_id=Android`) returns a new access token **and a new refresh token**. The old refresh token is consumed — it is single-use.
+- After a successful refresh grant, repeat auth steps 2 and 3 with the new
+  access token to obtain a fresh NewPortal JWT and complete cookie jar. The JWT
+  is also short-lived; refreshing only the old-API access token would leave
+  `NewPortal/*` calls using an expired `authorization-token`.
 - Reusing a consumed refresh token returns `401` with `ErrorCode: 1`, "You have been logged out due to inactivity."
 - Therefore the stored session must be written **atomically** with each refresh (§5.3). A crash between "old token consumed" and "new token stored" costs a password re-login, and password logins are the rationed operation (§10).
 - A refresh that cannot be recovered falls back to a full password grant. If *that* returns anything challenge-shaped, classify it as an unexpected auth response (§3.2) rather than bad credentials.
 
 `LuxmedClient` publishes a newly rotated session to its ready cache only after
-`SessionStore.replace` succeeds. If Luxmed returned the new token but local
-persistence failed, the client retains a `pendingPersistence` state in memory,
-blocks further Luxmed calls, and retries only the store replacement; it must
-not repeat the refresh with the now-consumed old token. Password
-re-authentication is reserved for a refresh token rejected by Luxmed, never for
-a local persistence failure. The per-account `Semaphore` covers session
-inspection, refresh, replacement, and the subsequent operation, so concurrent
-callers cannot start competing refreshes.
+`SessionStore.replace` succeeds. Once Luxmed has returned a rotated OAuth
+token, the client retains it in a pending state while it completes the
+NewPortal bootstrap and persistence. A failure in either phase blocks further
+Luxmed calls and retries only the incomplete phase; it must not repeat the
+refresh with the now-consumed old token. Password re-authentication is reserved
+for a refresh token rejected by Luxmed, never for a NewPortal bootstrap or
+local persistence failure. The per-account `Semaphore` covers session
+inspection, refresh, bootstrap, replacement, and the subsequent operation, so
+concurrent callers cannot start competing refreshes.
 
 **Two-factor authentication is not enforced on this API** — established by the Plan 2 spike, with the evidence and caveats in §3.2. No enrollment flow is implemented; a single distinct failure path covers the possibility that it appears.
 
@@ -334,8 +341,10 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   `Either[LuxmedError, A]`; sequencing is ordinary direct-style Gears code with
   exhaustive matching, not an effect-polymorphic program. `LuxmedError` is a
   closed ADT covering at least `AuthFailed`, `UnexpectedAuthResponse`,
-  `SessionExpired`, `VersionRejected`, `RateLimited`, `Transient`,
-  `DecodeFailed`, `PersistenceFailed`, `ProtocolViolation`, and `SlotGone`.
+  `SessionExpired`, `VersionRejected`, `ApiRejected`, `RateLimited`,
+  `Transient`, `DecodeFailed`, `PersistenceFailed`, `ProtocolViolation`, and
+  `SlotGone`. `ApiRejected` retains only a redacted summary of a recognized
+  Luxmed error envelope whose message has no more specific classification.
 - Exceptions are reserved for genuine bugs; they crash the failing fiber, not the supervisor.
 
 ## 8. Testing
@@ -360,6 +369,26 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   rejection, an unexpected challenge-shaped response, malformed JSON, missing
   JWT, persistence failure, and secret redaction.
 - Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated. CI never calls live Luxmed endpoints.
+- Before Plan 3 is declared complete, run one explicit, guided
+  mock-conformance exploration against an owned Luxmed account. It previews
+  its safety budget and asks for confirmation before login and each later
+  phase. The required path performs one password grant, the NewPortal
+  bootstrap, one refresh grant and re-bootstrap, dictionaries, one
+  user-selected terms search, and XSRF acquisition. It sends at most 12
+  requests, spaces them by at least five seconds, never retries, and never
+  performs a second password grant. An optional advanced phase may lock one
+  user-selected slot only after another explicit confirmation and must release
+  it in `finally`; release failure is surfaced prominently because the slot may
+  remain held until Luxmed expires it. The explorer never calls `confirm`,
+  `changeterm`, or appointment cancellation — a real confirm books healthcare
+  and belongs to Plan 6's safety work. It compares JSON shapes and required
+  header/cookie names in memory, shows structural differences without writing
+  payloads, and stops immediately on 401, 409, 429, a challenge-shaped
+  response, or a version rejection. A persistent ignored attempt ledger caps
+  it at two exploration sessions so an implementation bug cannot create a
+  login loop. It is opt-in and never runs in CI, but one successful required
+  exploration is completion evidence for Plan 3; the optional lock/release
+  result is recorded separately.
 - **Backend API:** integration tests with real Postgres (Testcontainers) against Tapir endpoints in-process.
 - **Frontend:** domain logic unit-tested; minimal DOM smoke tests in v1.
 - TDD throughout; CI runs everything on every push.

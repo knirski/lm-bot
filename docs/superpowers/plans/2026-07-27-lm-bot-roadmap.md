@@ -8,7 +8,7 @@ The spec describes a complete application. At the TDD granularity this project u
 |---|---|---|---|
 | 1 | Foundation & auth walking skeleton | A deployable app you can log into | ✅ **complete** — [plan](2026-07-27-lm-bot-01-foundation.md), [review](../reports/2026-07-27-plan-01-review.md) |
 | 2 | **API spike** (investigation, not implementation) | Auth flows, JWT, token rotation measured; MFA found **not enforced** | ✅ **complete** — [plan](2026-07-27-lm-bot-02-2fa-spike.md), [findings](../reports/2026-07-27-luxmed-api-analysis.md) |
-| 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | **next** — not yet written |
+| 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | **next** — [implementation plan](2026-07-28-lm-bot-03-luxmed-client.md) |
 | 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | not yet written |
 | 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | not yet written |
 | 6 | Auto-booking | Matching slots get booked | not yet written |
