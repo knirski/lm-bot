@@ -62,6 +62,13 @@ class WireCodecTest extends munit.FunSuite:
     assertEquals(jar.get("sessionid").map(_.value), Some("abc"))
     assertEquals(jar.get("SESSIONID").map(_.value), Some("abc"))
 
+  test("request cookie header includes cookie names and values"):
+    val header = CookieJar(
+      "A" -> Secret("one"),
+      "B" -> Secret("two")
+    ).requestCookies.head._2
+    assertEquals(header.split("; ").toSet, Set("a=one", "b=two"))
+
   test("session rendering never reveals bearer credentials"):
     val rendered = sampleSession.toString
     List("ACCESS_1", "REFRESH_1", "JWT_1").foreach(secret =>

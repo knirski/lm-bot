@@ -160,3 +160,63 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       case LuxmedError.NetworkFailure(_) => true
       case _                             => false
     })
+
+  test("cookie values preserve equals signs"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 200,
+        headers = Map("Set-Cookie" -> "token=abc==; Path=/"),
+        body = "ok"
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/cookies")
+      assertEquals(
+        result.toOption
+          .flatMap(_.cookies.find(_._1 == "token"))
+          .map { case (_, secret) => secret.value },
+        Some("abc==")
+      )
+
+  test("transport diagnostics redact response secrets"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 200,
+        headers = Map(
+          "Authorization-Token" -> "Bearer JWT_SECRET",
+          "Set-Cookie" -> "session=COOKIE_SECRET"
+        ),
+        body =
+          """{"access_token":"ACCESS_SECRET","refresh_token":"REFRESH_SECRET","password":"PASSWORD_SECRET","email":"person@example.com","phone":"501 234 567"}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/secrets")
+      val rendered = result.toString
+      List(
+        "ACCESS_SECRET",
+        "REFRESH_SECRET",
+        "PASSWORD_SECRET",
+        "JWT_SECRET",
+        "COOKIE_SECRET",
+        "person@example.com",
+        "501 234 567"
+      ).foreach(secret => assert(!rendered.contains(secret), s"leaked $secret"))
+
+  test("error diagnostics redact JWT cookies and phone-like values"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"challengeId":"challenge-1","jwt":"JWT_SECRET","cookie":"COOKIE_SECRET","phone":"501 234 567","email":"person@example.com"}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/challenge")
+      val rendered = result.toString
+      List(
+        "JWT_SECRET",
+        "COOKIE_SECRET",
+        "501 234 567",
+        "person@example.com"
+      ).foreach(secret => assert(!rendered.contains(secret), s"leaked $secret"))

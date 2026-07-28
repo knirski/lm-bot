@@ -208,24 +208,18 @@ final class LuxmedTransport(config: LuxmedConfig):
           .split(';')
           .headOption
           .map: cookiePart =>
-            cookiePart.split('=').map(_.trim) match
-              case Array(name, value) => (name, Secret(value))
-              case Array(name)        => (name, Secret(""))
-              case _                  => ("", Secret(""))
+            val separator = cookiePart.indexOf('=')
+            if separator < 0 then (cookiePart.trim, Secret(""))
+            else
+              (
+                cookiePart.substring(0, separator).trim,
+                Secret(cookiePart.substring(separator + 1).trim)
+              )
       }
       .toList
 
   private def redactBody(body: String): String =
-    var result = body
-    val patterns = Seq(
-      """access_token["\s:]+[^",}]+""".r,
-      """refresh_token["\s:]+[^",}]+""".r,
-      """password["\s:]+[^",}]+""".r,
-      """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""".r
-    )
-    patterns.foreach: p =>
-      result = p.replaceAllIn(result, m => m.group(0).take(10) + "***")
-    result.take(200)
+    LuxmedRedaction.summary(body)
 
 final case class TransportResponse[+A](
     body: A,
@@ -234,4 +228,21 @@ final case class TransportResponse[+A](
     status: Int,
     authTokenHeader: Option[Secret],
     jwtHeader: Option[Secret]
-)
+):
+  override def toString: String =
+    s"TransportResponse(status=$status, headers=${headers.map(_._1).distinct}, " +
+      s"cookies=${cookies.map(_._1).distinct}, " +
+      s"bodySummary=${LuxmedRedaction.summary(body.toString)})"
+
+private[luxmed] object LuxmedRedaction:
+  private val secretFields =
+    """(?i)(access_token|refresh_token|password|jwt|jwtToken|cookie|authorization-token|authorization)\s*["':=]+\s*"?[^",}\s]+"?""".r
+  private val email =
+    """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""".r
+  private val phone = """\b\d{3}\s\d{3}\s\d{3}\b""".r
+
+  def summary(body: String): String =
+    val withSecrets =
+      secretFields.replaceAllIn(body, m => m.group(0).take(12) + "***")
+    val withEmails = email.replaceAllIn(withSecrets, "<redacted-email>")
+    phone.replaceAllIn(withEmails, "<redacted-phone>").take(200)

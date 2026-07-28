@@ -4,7 +4,7 @@ import lmbot.backend.config.Secret
 
 /** An immutable, case-insensitive-by-name cookie jar. Cookies are merged by
   * name: a newer response cookie replaces an older one with the same name.
-  * Cookies without a value are treated as deletion signals and remove the
+  * Cookies with an empty value are treated as deletion signals and remove the
   * corresponding stored cookie.
   */
 final case class CookieJar private (entries: Map[String, Secret]):
@@ -17,7 +17,7 @@ final case class CookieJar private (entries: Map[String, Secret]):
 
   /** Merge the given response cookies into this jar. Each cookie replaces an
     * existing cookie of the same lowercased name. A cookie whose value is empty
-    * or whose `Max-Age=0` removes the existing cookie.
+    * removes the existing cookie.
     */
   def merge(responseCookies: List[(String, Secret)]): CookieJar =
     val merged = responseCookies.foldLeft(entries) {
@@ -30,7 +30,13 @@ final case class CookieJar private (entries: Map[String, Secret]):
 
   /** Produce request header entries from the jar. */
   def requestCookies: List[(String, String)] =
-    entries.map { (_, value) => ("Cookie", value.value) }.toList
+    if entries.isEmpty then Nil
+    else
+      List(
+        "Cookie" -> entries
+          .map { (name, value) => s"$name=${value.value}" }
+          .mkString("; ")
+      )
 
   /** Produce (name, value) tuples for sttp's cookies method. */
   def toSeq: Seq[(String, String)] =
