@@ -13,44 +13,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Cross-architecture validation ─────────────────────────────────────────
-  # Verifies the flake evaluates and its checks build on aarch64-linux.
-  # The full test suite runs only on x86_64 (the primary target), but this job
-  # catches Nix expression drift that would break ARM users.
-  aarch64:
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: ./.github/actions/setup-nix
-
-      - name: Flake check (aarch64-linux)
-        run: nix flake check
-
-      - name: Build devShell (aarch64-linux)
-        run: nix build .#devShells.aarch64-linux.default --no-link
-
-  # ── Main CI ────────────────────────────────────────────────────────────────
-  ci:
+  # ── PR title lint (fast, no Nix) ───────────────────────────────────────────
+  lint:
     runs-on: ubuntu-latest
-    # No need to wait for aarch64 — it's informative, not a gate.
-
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      # ── Fast gate: PR title lint (no Nix needed) ──────────────────────────
       - name: PR title lint
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         if: github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # All valid conventional commit types (from AGENTS.md convention).
-          # The ! suffix after any type flags a breaking change (e.g. feat!:).
           types: |
             feat
             fix
@@ -62,16 +38,22 @@ jobs:
             test
             ci
             build
-          # Dependabot PRs and automation are ignored.
           ignoreLabels: |
             dependencies
             automation
 
+  # ── x86_64-linux ────────────────────────────────────────────────────────────
+  x86_64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       # ── Nix setup ─────────────────────────────────────────────────────────
       - uses: ./.github/actions/setup-nix
         with:
-          # Only pass the Cachix auth token on main pushes so PRs from forks
-          # cannot leak it.
           cachix-auth-token: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.CACHIX_AUTH_TOKEN || '' }}
 
       # ── Format gates (fast; gate before slow compilation) ─────────────────
@@ -85,43 +67,31 @@ jobs:
           path: |
             ~/.cache/coursier
             ~/.sbt
-          key: ${{ runner.os }}-sbt-${{ hashFiles('build.sbt', 'project/**') }}
-          # On a key miss, restore the most recent cache so only new/changed
-          # dependencies are fetched, rather than starting from scratch.
+          key: x86_64-sbt-${{ hashFiles('build.sbt', 'project/**') }}
           restore-keys: |
-            ${{ runner.os }}-sbt-
+            x86_64-sbt-
 
       # ── Compile, test, link ──────────────────────────────────────────────
       - name: Compile everything
-        # testFull, not test: in sbt 2 bare `test` is `testQuick`, which
-        # consults a global action cache and can legitimately run nothing.
-        # CI must prove the whole suite compiles for this commit.
-        # scalafmtCheckAll + scalafmtSbtCheck run before compilation as a
-        # format gate — through the sbt plugin, not the nix scalafmt binary.
         run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
 
       - name: Test with coverage
-        # testFull ignores the sbt action cache. See AGENTS.md for rationale.
-        # coverage enables sbt-scoverage instrumentation for JVM targets.
-        # Scala.js targets are tested without coverage.
         run: nix develop --command sbt "coverage; testFull; coverageReport"
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
 
-      # ── Upload coverage reports (always) ────────────────────────────────
+      # ── Upload coverage reports ──────────────────────────────────────────
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-reports
+          name: coverage-reports-x86_64
           path: |
             **/coverage-report/**
             **/coverage.*.xml
           if-no-files-found: ignore
 
       # ── Validate Docker image builds (main only) ─────────────────────────
-      # PRs skip this: the Dockerfile is a thin wrapper and the code is already
-      # validated by the sbt steps above. Main pushes verify the full path.
       - name: Build Docker image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: docker build -t lm-bot:ci .
@@ -132,3 +102,59 @@ jobs:
         run: |
           nix copy --to 'https://knirski-lm-bot.cachix.org' \
             .#devShells.x86_64-linux.default
+
+  # ── aarch64-linux ───────────────────────────────────────────────────────────
+  aarch64:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # ── Nix setup ─────────────────────────────────────────────────────────
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.CACHIX_AUTH_TOKEN || '' }}
+
+      # ── Format gates (fast; gate before slow compilation) ─────────────────
+      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
+        run: nix flake check
+
+      # ── sbt / coursier cache ─────────────────────────────────────────────
+      - name: Cache sbt and coursier
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.sbt
+          key: arm64-sbt-${{ hashFiles('build.sbt', 'project/**') }}
+          restore-keys: |
+            arm64-sbt-
+
+      # ── Compile, test, link ──────────────────────────────────────────────
+      - name: Compile everything
+        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
+
+      - name: Test with coverage
+        run: nix develop --command sbt "coverage; testFull; coverageReport"
+
+      - name: Link frontend (Wasm)
+        run: nix develop --command sbt frontend/fullLinkJS
+
+      # ── Upload coverage reports ──────────────────────────────────────────
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-arm64
+          path: |
+            **/coverage-report/**
+            **/coverage.*.xml
+          if-no-files-found: ignore
+
+      # ── Push devShell closure to Cachix (main only) ──────────────────────
+      - name: Push devShell closure to Cachix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          nix copy --to 'https://knirski-lm-bot.cachix.org' \
+            .#devShells.aarch64-linux.default
