@@ -6,7 +6,11 @@ import org.flywaydb.core.Flyway
 
 object Database:
 
-  def dataSource(url: String, user: String, password: String): HikariDataSource =
+  def dataSource(
+      url: String,
+      user: String,
+      password: String
+  ): HikariDataSource =
     val config = new HikariConfig()
     config.setJdbcUrl(url)
     config.setDriverClassName("org.postgresql.Driver")

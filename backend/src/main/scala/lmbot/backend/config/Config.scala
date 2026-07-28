@@ -9,15 +9,15 @@ final case class Secret(value: String):
   override def toString: String = "***"
 
 case class Config(
-  dbUrl: String,
-  dbUser: String,
-  dbPassword: Secret,
-  httpHost: String,
-  httpPort: Int,
-  cookieSecure: Boolean,
-  sessionTtl: Duration,
-  adminUsername: Option[String],
-  adminPassword: Option[Secret]
+    dbUrl: String,
+    dbUser: String,
+    dbPassword: Secret,
+    httpHost: String,
+    httpPort: Int,
+    cookieSecure: Boolean,
+    sessionTtl: Duration,
+    adminUsername: Option[String],
+    adminPassword: Option[Secret]
 )
 
 object Config:
@@ -32,29 +32,30 @@ object Config:
 
     def int(key: String, default: Int): Int =
       env.get(key).filter(_.nonEmpty) match
-        case None => default
+        case None    => default
         case Some(v) =>
           v.toIntOption match
             case Some(i) => i
-            case None    => errors += s"$key must be a number, got '$v'"; default
+            case None => errors += s"$key must be a number, got '$v'"; default
 
     def bool(key: String, default: Boolean): Boolean =
       env.get(key).filter(_.nonEmpty) match
-        case None => default
+        case None    => default
         case Some(v) =>
           v.toBooleanOption match
             case Some(b) => b
-            case None    => errors += s"$key must be true or false, got '$v'"; default
+            case None    =>
+              errors += s"$key must be true or false, got '$v'"; default
 
-    val dbUrl      = required("DATABASE_URL")
-    val dbUser     = required("DATABASE_USER")
+    val dbUrl = required("DATABASE_URL")
+    val dbUser = required("DATABASE_USER")
     val dbPassword = required("DATABASE_PASSWORD")
-    val host       = env.get("HTTP_HOST").filter(_.nonEmpty).getOrElse("0.0.0.0")
-    val port       = int("HTTP_PORT", 8080)
+    val host = env.get("HTTP_HOST").filter(_.nonEmpty).getOrElse("0.0.0.0")
+    val port = int("HTTP_PORT", 8080)
     // Secure by default: the operator terminates TLS in front of us (spec §6).
     // Only a deliberate override turns it off, for plain-HTTP local dev.
-    val secure     = bool("COOKIE_SECURE", true)
-    val ttlDays    = int("SESSION_TTL_DAYS", 7)
+    val secure = bool("COOKIE_SECURE", true)
+    val ttlDays = int("SESSION_TTL_DAYS", 7)
 
     val built = errors.result()
     if built.nonEmpty then Left(built)
@@ -69,6 +70,7 @@ object Config:
           cookieSecure = secure,
           sessionTtl = Duration.ofDays(ttlDays.toLong),
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
-          adminPassword = env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply)
+          adminPassword =
+            env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply)
         )
       )

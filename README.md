@@ -13,45 +13,46 @@ Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
 
 - **Nix with flakes**, and ideally **direnv** (plus `nix-direnv` for caching).
   The flake pins everything else: Temurin 25, the sbt launcher, Node 26,
-  Metals, scalafmt, `psql`.
-- **A container runtime on the host** — rootless Podman or Docker. A devShell
-  cannot provide one. Testcontainers needs it for the backend tests; the
-  devShell wires it up for Podman automatically.
+  Metals, scalafmt.
 - **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
   to WebAssembly via Scala.js + JSPI.
+- **No external PostgreSQL needed.**  The dev server and tests use an embedded
+  PostgreSQL via zonky embedded-postgres — real PG, no container, no setup.
 
 Node's version is not a preference: Node 24 and 25 contain a V8 bug that
 stack-overflows in the nested async contexts Gears relies on. The flake pins
 Node 26 so this cannot drift.
 
 ## Development
+### Setup
 
 ```bash
 direnv allow              # once; or `nix develop`
 
-sbt testFull              # everything; needs a container runtime
+sbt testFull              # everything (embedded PG per test suite)
 sbt backend/testFull      # backend only
 sbt frontend/testFull     # frontend, incl. the Gears runtime suites
 ```
 
 ### Local server (hot reload)
 
-**One terminal, one command** — starts everything, watches all sources (frontend,
-backend, shared), and auto-restarts the backend on any change.
+PostgreSQL starts automatically via the embedded library.  Just run:
 
 ```bash
-docker compose up -d postgres   # start the database (one-time or keep running)
-sbt startDev                    # link frontend → run backend → watch
+direnv allow              # one-time (or `nix develop`)
+sbt startDev              # starts embedded PG on 15432, links frontend, runs backend
 ```
 
-`startDev` runs with sensible env defaults — no environment file needed:
+Override the database for external PG by setting `DATABASE_URL` in the shell:
+`startDev` runs with sensible env defaults — the devShell wraps them automatically:
 
-| Variable | Dev default |
-|---|---|
-| `COOKIE_SECURE` | `false` (plain-HTTP safe) |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` |
-| `DATABASE_URL` / `USER` / `PASSWORD` | `localhost:5432/lmbot` / `lmbot` / `lmbot` |
-| `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` |
+| Variable | Dev default | Source |
+|---|---|---|
+| `DATABASE_URL` | `localhost:15432/lmbot` | `build.sbt` (overridable) |
+| `DATABASE_USER` / `PASSWORD` | `lmbot` / `lmbot` | `build.sbt` (overridable) |
+| `COOKIE_SECURE` | `false` (plain-HTTP safe) | `build.sbt` |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` | `build.sbt` |
+| `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` | `build.sbt` |
 
 Override any variable from the shell — the forked JVM inherits it:
 
@@ -88,16 +89,13 @@ that survives `clean` and deleting `target/`. Re-running it on an unchanged tree
 prints `Passed: Total 0` and `[success]` — correct, but easy to misread as "the
 suite passed". `testFull` runs the full suite unconditionally.
 
-If Testcontainers reports "Could not find a valid Docker environment", you are
-outside the devShell — that is where `DOCKER_HOST` gets pointed at Podman.
-
 ## Configuration
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
-| `DATABASE_URL` | yes | — | JDBC URL |
-| `DATABASE_USER` | yes | — | database user |
-| `DATABASE_PASSWORD` | yes | — | database password |
+| `DATABASE_URL` | yes | — | JDBC URL (dev default `localhost:15432/lmbot`) |
+| `DATABASE_USER` | yes | — | database user (dev default `lmbot`) |
+| `DATABASE_PASSWORD` | yes | — | database password (dev default `lmbot`) |
 | `HTTP_HOST` | no | `0.0.0.0` | bind address |
 | `HTTP_PORT` | no | `8080` | bind port |
 | `COOKIE_SECURE` | no | `true` | set `false` only for plain-HTTP local dev |

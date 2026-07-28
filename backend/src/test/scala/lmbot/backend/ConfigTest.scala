@@ -5,8 +5,8 @@ import lmbot.backend.config.{Config, Secret}
 class ConfigTest extends munit.FunSuite:
 
   private val minimal = Map(
-    "DATABASE_URL"      -> "jdbc:postgresql://localhost:5432/lmbot",
-    "DATABASE_USER"     -> "lmbot",
+    "DATABASE_URL" -> "jdbc:postgresql://localhost:5432/lmbot",
+    "DATABASE_USER" -> "lmbot",
     "DATABASE_PASSWORD" -> "secret"
   )
 
@@ -23,14 +23,18 @@ class ConfigTest extends munit.FunSuite:
 
   test("missing required variables are all reported at once"):
     Config.fromEnv(Map.empty) match
-      case Right(c) => fail(s"expected failure, got $c")
+      case Right(c)     => fail(s"expected failure, got $c")
       case Left(errors) =>
         assert(errors.exists(_.contains("DATABASE_URL")))
         assert(errors.exists(_.contains("DATABASE_USER")))
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
 
   test("port and secure-cookie flag are overridable"):
-    val env = minimal ++ Map("HTTP_PORT" -> "9000", "COOKIE_SECURE" -> "false", "HTTP_HOST" -> "127.0.0.1")
+    val env = minimal ++ Map(
+      "HTTP_PORT" -> "9000",
+      "COOKIE_SECURE" -> "false",
+      "HTTP_HOST" -> "127.0.0.1"
+    )
     Config.fromEnv(env) match
       case Right(c) =>
         assertEquals(c.httpPort, 9000)
@@ -44,7 +48,8 @@ class ConfigTest extends munit.FunSuite:
       case Left(errors) => assert(errors.exists(_.contains("HTTP_PORT")))
 
   test("admin bootstrap credentials are picked up when both are present"):
-    val env = minimal ++ Map("ADMIN_USERNAME" -> "root", "ADMIN_PASSWORD" -> "hunter2")
+    val env =
+      minimal ++ Map("ADMIN_USERNAME" -> "root", "ADMIN_PASSWORD" -> "hunter2")
     Config.fromEnv(env) match
       case Right(c) =>
         assertEquals(c.adminUsername, Some("root"))
@@ -57,7 +62,8 @@ class ConfigTest extends munit.FunSuite:
     assertEquals(c.dbPassword.toString, "***")
 
   test("config never renders secrets in toString"):
-    val Right(c) = Config.fromEnv(minimal ++ Map("ADMIN_PASSWORD" -> "hunter2")): @unchecked
+    val Right(c) =
+      Config.fromEnv(minimal ++ Map("ADMIN_PASSWORD" -> "hunter2")): @unchecked
     val rendered = c.toString
     assert(!rendered.contains("secret"), s"db password leaked: $rendered")
     assert(!rendered.contains("hunter2"), s"admin password leaked: $rendered")

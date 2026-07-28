@@ -13,13 +13,15 @@ class AuthServiceTest extends PostgresSuite:
 
   private val ttl = Duration.ofDays(7)
 
-  private def service(now: () => OffsetDateTime = () => OffsetDateTime.now()): AuthService =
+  private def service(
+      now: () => OffsetDateTime = () => OffsetDateTime.now()
+  ): AuthService =
     AuthService(UserRepo(xa), SessionRepo(xa), ttl, now)
 
   private def aUser(
-    username: String = "krzysiek",
-    password: String = "s3cret",
-    role: Role = Role.User
+      username: String = "krzysiek",
+      password: String = "s3cret",
+      role: Role = Role.User
   ): Long =
     UserRepo(xa).insert(username, "Krzysiek", Passwords.hash(password), role).id
 
@@ -43,18 +45,27 @@ class AuthServiceTest extends PostgresSuite:
 
   test("login with a wrong password is Unauthorized"):
     aUser()
-    assertEquals(service().login("krzysiek", "wrong"), Left(ApiError.Unauthorized))
+    assertEquals(
+      service().login("krzysiek", "wrong"),
+      Left(ApiError.Unauthorized)
+    )
 
   test("login for an unknown user is Unauthorized, not NotFound"):
     // Distinguishing the two would let an attacker enumerate usernames.
-    assertEquals(service().login("ghost", "s3cret"), Left(ApiError.Unauthorized))
+    assertEquals(
+      service().login("ghost", "s3cret"),
+      Left(ApiError.Unauthorized)
+    )
 
   test("a disabled user cannot log in even with the right password"):
     val id = aUser()
     transact(xa):
       sql"update users set disabled = true where id = $id".update.run()
 
-    assertEquals(service().login("krzysiek", "s3cret"), Left(ApiError.Forbidden))
+    assertEquals(
+      service().login("krzysiek", "s3cret"),
+      Left(ApiError.Forbidden)
+    )
 
   test("authenticate accepts a token minted by login"):
     aUser(role = Role.Admin)
@@ -71,21 +82,29 @@ class AuthServiceTest extends PostgresSuite:
     val svc = service()
     assertEquals(svc.authenticate(None), Left(ApiError.Unauthorized))
     assertEquals(svc.authenticate(Some("")), Left(ApiError.Unauthorized))
-    assertEquals(svc.authenticate(Some("not-a-real-token")), Left(ApiError.Unauthorized))
+    assertEquals(
+      svc.authenticate(Some("not-a-real-token")),
+      Left(ApiError.Unauthorized)
+    )
 
   test("authenticate rejects an expired session and cleans it up"):
     aUser()
-    val issued  = OffsetDateTime.now()
-    val svc     = service(() => issued)
+    val issued = OffsetDateTime.now()
+    val svc = service(() => issued)
     val Right((_, token)) = svc.login("krzysiek", "s3cret"): @unchecked
 
     // Same repos, but "now" is past the TTL.
-    val later = AuthService(UserRepo(xa), SessionRepo(xa), ttl, () => issued.plus(ttl).plusMinutes(1))
+    val later = AuthService(
+      UserRepo(xa),
+      SessionRepo(xa),
+      ttl,
+      () => issued.plus(ttl).plusMinutes(1)
+    )
     assertEquals(later.authenticate(Some(token)), Left(ApiError.Unauthorized))
     assertEquals(SessionRepo(xa).find(Tokens.hash(token)), None)
 
   test("authenticate rejects a token whose user was disabled after login"):
-    val id  = aUser()
+    val id = aUser()
     val svc = service()
     val Right((_, token)) = svc.login("krzysiek", "s3cret"): @unchecked
 

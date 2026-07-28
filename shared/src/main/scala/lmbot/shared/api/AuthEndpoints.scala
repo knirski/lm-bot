@@ -20,7 +20,9 @@ object AuthEndpoints:
   private val errorOut: EndpointOutput[ApiError] =
     statusCode
       .and(jsonBody[ErrorBody])
-      .map[ApiError] { case (sc, body) => ApiError.fromWire(sc.code, body.code, body.message) } { e =>
+      .map[ApiError] { case (sc, body) =>
+        ApiError.fromWire(sc.code, body.code, body.message)
+      } { e =>
         (StatusCode(e.status), ErrorBody(e.code, e.message))
       }
 
@@ -30,12 +32,13 @@ object AuthEndpoints:
     * therefore always passes `None` here and lets the browser attach the real
     * cookie itself; the server reads whatever actually arrived.
     */
-  private val securedBase = base.securityIn(cookie[Option[String]](sessionCookieName))
+  private val securedBase =
+    base.securityIn(cookie[Option[String]](sessionCookieName))
 
   /** The session cookie is declared with `setCookieOpt`, not `setCookie`.
     *
-    * `setCookie` is `setCookieOpt` plus a decode that *fails* when the header is
-    * absent, and `Set-Cookie` is a forbidden response header for browser
+    * `setCookie` is `setCookieOpt` plus a decode that *fails* when the header
+    * is absent, and `Set-Cookie` is a forbidden response header for browser
     * JavaScript — the Fetch spec never exposes it. Since the browser client is
     * derived from this very endpoint, `setCookie` would make every successful
     * login undecodable on the client (`DecodeResult.Missing`) even though the
@@ -43,7 +46,13 @@ object AuthEndpoints:
     * decodes to `None` in the browser and `Some(...)` on the server, which is
     * exactly the asymmetry reality has.
     */
-  val login: Endpoint[Unit, LoginRequest, ApiError, (UserView, Option[CookieValueWithMeta]), Any] =
+  val login: Endpoint[
+    Unit,
+    LoginRequest,
+    ApiError,
+    (UserView, Option[CookieValueWithMeta]),
+    Any
+  ] =
     base.post
       .in("login")
       .in(jsonBody[LoginRequest])
@@ -55,7 +64,9 @@ object AuthEndpoints:
       .in("me")
       .out(jsonBody[UserView])
 
-  val logout: Endpoint[Option[String], Unit, ApiError, Option[CookieValueWithMeta], Any] =
+  val logout: Endpoint[Option[String], Unit, ApiError, Option[
+    CookieValueWithMeta
+  ], Any] =
     securedBase.post
       .in("logout")
       .out(setCookieOpt(sessionCookieName))

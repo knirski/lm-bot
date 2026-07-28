@@ -20,15 +20,27 @@ class ApiClient(baseUri: Uri):
 
   // Lazy so that merely constructing an ApiClient touches no browser API —
   // the pure `update` tests build one and never make a call.
-  private lazy val backend     = FetchBackend()
+  private lazy val backend = FetchBackend()
   private lazy val interpreter = SttpClientInterpreter()
 
   private lazy val loginFn =
-    interpreter.toClientThrowDecodeFailures(AuthEndpoints.login, Some(baseUri), backend)
+    interpreter.toClientThrowDecodeFailures(
+      AuthEndpoints.login,
+      Some(baseUri),
+      backend
+    )
   private lazy val meFn =
-    interpreter.toSecureClientThrowDecodeFailures(AuthEndpoints.me, Some(baseUri), backend)
+    interpreter.toSecureClientThrowDecodeFailures(
+      AuthEndpoints.me,
+      Some(baseUri),
+      backend
+    )
   private lazy val logoutFn =
-    interpreter.toSecureClientThrowDecodeFailures(AuthEndpoints.logout, Some(baseUri), backend)
+    interpreter.toSecureClientThrowDecodeFailures(
+      AuthEndpoints.logout,
+      Some(baseUri),
+      backend
+    )
 
   def login(req: LoginRequest)(using Async): Either[ApiError, UserView] =
     // The cookie output is always `None` here: the browser stores the cookie but
@@ -36,8 +48,8 @@ class ApiClient(baseUri: Uri):
     Bridge.awaitEither(loginFn(req))(transportFailure).map((view, _) => view)
 
   /** The session cookie is `HttpOnly`, so page scripts cannot read it. We pass
-    * `None` as the security input and let the browser attach the real cookie
-    * to the request — which it does, because the API is same-origin.
+    * `None` as the security input and let the browser attach the real cookie to
+    * the request — which it does, because the API is same-origin.
     */
   def me()(using Async): Either[ApiError, UserView] =
     Bridge.awaitEither(meFn(None)(()))(transportFailure)
@@ -49,9 +61,10 @@ class ApiClient(baseUri: Uri):
     * as a server-side error, so callers have exactly one thing to handle.
     *
     * It is also logged. A decode failure here means client and server disagree
-    * about a contract they share by construction — a build-level bug, not a user
-    * error — and staying silent lets it masquerade as "wrong password", which is
-    * precisely how the `setCookie` defect survived a full debugging round.
+    * about a contract they share by construction — a build-level bug, not a
+    * user error — and staying silent lets it masquerade as "wrong password",
+    * which is precisely how the `setCookie` defect survived a full debugging
+    * round.
     */
   private def transportFailure(err: Throwable): ApiError =
     val message = Option(err.getMessage).getOrElse("network request failed")

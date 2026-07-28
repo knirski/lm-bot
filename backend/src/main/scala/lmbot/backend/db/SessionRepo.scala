@@ -6,13 +6,17 @@ import java.time.OffsetDateTime
 
 class SessionRepo(xa: Transactor):
 
-  def insert(tokenHash: String, userId: Long, expiresAt: OffsetDateTime): Unit = transact(xa):
-    sql"""insert into sessions (token_hash, user_id, expires_at)
+  def insert(tokenHash: String, userId: Long, expiresAt: OffsetDateTime): Unit =
+    transact(xa):
+      sql"""insert into sessions (token_hash, user_id, expires_at)
           values ($tokenHash, $userId, $expiresAt)""".update.run()
-    ()
+      ()
 
   def find(tokenHash: String): Option[SessionRow] = connect(xa):
-    sql"select * from sessions where token_hash = $tokenHash".query[SessionRow].run().headOption
+    sql"select * from sessions where token_hash = $tokenHash"
+      .query[SessionRow]
+      .run()
+      .headOption
 
   def delete(tokenHash: String): Unit = transact(xa):
     sql"delete from sessions where token_hash = $tokenHash".update.run()

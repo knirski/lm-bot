@@ -11,7 +11,11 @@ object SessionCookie:
     * blocks cross-site submission, `Secure` is on unless local dev turns it
     * off. Spec §6.
     */
-  def issue(token: String, secure: Boolean, ttl: Duration): CookieValueWithMeta =
+  def issue(
+      token: String,
+      secure: Boolean,
+      ttl: Duration
+  ): CookieValueWithMeta =
     CookieValueWithMeta.unsafeApply(
       value = token,
       maxAge = Some(ttl.toSeconds),

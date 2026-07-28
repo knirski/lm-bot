@@ -10,8 +10,8 @@ object Passwords:
 
   // OWASP-style baseline: 3 passes over 64 MiB, one lane. Family scale means
   // logins are rare, so favour cost over throughput.
-  private val Iterations  = 3
-  private val MemoryKiB   = 65536
+  private val Iterations = 3
+  private val MemoryKiB = 65536
   private val Parallelism = 1
 
   def hash(plain: String): String =

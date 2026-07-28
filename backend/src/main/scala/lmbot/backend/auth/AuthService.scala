@@ -7,22 +7,23 @@ import lmbot.shared.domain.{Role, UserView}
 import java.time.{Duration, OffsetDateTime}
 
 case class AuthedUser(
-  id: Long,
-  username: String,
-  displayName: String,
-  role: Role,
-  telegramLinked: Boolean
+    id: Long,
+    username: String,
+    displayName: String,
+    role: Role,
+    telegramLinked: Boolean
 ):
-  def toView: UserView = UserView(id, username, displayName, role, telegramLinked)
+  def toView: UserView =
+    UserView(id, username, displayName, role, telegramLinked)
 
 /** All authentication and account-state policy. The HTTP layer asks questions
   * here and never decides anything itself (spec §6).
   */
 class AuthService(
-  users: UserRepo,
-  sessions: SessionRepo,
-  sessionTtl: Duration,
-  now: () => OffsetDateTime
+    users: UserRepo,
+    sessions: SessionRepo,
+    sessionTtl: Duration,
+    now: () => OffsetDateTime
 ):
 
   /** Verified against on an unknown username so that "no such user" costs the
@@ -33,20 +34,30 @@ class AuthService(
     */
   private lazy val decoyHash: String = Passwords.hash("no-such-account")
 
-  def login(username: String, password: String): Either[ApiError, (UserView, String)] =
+  def login(
+      username: String,
+      password: String
+  ): Either[ApiError, (UserView, String)] =
     users.findByUsername(username) match
       case None =>
         Passwords.verify(decoyHash, password)
         Left(ApiError.Unauthorized)
       case Some(row) => loginAs(row, password)
 
-  private def loginAs(row: UserRow, password: String): Either[ApiError, (UserView, String)] =
+  private def loginAs(
+      row: UserRow,
+      password: String
+  ): Either[ApiError, (UserView, String)] =
     for
       // Verify before checking `disabled`, so a disabled account and a wrong
       // password take the same work; the distinction is revealed only to
       // someone who already knows the password.
-      _    <- Either.cond(Passwords.verify(row.passwordHash, password), (), ApiError.Unauthorized)
-      _    <- Either.cond(!row.disabled, (), ApiError.Forbidden)
+      _ <- Either.cond(
+        Passwords.verify(row.passwordHash, password),
+        (),
+        ApiError.Unauthorized
+      )
+      _ <- Either.cond(!row.disabled, (), ApiError.Forbidden)
       user <- toAuthed(row)
     yield
       val token = Tokens.generate()
@@ -55,12 +66,16 @@ class AuthService(
 
   def authenticate(token: Option[String]): Either[ApiError, AuthedUser] =
     for
-      raw     <- token.filter(_.nonEmpty).toRight(ApiError.Unauthorized)
+      raw <- token.filter(_.nonEmpty).toRight(ApiError.Unauthorized)
       session <- sessions.find(Tokens.hash(raw)).toRight(ApiError.Unauthorized)
-      _       <- Either.cond(session.expiresAt.isAfter(now()), (), expire(Tokens.hash(raw)))
-      row     <- users.findById(session.userId).toRight(ApiError.Unauthorized)
-      _       <- Either.cond(!row.disabled, (), ApiError.Forbidden)
-      user    <- toAuthed(row)
+      _ <- Either.cond(
+        session.expiresAt.isAfter(now()),
+        (),
+        expire(Tokens.hash(raw))
+      )
+      row <- users.findById(session.userId).toRight(ApiError.Unauthorized)
+      _ <- Either.cond(!row.disabled, (), ApiError.Forbidden)
+      user <- toAuthed(row)
     yield user
 
   def logout(token: Option[String]): Unit =
@@ -78,4 +93,10 @@ class AuthService(
       .fromString(row.role)
       .toRight(ApiError.Unexpected(s"user ${row.id} has unrecognised role"))
       .map: role =>
-        AuthedUser(row.id, row.username, row.displayName, role, row.telegramChatId.isDefined)
+        AuthedUser(
+          row.id,
+          row.username,
+          row.displayName,
+          role,
+          row.telegramChatId.isDefined
+        )

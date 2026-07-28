@@ -28,11 +28,13 @@ object StaticRoutes:
       .out(htmlBodyUtf8)
       .errorOut(statusCode)
       .serverLogicPure[Identity] { segments =>
-        if segments.lastOption.exists(_.contains('.')) then Left(StatusCode.NotFound)
+        if segments.lastOption.exists(_.contains('.')) then
+          Left(StatusCode.NotFound)
         else
           Option(loader.getResourceAsStream("web/index.html")) match
-            case Some(stream) => Right(new String(stream.readAllBytes(), "UTF-8"))
-            case None         => Left(StatusCode.NotFound)
+            case Some(stream) =>
+              Right(new String(stream.readAllBytes(), "UTF-8"))
+            case None => Left(StatusCode.NotFound)
       }
 
   val endpoints: List[ServerEndpoint[Any, Identity]] = List(assets, spaFallback)
