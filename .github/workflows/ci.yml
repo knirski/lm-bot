@@ -74,7 +74,7 @@ jobs:
               - 'build.sbt'
               - 'project/**'
               - '**/*.sql'
-              - '**/src/main/resources/**'
+              - '**/resources/**'
               - '.scalafmt.conf'
 
       # ── Format gates (fast; gate before slow compilation) ─────────────────
@@ -153,7 +153,7 @@ jobs:
               - 'build.sbt'
               - 'project/**'
               - '**/*.sql'
-              - '**/src/main/resources/**'
+              - '**/resources/**'
               - '.scalafmt.conf'
 
       # ── Format gates (fast; gate before slow compilation) ─────────────────
