@@ -72,8 +72,10 @@ jobs:
       - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
         run: nix flake check
 
-      - name: Check Scala formatting
-        run: nix develop --command scalafmt --list --mode diff-ref=HEAD
+      - name: Check Scala formatting (sbt plugin)
+        # Uses sbt-scalafmt plugin rather than the nix devShell's scalafmt
+        # binary, so formatting is enforced regardless of environment.
+        run: nix develop --command sbt scalafmtCheckAll scalafmtSbtCheck
 
       # ── sbt / coursier cache ─────────────────────────────────────────────
       - name: Cache sbt and coursier
@@ -95,12 +97,24 @@ jobs:
         # CI must prove the whole suite compiles for this commit.
         run: nix develop --command sbt "compile; Test/compile"
 
-      - name: Test
+      - name: Test with coverage
         # testFull ignores the sbt action cache. See AGENTS.md for rationale.
-        run: nix develop --command sbt testFull
+        # coverage enables sbt-scoverage instrumentation for JVM targets.
+        # Scala.js targets are tested without coverage.
+        run: nix develop --command sbt coverage testFull coverageReport
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
+
+      # ── Upload coverage reports (always) ────────────────────────────────
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            **/coverage-report/**
+            **/coverage.*.xml
+          if-no-files-found: ignore
 
       # ── Validate Docker image builds (main only) ─────────────────────────
       # PRs skip this: the Dockerfile is a thin wrapper and the code is already
