@@ -22,7 +22,7 @@ leaves the spec actively misleading for the next reader.
 ## The environment is not optional
 
 Work inside the flake devShell: `direnv allow`, or `nix develop`. It pins
-Temurin 25, the sbt launcher, **Node 26**, Metals, scalafmt.
+Temurin 25, the sbt launcher, **Node 26**, and Metals.
 
 - **Node 26+ is a hard requirement.** V8 in Node 24/25 stack-overflows in the
   nested async contexts Gears uses throughout.
@@ -76,7 +76,15 @@ nix flake check           # pre-commit hooks + Nix formatting
 sbt testFull              # everything (96 tests)
 sbt backend/testFull      # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
+
+# Code coverage (run tests with scoverage instrumentation)
+sbt coverage testFull coverageReport    # Run tests with coverage
+sbt coverage frontend/testFull          # Coverage only for JVM; JS runs without it
 ```
+
+Note: `sbt-scoverage` only instruments JVM bytecode. Scala.js tests under
+`sbt coverage` will run bare (no instrumentation), which is fine — they still
+pass. The `coverageReport` task will generate reports only for JVM projects.
 
 In sbt 2, bare `test` **is** `testQuick`. It runs only what changed, judged by
 content hashing against a global cache in `~/.cache/sbt/v2` that survives
@@ -84,6 +92,21 @@ content hashing against a global cache in `~/.cache/sbt/v2` that survives
 `Passed: Total 0` and `[success]`. That is correct behaviour and a trap: never
 report a `Total 0` run as evidence that anything works. `touch` also does
 nothing, since only content is hashed.
+
+## Formatting with the sbt-scalafmt plugin
+
+`sbt-scalafmt` is installed as an sbt plugin so formatting enforcement works
+regardless of whether the nix devShell is active.
+
+- **`sbt scalafmtAll`** — format all Scala sources and `.sbt` files
+- **`sbt scalafmtCheckAll`** — check formatting (non-zero exit if unformatted)
+- **`sbt scalafmtSbtCheck`** — check `.sbt` file formatting
+
+CI runs `scalafmtCheckAll` + `scalafmtSbtCheck` before compilation with no
+separate CI step — through the sbt plugin, not the nix scalafmt binary.
+
+The standalone `scalafmt` binary is still in the devShell and can be used
+for one-off formatting, but `sbt scalafmtAll` is the canonical command.
 
 ## sbt 2 differences that will bite
 

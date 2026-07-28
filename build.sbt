@@ -86,6 +86,9 @@ lazy val sharedJS = project
   .settings(sharedSettings)
   .settings(
     name := "lm-bot-shared-js",
+    // sbt-scoverage instrumentation breaks Scala.js test bridge internals
+    // (TrieMap MainNode).  JS projects run bare under coverage.
+    coverageEnabled := false,
     libraryDependencies ++= Seq(
       jsDep("ch.epfl.lamp", "gears", Vgears),
       jsDep("com.softwaremill.sttp.tapir", "tapir-core", Vtapir),
@@ -211,6 +214,9 @@ lazy val frontend = project
   .settings(commonSettings)
   .settings(
     name := "lm-bot-frontend",
+    // sbt-scoverage instrumentation breaks Scala.js test bridge internals
+    // (TrieMap MainNode).  JS projects run bare under coverage.
+    coverageEnabled := false,
     scalaJSUseMainModuleInitializer := true,
     scalaJSLinkerConfig ~= wasmConfig,
     Test / scalaJSLinkerConfig ~= wasmConfig,

@@ -4,9 +4,47 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Cancel the previous run for the same branch when a new commit is pushed.
+# For PRs, a new push cancels the previous CI run for that PR.
+# Saves runner minutes during rapid iteration.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # ── PR title lint (fast, no Nix) ───────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: PR title lint
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            chore
+            style
+            refactor
+            test
+            ci
+            build
+          ignoreLabels: |
+            dependencies
+            automation
+
+  # ── x86_64-linux ────────────────────────────────────────────────────────────
+  x86_64:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,38 +52,112 @@ jobs:
         with:
           persist-credentials: false
 
+      # ── Nix setup ─────────────────────────────────────────────────────────
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.CACHIX_AUTH_TOKEN || '' }}
 
+      # ── Format gates (fast; gate before slow compilation) ─────────────────
+      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
+        run: nix flake check
+
+      # ── sbt / coursier cache ─────────────────────────────────────────────
       - name: Cache sbt and coursier
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/coursier
             ~/.sbt
-          key: ${{ runner.os }}-sbt-${{ hashFiles('build.sbt', 'project/**') }}
+          key: x86_64-sbt-${{ hashFiles('build.sbt', 'project/**') }}
+          restore-keys: |
+            x86_64-sbt-
 
+      # ── Compile, test, link ──────────────────────────────────────────────
       - name: Compile everything
-        run: nix develop --command sbt "compile; Test/compile"
+        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
 
-      - name: Test
-        # testFull, not test: in sbt 2 bare `test` is `testQuick`, which consults a
-        # global action cache and can legitimately run nothing. CI must prove the
-        # whole suite passes for this commit regardless of cache state.
-        run: nix develop --command sbt testFull
+      - name: Test with coverage
+        run: nix develop --command sbt "coverage; testFull; coverageReport"
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
 
-      - name: Check formatting
-        run: nix develop --command scalafmt --list --mode diff-ref=HEAD
+      # ── Upload coverage reports ──────────────────────────────────────────
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-x86_64
+          path: |
+            **/coverage-report/**
+            **/coverage.*.xml
+          if-no-files-found: ignore
 
-      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
-        run: nix flake check
+      # ── Validate Docker image builds (main only) ─────────────────────────
+      - name: Build Docker image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker build -t lm-bot:ci .
 
+      # ── Push devShell closure to Cachix (main only) ──────────────────────
       - name: Push devShell closure to Cachix
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           nix copy --to 'https://knirski-lm-bot.cachix.org' \
             .#devShells.x86_64-linux.default
+
+  # ── aarch64-linux ───────────────────────────────────────────────────────────
+  aarch64:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # ── Nix setup ─────────────────────────────────────────────────────────
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.CACHIX_AUTH_TOKEN || '' }}
+
+      # ── Format gates (fast; gate before slow compilation) ─────────────────
+      - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
+        run: nix flake check
+
+      # ── sbt / coursier cache ─────────────────────────────────────────────
+      - name: Cache sbt and coursier
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.sbt
+          key: arm64-sbt-${{ hashFiles('build.sbt', 'project/**') }}
+          restore-keys: |
+            arm64-sbt-
+
+      # ── Compile, test, link ──────────────────────────────────────────────
+      - name: Compile everything
+        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
+
+      # Backend tests need embedded-postgres which does not ship aarch64
+      # binaries for zonky 2.2.2. Run JS-only tests on ARM instead.
+      - name: Test JS (shared + frontend)
+        run: nix develop --command sbt "sharedJS/testFull; frontend/testFull"
+
+      - name: Link frontend (Wasm)
+        run: nix develop --command sbt frontend/fullLinkJS
+
+      # ── Upload coverage reports ──────────────────────────────────────────
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-arm64
+          path: |
+            **/coverage-report/**
+            **/coverage.*.xml
+          if-no-files-found: ignore
+
+      # ── Push devShell closure to Cachix (main only) ──────────────────────
+      - name: Push devShell closure to Cachix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          nix copy --to 'https://knirski-lm-bot.cachix.org' \
+            .#devShells.aarch64-linux.default
