@@ -63,7 +63,7 @@ jobs:
 
       # ── sbt / coursier cache ─────────────────────────────────────────────
       - name: Cache sbt and coursier
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/coursier
@@ -124,7 +124,7 @@ jobs:
 
       # ── sbt / coursier cache ─────────────────────────────────────────────
       - name: Cache sbt and coursier
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/coursier
