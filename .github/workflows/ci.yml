@@ -106,8 +106,7 @@ jobs:
       - name: Push devShell closure to Cachix
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          nix copy --to 'https://knirski-lm-bot.cachix.org' \
-            .#devShells.x86_64-linux.default
+          cachix push knirski-lm-bot '.#devShells.x86_64-linux.default'
 
   # ── aarch64-linux ───────────────────────────────────────────────────────────
   aarch64:
@@ -164,5 +163,4 @@ jobs:
       - name: Push devShell closure to Cachix
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          nix copy --to 'https://knirski-lm-bot.cachix.org' \
-            .#devShells.aarch64-linux.default
+          cachix push knirski-lm-bot '.#devShells.aarch64-linux.default'

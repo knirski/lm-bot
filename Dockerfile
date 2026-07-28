@@ -23,8 +23,7 @@ COPY frontend frontend
 #
 # Set useFastLinkForAssets to false so the resource generator reads from
 # fullLinkJSOutput (the production link stage) rather than fastLinkJSOutput.
-RUN sbt 'set ThisBuild/useFastLinkForAssets := false' \
-      frontend/fullLinkJS backend/assembly \
+RUN sbt 'set ThisBuild/useFastLinkForAssets := false; frontend/fullLinkJS; backend/assembly' \
  && find target -name 'lm-bot-backend-assembly-*.jar' -print -quit \
       | xargs -I{} cp {} /build/lm-bot.jar \
  && test -s /build/lm-bot.jar
