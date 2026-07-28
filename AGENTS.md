@@ -22,14 +22,14 @@ leaves the spec actively misleading for the next reader.
 ## The environment is not optional
 
 Work inside the flake devShell: `direnv allow`, or `nix develop`. It pins
-Temurin 25, the sbt launcher, **Node 26**, Metals, scalafmt, and `psql`.
+Temurin 25, the sbt launcher, **Node 26**, Metals, scalafmt.
 
 - **Node 26+ is a hard requirement.** V8 in Node 24/25 stack-overflows in the
   nested async contexts Gears uses throughout.
 - **PostgreSQL is embedded** via zonky embedded-postgres (`io.zonky.test:embedded-postgres`).
-  Tests start one PG per suite (isolated, parallel).  `sbt startDev` starts one
-  automatically on port 15432.  No external PG, no container, no devShell
-  lifecycle needed.
+  Tests start one PG per suite on random ports (isolated but run serially due to
+  the shared binary cache).  `sbt startDev` starts one automatically on port 15432.
+  No external PG, no container, no devShell lifecycle needed.
 - **The Cachix binary cache `knirski-lm-bot` is wired into `nixConfig`**, so
   every `nix develop` and `nix build` automatically pulls pre-built closures
   from `https://knirski-lm-bot.cachix.org` before building locally. CI pushes

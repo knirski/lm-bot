@@ -29,7 +29,7 @@ object Main:
         // Start embedded PostgreSQL in dev mode (EMBEDDED_PG env var set by
         // build.sbt's Compile / envVars).  The shutdown hook stops PG when the
         // JVM exits.
-        if sys.env.contains("EMBEDDED_PG") then
+        if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
           log.info("Starting embedded PostgreSQL on port 15432")
           val pg = EmbeddedPg.start(
             EmbeddedPostgres.builder().setPort(15432)

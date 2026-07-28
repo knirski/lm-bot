@@ -145,7 +145,7 @@ lazy val backend = project
     // binary cache at /tmp/embedded-pg/.
     Test / parallelExecution := false,
 
-    // Virtual threads and Testcontainers both want a real JVM 25+.
+    // Virtual threads want a real JVM 25+.
     javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
@@ -154,7 +154,10 @@ lazy val backend = project
     // pollution).
     Compile / fork := true,
     Compile / envVars := Map(
-      "DATABASE_URL" -> s"jdbc:postgresql://localhost:$pgPort/lmbot",
+      "DATABASE_URL" -> sys.env.getOrElse(
+        "DATABASE_URL",
+        s"jdbc:postgresql://localhost:$pgPort/lmbot"
+      ),
       "DATABASE_USER" -> sys.env.getOrElse("DATABASE_USER", "lmbot"),
       "DATABASE_PASSWORD" -> sys.env.getOrElse("DATABASE_PASSWORD", "lmbot"),
       "EMBEDDED_PG" -> "true",

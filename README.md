@@ -18,10 +18,6 @@ Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
   to WebAssembly via Scala.js + JSPI.
 - **No external PostgreSQL needed.**  The dev server and tests use an embedded
   PostgreSQL via zonky embedded-postgres — real PG, no container, no setup.
-- **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
-  to WebAssembly via Scala.js + JSPI.
-- **No external PostgreSQL needed.**  The dev server and tests use an embedded
-  PostgreSQL via zonky embedded-postgres — real PG, no container, no setup.
 
 Node's version is not a preference: Node 24 and 25 contain a V8 bug that
 stack-overflows in the nested async contexts Gears relies on. The flake pins
@@ -52,9 +48,8 @@ Override the database for external PG by setting `DATABASE_URL` in the shell:
 
 | Variable | Dev default | Source |
 |---|---|---|
-| `DATABASE_URL` | `localhost:15432/lmbot` | devShell (Nix-managed PG) |
-| `DATABASE_TEST_URL` | `localhost:15432/lmbot_test` | devShell |
-| `DATABASE_USER` / `PASSWORD` | `lmbot` / `lmbot` | devShell |
+| `DATABASE_URL` | `localhost:15432/lmbot` | `build.sbt` (overridable) |
+| `DATABASE_USER` / `PASSWORD` | `lmbot` / `lmbot` | `build.sbt` (overridable) |
 | `COOKIE_SECURE` | `false` (plain-HTTP safe) | `build.sbt` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` | `build.sbt` |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` | `build.sbt` |
