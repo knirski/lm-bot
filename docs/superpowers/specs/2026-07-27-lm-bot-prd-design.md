@@ -194,6 +194,37 @@ Rules:
 - Redirects are **not** followed automatically; a 302 is a signal, not a hop (see session-expiry detection below).
 - Any response that fails to decode is logged with the raw payload — the early-warning system for upstream API changes. Credentials and tokens are masked in all such output (§6).
 
+**Plan 3 client boundaries.** The client is backend-internal; Luxmed's wire
+types do not enter the browser-facing `shared` module.
+
+- `lmbot.backend.luxmed.model` owns immutable wire DTOs and jsoniter codecs
+  shared by the production client and the test mock.
+- `LuxmedTransport` owns request construction, headers, cookie parsing and
+  merging, redirect suppression, response decoding, and conversion of foreign
+  failures into `LuxmedError` values.
+- `LuxmedClient` owns authentication, session maintenance, per-account
+  serialization/rate limiting, and the public dictionary, search, XSRF, lock,
+  confirm, and release operations.
+- `SessionStore` is scoped to one linked account and exposes `load`, `replace`,
+  and `clear`. `replace(expectedRefreshToken, updatedSession)` is an atomic
+  compare-and-set: it must fail rather than overwrite a session whose refresh
+  token is no longer the expected value.
+- Plan 3 supplies an in-memory `SessionStore` and proves the replacement
+  protocol. Plan 4 supplies its AES-256-GCM-encrypted PostgreSQL
+  implementation and restart round-trip coverage. Plan 3 adds no database,
+  lm-bot HTTP endpoint, or UI.
+
+The implementation is **direct-style functional Scala with Gears**. Suspended
+operations have ordinary synchronous-looking signatures with `(using Async)`;
+Gears fibers, structured scopes, and `Semaphore` are the only concurrency
+vocabulary. Expected failures are values returned as
+`Either[LuxmedError, A]`, where `LuxmedError` and internal session states are
+closed Scala 3 ADTs handled with exhaustive pattern matching. `Either` is not
+an async effect and is not abstracted behind `F[_]`: there is no tagless-final
+layer, effect monad, transformer stack, Cats Effect, or application-level
+`Future`. Exceptions represent bugs; transport exceptions are caught only at
+the boundary and converted to typed values.
+
 **Auth flow (three steps, then XSRF on demand):**
 
 1. `POST {oldApi}/token` — **form-encoded** body `client_id=Android`, `grant_type=password`, `username`, `password`. Returns `access_token`, `expires_in`, `refresh_token`, `token_type`.
@@ -211,6 +242,16 @@ Authenticated `NewPortal/*` calls then use header `authorization-token: Bearer <
 - Reusing a consumed refresh token returns `401` with `ErrorCode: 1`, "You have been logged out due to inactivity."
 - Therefore the stored session must be written **atomically** with each refresh (§5.3). A crash between "old token consumed" and "new token stored" costs a password re-login, and password logins are the rationed operation (§10).
 - A refresh that cannot be recovered falls back to a full password grant. If *that* returns anything challenge-shaped, classify it as an unexpected auth response (§3.2) rather than bad credentials.
+
+`LuxmedClient` publishes a newly rotated session to its ready cache only after
+`SessionStore.replace` succeeds. If Luxmed returned the new token but local
+persistence failed, the client retains a `pendingPersistence` state in memory,
+blocks further Luxmed calls, and retries only the store replacement; it must
+not repeat the refresh with the now-consumed old token. Password
+re-authentication is reserved for a refresh token rejected by Luxmed, never for
+a local persistence failure. The per-account `Semaphore` covers session
+inspection, refresh, replacement, and the subsequent operation, so concurrent
+callers cannot start competing refreshes.
 
 **Two-factor authentication is not enforced on this API** — established by the Plan 2 spike, with the evidence and caveats in §3.2. No enrollment flow is implemented; a single distinct failure path covers the possibility that it appears.
 
@@ -289,14 +330,36 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 
 ## 7. Error handling
 
-- Direct style with typed domain failures as values (Scala 3 union types / `Either`), e.g. `LuxmedError = AuthFailed | SlotGone | VersionRejected | RateLimited | ApiChanged`.
+- Direct style with typed domain failures as values. Luxmed operations return
+  `Either[LuxmedError, A]`; sequencing is ordinary direct-style Gears code with
+  exhaustive matching, not an effect-polymorphic program. `LuxmedError` is a
+  closed ADT covering at least `AuthFailed`, `UnexpectedAuthResponse`,
+  `SessionExpired`, `VersionRejected`, `RateLimited`, `Transient`,
+  `DecodeFailed`, `PersistenceFailed`, `ProtocolViolation`, and `SlotGone`.
 - Exceptions are reserved for genuine bugs; they crash the failing fiber, not the supervisor.
 
 ## 8. Testing
 
 - **shared/domain:** pure unit tests (slot filtering, dedup, monitor state transitions) — most logic lives here by design.
 - **Luxmed client:** tested against a mock Luxmed server, replicating lmassist's `luxmed-mock-server` *approach* — but with fixtures transcribed from the shapes documented in luxmed-bot's model sources, **not** from lmassist's invented ones (§1). Coverage: the three-step auth flow, XSRF acquisition, dictionaries, terms search (including both datetime forms in one response), lock → confirm, lock → release, and each error variant (session-expiry 302, bad-credentials 409, all three error-body shapes, 429, version rejection).
-- Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated.
+- The mock uses the JDK `HttpServer`, exposes both Luxmed base paths on one
+  random-port server, and captures requests for exact method, path, full query
+  parameter, header, cookie, and body assertions. Its response fixtures are
+  literal JSON files transcribed from recorded responses and
+  `dyrkin/luxmed-bot`; they are **not generated with the production codecs**.
+  Sharing DTO types between client and mock is desirable, but sharing the
+  encoder that produces expected fixture bytes would let the same wrong codec
+  pass both sides of a round-trip.
+- Session tests use injected clock, sleeper, and UUID sources. They cover the
+  ~300 s refresh threshold, refresh-token rotation, compare-and-set rejection,
+  retry of pending persistence without a second HTTP refresh, rejected-refresh
+  password fallback, and concurrent callers producing one refresh.
+- Rate-limit tests prove one in-flight request and minimum spacing without
+  wall-clock sleeps. Error tests cover the session-expiry 302, both
+  bad-credential messages, all three error-body shapes, 429, 5xx, version
+  rejection, an unexpected challenge-shaped response, malformed JSON, missing
+  JWT, persistence failure, and secret redaction.
+- Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated. CI never calls live Luxmed endpoints.
 - **Backend API:** integration tests with real Postgres (Testcontainers) against Tapir endpoints in-process.
 - **Frontend:** domain logic unit-tested; minimal DOM smoke tests in v1.
 - TDD throughout; CI runs everything on every push.
