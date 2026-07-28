@@ -14,12 +14,47 @@ import scala.sys.process.*
   */
 object EmbeddedPg:
 
+  /** Start embedded PostgreSQL on the given builder. Connects as the postgres
+    * superuser and bootstraps the application role and database (idempotent),
+    * so callers can immediately connect as `lmbot`/`lmbot` to the `lmbot`
+    * database.
+    *
+    * This is the variant to use in dev mode (sbt startDev). Tests that want a
+    * plain cluster with only the default superuser should call `start`.
+    */
+  def startForDev(builder: EmbeddedPostgres.Builder): EmbeddedPostgres =
+    val pg = start(builder)
+    bootstrap(pg)
+    pg
+
   def start(builder: EmbeddedPostgres.Builder): EmbeddedPostgres =
     try builder.start()
     catch
       case e: IllegalStateException
           if e.getMessage != null && e.getMessage.contains("initdb") =>
         patchAndRetry(builder)
+
+  private def bootstrap(pg: EmbeddedPostgres): Unit =
+    val conn = java.sql.DriverManager.getConnection(
+      pg.getJdbcUrl("postgres", "postgres"),
+      "postgres",
+      "postgres"
+    )
+    try
+      conn
+        .createStatement()
+        .execute(
+          "CREATE ROLE lmbot WITH LOGIN PASSWORD 'lmbot'"
+        )
+    catch case _: java.sql.SQLException => ()
+    try
+      conn
+        .createStatement()
+        .execute(
+          "CREATE DATABASE lmbot OWNER lmbot"
+        )
+    catch case _: java.sql.SQLException => ()
+    finally conn.close()
 
   private def patchAndRetry(
       builder: EmbeddedPostgres.Builder
