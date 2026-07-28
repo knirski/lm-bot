@@ -2,6 +2,8 @@ import org.scalajs.linker.interface.{ESVersion, ModuleKind, StandardConfig}
 
 val scala3 = "3.8.4"
 
+val pgPort = "15432"
+
 ThisBuild / scalaVersion := scala3
 ThisBuild / organization := "dev.knirski"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -29,7 +31,7 @@ val Vhikari = "7.1.0"
 val Vargon2 = "2.12"
 val Vlogback = "1.6.0"
 val Vmunit = "1.3.4"
-val Vtestcontainers = "1.21.3"
+val VembeddedPg = "2.2.2"
 
 /** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
   * encodes Scala.js 1.x + Scala 3, both pinned by this build.
@@ -137,11 +139,16 @@ lazy val backend = project
       "com.zaxxer" % "HikariCP" % Vhikari,
       "de.mkammerer" % "argon2-jvm" % Vargon2,
       "ch.qos.logback" % "logback-classic" % Vlogback,
+      "io.zonky.test" % "embedded-postgres" % VembeddedPg,
       "org.scalameta" %% "munit" % Vmunit % Test,
-      "org.testcontainers" % "postgresql" % Vtestcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp % Test
     ),
-    // Virtual threads and Testcontainers both want a real JVM 25+.
+    // Each test suite manages its own embedded PostgreSQL on a random port
+    // (fully isolated).  Suites run serially because they share the embedded-postgres
+    // binary cache at /tmp/embedded-pg/.
+    Test / parallelExecution := false,
+
+    // Virtual threads want a real JVM 25+.
     javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
@@ -150,11 +157,13 @@ lazy val backend = project
     // pollution).
     Compile / fork := true,
     Compile / envVars := Map(
-      // Sensible defaults for local dev; a real env var in the shell wins.
-      "DATABASE_URL" -> sys.env
-        .getOrElse("DATABASE_URL", "jdbc:postgresql://localhost:5432/lmbot"),
+      "DATABASE_URL" -> sys.env.getOrElse(
+        "DATABASE_URL",
+        s"jdbc:postgresql://localhost:$pgPort/lmbot"
+      ),
       "DATABASE_USER" -> sys.env.getOrElse("DATABASE_USER", "lmbot"),
       "DATABASE_PASSWORD" -> sys.env.getOrElse("DATABASE_PASSWORD", "lmbot"),
+      "EMBEDDED_PG" -> "true",
       "COOKIE_SECURE" -> sys.env.getOrElse("COOKIE_SECURE", "false"),
       "ADMIN_USERNAME" -> sys.env.getOrElse("ADMIN_USERNAME", "admin"),
       "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
@@ -237,9 +246,8 @@ lazy val root = project
       )
       log.info("")
       log.info(
-        "Make sure PostgreSQL is running:"
+        "Embedded PostgreSQL starts automatically on port 15432"
       )
-      log.info("  docker compose up -d postgres")
       log.info("")
       // The resource generator triggers fastLinkJS on first compile, so we
       // don't run it explicitly here.
