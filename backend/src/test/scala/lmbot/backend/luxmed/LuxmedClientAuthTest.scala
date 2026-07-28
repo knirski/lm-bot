@@ -1,7 +1,12 @@
 package lmbot.backend.luxmed
 
 import lmbot.backend.config.Secret
-import lmbot.backend.luxmed.support.{FakeTime, GearsTest, MockLuxmedServer}
+import lmbot.backend.luxmed.support.{
+  FakeTime,
+  GearsTest,
+  MockLuxmedServer,
+  RecordedRequest
+}
 import lmbot.backend.luxmed.model.*
 import sttp.model.Uri
 import java.util.UUID
@@ -10,6 +15,11 @@ import java.time.Duration
 class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   private val testUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
+
+  private def header(request: RecordedRequest, name: String): Option[String] =
+    request.headers.collectFirst {
+      case (key, values) if key.equalsIgnoreCase(name) => values.head
+    }
 
   private final class FailOnceStore extends SessionStore:
     private val delegate = InMemorySessionStore()
@@ -80,6 +90,37 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       val session = result.toOption.get
       assertEquals(session.refreshToken.value, "RT1")
       assertEquals(session.jwtToken.value, "JWT_TOKEN_1")
+      val requests = mock.requests
+      assertEquals(requests.map(_.method), List("POST", "GET", "GET"))
+      assertEquals(
+        requests.map(_.path),
+        List(
+          "/PatientPortalMobileAPI/api/token",
+          "/PatientPortal/Account/LogInToApp",
+          "/PatientPortal/NewPortal/Page/Reservation"
+        )
+      )
+      assertEquals(
+        requests(1).rawQuery,
+        Some("app=search&client=3&lang=pl")
+      )
+      assert(requests.head.body.contains("client_id=Android"))
+      assert(requests.head.body.contains("grant_type=password"))
+      assert(requests.head.body.contains("username=user%40example.com"))
+      assert(requests.head.body.contains("password=password123"))
+      assert(
+        header(requests.head, "Content-Type")
+          .exists(_.startsWith("application/x-www-form-urlencoded"))
+      )
+      assertEquals(header(requests(1), "Authorization"), Some("AT1"))
+      assertEquals(
+        header(requests(1), "X-Requested-With"),
+        Some("pl.luxmed.pp")
+      )
+      assertEquals(
+        header(requests(2), "Cookie"),
+        Some("asp.net_sessionid=sess1")
+      )
 
   test("authenticate stores session in the store"):
     withClient(): (client, mock, _, _) =>
@@ -292,7 +333,11 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       runAsync:
         client.authenticate()
       fake.advance(Duration.ofSeconds(301))
-      mock.enqueue(status = 401, body = "session has expired")
+      mock.enqueue(
+        status = 401,
+        body =
+          """{"error":{"code":1,"message":"You have been logged out due to inactivity."}}"""
+      )
       mock.enqueue(
         status = 200,
         body =

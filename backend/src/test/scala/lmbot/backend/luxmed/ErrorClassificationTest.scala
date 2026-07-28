@@ -107,6 +107,18 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
         transport.oldApiGet("/check")
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
+  test("logged out due to inactivity is SessionExpired"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 401,
+        body =
+          """{"error":{"code":1,"message":"You have been logged out due to inactivity."}}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/check")
+      assertEquals(result, Left(LuxmedError.SessionExpired))
+
   test("5xx is Transient"):
     withTransport: (transport, mock) =>
       mock.enqueue(status = 503, body = "Service Unavailable")

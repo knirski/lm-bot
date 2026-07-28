@@ -4,6 +4,7 @@ import gears.async.Async
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
 import sttp.client3.*
+import sttp.model.Uri
 import java.net.http.HttpClient
 import java.time.Duration
 
@@ -60,7 +61,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(uri"${config.oldApi}/$path?$params")
+        .get(endpoint(config.oldApi, path, params))
         .headers(oldApiHeaders)
     )
 
@@ -73,7 +74,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .post(uri"${config.oldApi}/$path")
+        .post(endpoint(config.oldApi, path, Map.empty))
         .headers(oldApiHeaders)
         .body(body)
     )
@@ -88,7 +89,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(uri"${config.newApi}/$path?$params")
+        .get(endpoint(config.newApi, path, params))
         .headers(newApiHeaders)
         .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
         .cookies(session.cookies.toSeq*)
@@ -97,14 +98,15 @@ final class LuxmedTransport(config: LuxmedConfig):
   def newApiBootstrapGet(
       path: String,
       accessToken: Secret,
-      cookies: CookieJar
+      cookies: CookieJar,
+      params: Map[String, String] = Map.empty
   )(using
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(uri"${config.newApi}/$path")
+        .get(endpoint(config.newApi, path, params))
         .headers(newApiHeaders)
         .header("Authorization", accessToken.value)
         .header("X-Requested-With", "pl.luxmed.pp")
@@ -123,7 +125,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     val mergedCookies = session.cookies.merge(extraCookies.toList)
     var r = mkRequest
-      .post(uri"${config.newApi}/$path")
+      .post(endpoint(config.newApi, path, Map.empty))
       .headers(newApiHeaders)
       .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
       .header("Content-Type", "application/json")
@@ -132,6 +134,13 @@ final class LuxmedTransport(config: LuxmedConfig):
     xsrfToken.foreach: tok =>
       r = r.header("xsrf-token", tok.value)
     run(a, p)(r)
+
+  private def endpoint(
+      base: Uri,
+      path: String,
+      params: Map[String, String]
+  ): Uri =
+    base.addPath(path.split('/').toSeq).addParams(params)
 
   private def run(
       async: Async,
@@ -161,11 +170,12 @@ final class LuxmedTransport(config: LuxmedConfig):
       if location.contains("/LogOn") || location.contains("/UniversalLink") then
         return Left(LuxmedError.SessionExpired)
 
-    if body.toLowerCase.contains("session has expired") then
-      return Left(LuxmedError.SessionExpired)
+    val bodyLower = body.toLowerCase
+    if bodyLower.contains("session has expired") ||
+      bodyLower.contains("logged out due to inactivity")
+    then return Left(LuxmedError.SessionExpired)
 
     if status == 409 then
-      val bodyLower = body.toLowerCase
       if bodyLower.contains("invalid login or password") ||
         bodyLower.contains("nieprawidłowy login lub hasło")
       then return Left(LuxmedError.AuthFailed)

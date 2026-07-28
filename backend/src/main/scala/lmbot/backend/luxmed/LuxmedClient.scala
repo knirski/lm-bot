@@ -229,9 +229,10 @@ final class LuxmedClient(
   ): Either[LuxmedError, (CookieJar, Secret)] =
     for
       loginResp <- transport.newApiBootstrapGet(
-        "Account/LogInToApp?app=search&client=3&lang=pl",
+        "Account/LogInToApp",
         accessToken,
-        cookies
+        cookies,
+        Map("app" -> "search", "client" -> "3", "lang" -> "pl")
       )
       loginCookies = cookies.merge(loginResp.cookies)
       pageResp <- transport.newApiBootstrapGet(
