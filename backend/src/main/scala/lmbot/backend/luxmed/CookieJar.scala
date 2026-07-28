@@ -32,6 +32,14 @@ final case class CookieJar private (entries: Map[String, Secret]):
   def requestCookies: List[(String, String)] =
     entries.map { (_, value) => ("Cookie", value.value) }.toList
 
+  /** Produce (name, value) tuples for sttp's cookies method. */
+  def toSeq: Seq[(String, String)] =
+    entries.map { (k, v) => (k, v.value) }.toSeq
+
+  /** Produce (name, Secret) pairs for merging. */
+  def toList: List[(String, Secret)] =
+    entries.toList
+
 object CookieJar:
   def empty: CookieJar = CookieJar(Map.empty)
 
