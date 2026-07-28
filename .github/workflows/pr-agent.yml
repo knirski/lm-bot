@@ -1,6 +1,8 @@
 # AI-powered PR review using Qodo's PR Agent (Gemini backend).
-# Runs on every new PR, when a draft is marked ready for review,
-# and on PR comments to respond to /review, /describe, /improve etc.
+#
+# Triggers:
+#   - pull_request: auto-review on open, reopen, ready, and push
+#   - issue_comment: commands like /review, /describe, /improve in comments
 #
 # Requires the `GEMINI_API_KEY` repository secret (Google AI Studio).
 # Set it via: https://github.com/knirski/lm-bot/settings/secrets/actions
@@ -12,6 +14,7 @@ on:
       - opened
       - reopened
       - ready_for_review
+      - synchronize
   issue_comment:
     types:
       - created
@@ -25,7 +28,9 @@ concurrency:
 
 jobs:
   pr-agent:
-    if: ${{ (github.event_name == 'pull_request' && github.event.sender.type != 'Bot') || (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.sender.type != 'Bot') }}
+    if: |
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+      (github.event_name == 'pull_request' && github.event.sender.type != 'Bot')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -47,8 +52,7 @@ jobs:
           fi
 
       - name: PR Agent action step
-        # v0.40.0 — pinned by commit hash for supply-chain security.
-        uses: the-pr-agent/pr-agent@6ad7cf75d95cb3bbb54cf2ad92050eb03804964a
+        uses: the-pr-agent/pr-agent@6ad7cf75d95cb3bbb54cf2ad92050eb03804964a # v0.40.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

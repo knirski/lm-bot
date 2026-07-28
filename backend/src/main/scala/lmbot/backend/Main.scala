@@ -31,7 +31,7 @@ object Main:
         // JVM exits.
         if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
           log.info("Starting embedded PostgreSQL on port 15432")
-          val pg = EmbeddedPg.start(
+          val pg = EmbeddedPg.startForDev(
             EmbeddedPostgres.builder().setPort(15432)
           )
           Runtime.getRuntime.addShutdownHook(Thread(() => pg.close()))
