@@ -49,14 +49,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Types that trigger a release (from AGENTS.md convention).
-          # The ! suffix flags breaking changes (e.g. feat!:).
+          # All valid conventional commit types (from AGENTS.md convention).
+          # The ! suffix after any type flags a breaking change (e.g. feat!:).
           types: |
             feat
             fix
             perf
-          # Types that do NOT trigger a release.
-          # Dependabot PRs are also ignored by default.
+            docs
+            chore
+            style
+            refactor
+            test
+            ci
+            build
+          # Dependabot PRs and automation are ignored.
           ignoreLabels: |
             dependencies
             automation
