@@ -36,7 +36,7 @@ Because Ryuk (Testcontainers' reaper) is disabled under rootless Podman, a hard-
 
 ```bash
 node --version     # must be v26.x — Node 24/25 break Gears (spec §5.1)
-java -version      # 21
+java -version      # 25
 sbt --script-version
 ```
 
