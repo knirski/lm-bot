@@ -4,8 +4,8 @@ import gears.async.Async
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
 import sttp.client3.*
-import scala.concurrent.duration.FiniteDuration
-import java.util.concurrent.TimeUnit
+import java.net.http.HttpClient
+import java.time.Duration
 
 private[luxmed] trait RequestPermit:
   def beforeRequest()(using Async): Unit
@@ -18,10 +18,11 @@ final case class RedactedResponse(
 
 final class LuxmedTransport(config: LuxmedConfig):
 
-  private val backend = HttpClientSyncBackend(
-    SttpBackendOptions.connectionTimeout(
-      FiniteDuration(15, TimeUnit.SECONDS)
-    )
+  private val backend = HttpClientSyncBackend.usingClient(
+    HttpClient
+      .newBuilder()
+      .connectTimeout(Duration.ofSeconds(15))
+      .build()
   )
 
   private val commonHeaders = Map(

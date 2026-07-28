@@ -2,8 +2,7 @@ package lmbot.backend.luxmed.support
 
 import gears.async.Async
 import lmbot.backend.luxmed.Sleeper
-import scala.concurrent.duration.FiniteDuration
-import java.time.Instant
+import java.time.{Duration, Instant}
 import java.util.concurrent.ConcurrentLinkedQueue
 import scala.jdk.CollectionConverters.*
 
@@ -13,19 +12,19 @@ import scala.jdk.CollectionConverters.*
 final class FakeTime:
 
   private var current = Instant.parse("2026-08-03T12:00:00Z")
-  private val recordedSleeps = new ConcurrentLinkedQueue[FiniteDuration]()
+  private val recordedSleeps = new ConcurrentLinkedQueue[Duration]()
 
   def now(): Instant = current
 
-  def advance(duration: FiniteDuration): Unit =
+  def advance(duration: Duration): Unit =
     current = current.plusNanos(duration.toNanos)
 
   def set(time: Instant): Unit =
     current = time
 
-  def sleeps: List[FiniteDuration] = recordedSleeps.asScala.toList
+  def sleeps: List[Duration] = recordedSleeps.asScala.toList
 
   val sleeper: Sleeper = new Sleeper:
-    def sleep(duration: FiniteDuration)(using Async): Unit =
+    def sleep(duration: Duration)(using Async): Unit =
       recordedSleeps.add(duration)
       advance(duration)

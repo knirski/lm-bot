@@ -4,8 +4,8 @@ import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.support.{FakeTime, GearsTest, MockLuxmedServer}
 import lmbot.backend.luxmed.model.*
 import sttp.model.Uri
-import scala.concurrent.duration.*
 import java.util.UUID
+import java.time.Duration
 
 class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
@@ -25,7 +25,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       val transport = LuxmedTransport(config)
       val credentials = Credentials("user@example.com", Secret("password123"))
       val fake = FakeTime()
-      val gate = AccountGate(0.millis, () => fake.now(), fake.sleeper)
+      val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
       val store = InMemorySessionStore()
       val client = LuxmedClient(transport, credentials, gate, store)
       body(client, mock)

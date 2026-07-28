@@ -1,10 +1,7 @@
 package lmbot.backend.luxmed
 
-import gears.async.Async
-import scala.concurrent.duration.FiniteDuration
-import java.time.Instant
-import java.util.concurrent.Semaphore
-import scala.annotation.nowarn
+import gears.async.{Async, JvmAsyncOperations, Semaphore}
+import java.time.{Duration, Instant}
 
 /** A pacing capability that the `AccountGate` hands out to the body of
   * `serialized`. Only `AccountGate` can construct an instance.
@@ -13,43 +10,44 @@ final class AccountGatePermit private[luxmed] (
     gate: AccountGate
 ) extends RequestPermit:
 
-  private var lastRequestAt: Option[Instant] = None
-
   def beforeRequest()(using Async): Unit =
     val now = gate.now()
-    val waitMs = lastRequestAt match
-      case Some(last) =>
-        val elapsed = java.time.Duration.between(last, now).toMillis
-        Math.max(0, gate.minimumSpacing.toMillis - elapsed)
-      case None => 0L
-    if waitMs > 0 then
-      gate.sleeper.sleep(
-        FiniteDuration(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-      )
-    lastRequestAt = Some(gate.now())
+    val waitMs = gate.remainingWaitMillis(now)
+    if waitMs > 0 then gate.sleeper.sleep(Duration.ofMillis(waitMs))
+    gate.recordRequestAt(gate.now())
 
 /** Serializes access to a single Luxmed account and paces every HTTP request.
   */
 final class AccountGate(
-    val minimumSpacing: FiniteDuration,
+    val minimumSpacing: Duration,
     val now: () => Instant = () => Instant.now(),
     val sleeper: Sleeper = Sleeper.Default
 ):
 
-  private val semaphore = new Semaphore(1)
+  private val semaphore = Semaphore(1)
+  private var lastRequestAt: Option[Instant] = None
 
-  @nowarn("msg=unused implicit parameter")
   def serialized[A](body: AccountGatePermit ?=> A)(using Async): A =
-    semaphore.acquire()
+    val guard = semaphore.awaitResult
     try body(using AccountGatePermit(this))
-    finally semaphore.release()
+    finally guard.release()
+
+  private[luxmed] def remainingWaitMillis(now: Instant): Long =
+    lastRequestAt match
+      case Some(last) =>
+        val elapsed = Duration.between(last, now).toMillis
+        Math.max(0L, minimumSpacing.toMillis - elapsed)
+      case None => 0L
+
+  private[luxmed] def recordRequestAt(at: Instant): Unit =
+    lastRequestAt = Some(at)
 
 /** An injectable sleeper for deterministic testing.
   */
 trait Sleeper:
-  def sleep(duration: FiniteDuration)(using Async): Unit
+  def sleep(duration: Duration)(using Async): Unit
 
 object Sleeper:
   object Default extends Sleeper:
-    def sleep(duration: FiniteDuration)(using Async): Unit =
-      Thread.sleep(duration.toMillis)
+    def sleep(duration: Duration)(using Async): Unit =
+      JvmAsyncOperations.sleep(duration.toMillis)
