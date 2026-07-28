@@ -123,8 +123,8 @@ lazy val backend = project
       "org.testcontainers"           % "postgresql"           % Vtestcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core"               % Vsttp           % Test
     ),
-    // Virtual threads and Testcontainers both want a real JVM 21+.
-    javacOptions ++= Seq("-source", "21", "-target", "21"),
+    // Virtual threads and Testcontainers both want a real JVM 25+.
+    javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
     // --- Local development ---

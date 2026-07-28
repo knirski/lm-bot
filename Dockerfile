@@ -1,5 +1,5 @@
 # Build stage: link the frontend, then assemble the backend fat jar.
-FROM sbtscala/scala-sbt:eclipse-temurin-21.0.5_11_1.10.7_3.6.2 AS build
+FROM sbtscala/scala-sbt:eclipse-temurin-25.0.3_9_1.12.14_3.8.4 AS build
 WORKDIR /build
 
 # Node 26+: required by Gears' JSPI implementation.
@@ -29,7 +29,7 @@ RUN sbt 'set ThisBuild/useFastLinkForAssets := false' \
       | xargs -I{} cp {} /build/lm-bot.jar \
  && test -s /build/lm-bot.jar
 
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
 COPY --from=build /build/lm-bot.jar /app/lm-bot.jar
 EXPOSE 8080

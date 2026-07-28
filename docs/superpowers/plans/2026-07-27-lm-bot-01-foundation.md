@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-`flake.nix` and `.envrc` already exist at the repository root and are the source of truth for the toolchain — Temurin 21, the sbt launcher, Node 26, Metals, scalafmt, `psql`, and the `curl`/`jq`/`uuidgen` the Plan 2 spike needs. Nothing in this plan installs tools by hand.
+`flake.nix` and `.envrc` already exist at the repository root and are the source of truth for the toolchain — Temurin 25, the sbt launcher, Node 26, Metals, scalafmt, `psql`, and the `curl`/`jq`/`uuidgen` the Plan 2 spike needs. Nothing in this plan installs tools by hand.
 
 - [ ] **Enter the shell**
 
@@ -36,7 +36,7 @@ Because Ryuk (Testcontainers' reaper) is disabled under rootless Podman, a hard-
 
 ```bash
 node --version     # must be v26.x — Node 24/25 break Gears (spec §5.1)
-java -version      # 21
+java -version      # 25
 sbt --script-version
 ```
 
@@ -319,8 +319,8 @@ lazy val backend = project
       "org.testcontainers"           % "postgresql"           % v.testcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core"               % v.sttp           % Test
     ),
-    // Virtual threads and Testcontainers both want a real JVM 21+.
-    javacOptions ++= Seq("-source", "21", "-target", "21"),
+    // Virtual threads and Testcontainers both want a real JVM 25+.
+    javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main")
   )
 
@@ -3154,7 +3154,7 @@ lazy val backend = project
       "org.testcontainers"           % "postgresql"           % v.testcontainers % Test,
       "com.softwaremill.sttp.client3" %% "core"               % v.sttp           % Test
     ),
-    javacOptions ++= Seq("-source", "21", "-target", "21"),
+    javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
     // Package the linked frontend as classpath resources under `web/`, which
@@ -3198,7 +3198,7 @@ First add the assembly settings to the `backend` project in `build.sbt` (a singl
 
 ```dockerfile
 # Build stage: link the frontend to Wasm, then assemble the backend fat jar.
-FROM sbtscala/scala-sbt:eclipse-temurin-21.0.5_11_1.10.7_3.6.2 AS build
+FROM sbtscala/scala-sbt:eclipse-temurin-25.0.3_9_1.12.14_3.8.4 AS build
 WORKDIR /build
 
 # Node 26+: Node 24/25 carry a V8 bug that breaks Gears' nested async contexts.
@@ -3225,7 +3225,7 @@ RUN sbt backend/assembly \
       | xargs -I{} cp {} /build/lm-bot.jar \
  && test -s /build/lm-bot.jar
 
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
 COPY --from=build /build/lm-bot.jar /app/lm-bot.jar
 EXPOSE 8080
@@ -3367,7 +3367,7 @@ Plan 1 of 6 complete: foundation and authentication. No Luxmed integration yet.
 ## Requirements
 
 - **Nix with flakes**, and ideally **direnv** (plus `nix-direnv` for caching).
-  The flake pins everything else: Temurin 21, the sbt launcher, Node 26,
+  The flake pins everything else: Temurin 25, the sbt launcher, Node 26,
   Metals, scalafmt, `psql`.
 - **A container runtime on the host** — rootless Podman or Docker. A devShell
   cannot provide one. Testcontainers needs it for the backend tests; the

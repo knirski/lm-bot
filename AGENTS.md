@@ -22,7 +22,7 @@ leaves the spec actively misleading for the next reader.
 ## The environment is not optional
 
 Work inside the flake devShell: `direnv allow`, or `nix develop`. It pins
-Temurin 21, the sbt launcher, **Node 26**, Metals, scalafmt, and `psql`.
+Temurin 25, the sbt launcher, **Node 26**, Metals, scalafmt, and `psql`.
 
 - **Node 26+ is a hard requirement.** V8 in Node 24/25 stack-overflows in the
   nested async contexts Gears uses throughout.

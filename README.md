@@ -12,7 +12,7 @@ Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
 ## Requirements
 
 - **Nix with flakes**, and ideally **direnv** (plus `nix-direnv` for caching).
-  The flake pins everything else: Temurin 21, the sbt launcher, Node 26,
+  The flake pins everything else: Temurin 25, the sbt launcher, Node 26,
   Metals, scalafmt, `psql`.
 - **A container runtime on the host** — rootless Podman or Docker. A devShell
   cannot provide one. Testcontainers needs it for the backend tests; the

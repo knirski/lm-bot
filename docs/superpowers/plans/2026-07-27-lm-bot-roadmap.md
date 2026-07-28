@@ -49,7 +49,7 @@ Admin user management UI; password change and reset; the remaining error surface
 
 ## Development environment
 
-`flake.nix` + `.envrc` at the repository root pin the entire toolchain (Temurin 21, sbt launcher, Node 26, Metals, scalafmt, `psql`, and the spike's `curl`/`jq`/`uuidgen`). Every plan assumes you are inside that shell; CI runs the same shell via `nix develop`, so local and CI cannot diverge — which matters more than usual given the stack's dependence on an exact Node major and a JSPI-capable runtime.
+`flake.nix` + `.envrc` at the repository root pin the entire toolchain (Temurin 25, sbt launcher, Node 26, Metals, scalafmt, `psql`, and the spike's `curl`/`jq`/`uuidgen`). Every plan assumes you are inside that shell; CI runs the same shell via `nix develop`, so local and CI cannot diverge — which matters more than usual given the stack's dependence on an exact Node major and a JSPI-capable runtime.
 
 Two things the flake deliberately does **not** provide:
 

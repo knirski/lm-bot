@@ -124,7 +124,7 @@
             # --- JVM side ---
             # Temurin to match the eclipse-temurin runtime image the backend
             # ships in, so local and container JVMs agree.
-            temurin-bin-21
+            temurin-bin-25
             # The nixpkgs sbt package is a *launcher*; the version that actually
             # builds this project is declared in project/build.properties
             # (sbt 2.x). Verified: this launcher starts sbt 2 correctly.
@@ -161,7 +161,7 @@
           ];
 
           shellHook = (perSystem pkgs).pre-commit.shellHook + ''
-            export JAVA_HOME="${pkgs.temurin-bin-21}"
+            export JAVA_HOME="${pkgs.temurin-bin-25}"
             # Keep sbt's own heap modest; the compile-heavy work is in forked JVMs.
             export SBT_OPTS="''${SBT_OPTS:--Xmx2G -Xss4M}"
 
