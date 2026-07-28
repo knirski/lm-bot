@@ -7,12 +7,13 @@ import sttp.model.Uri
 
 class StaticRoutesTest extends munit.FunSuite:
 
-  private var server: com.sun.net.httpserver.HttpServer = scala.compiletime.uninitialized
-  private var baseUri: Uri                              = scala.compiletime.uninitialized
-  private val http                                      = HttpClientSyncBackend()
+  private var server: com.sun.net.httpserver.HttpServer =
+    scala.compiletime.uninitialized
+  private var baseUri: Uri = scala.compiletime.uninitialized
+  private val http = HttpClientSyncBackend()
 
   override def beforeAll(): Unit =
-    server  = Server.start("127.0.0.1", 0, StaticRoutes.endpoints)
+    server = Server.start("127.0.0.1", 0, StaticRoutes.endpoints)
     baseUri = uri"http://127.0.0.1:${server.getAddress.getPort}"
 
   override def afterAll(): Unit =
@@ -21,14 +22,19 @@ class StaticRoutesTest extends munit.FunSuite:
   test("the index page is served at the root"):
     val r = basicRequest.get(uri"$baseUri/").send(http)
     assertEquals(r.code, StatusCode.Ok)
-    assert(r.body.exists(_.contains("""<div id="app">""")), s"unexpected body: ${r.body}")
+    assert(
+      r.body.exists(_.contains("""<div id="app">""")),
+      s"unexpected body: ${r.body}"
+    )
 
   test("a client-side route falls back to the index page so deep links work"):
     val r = basicRequest.get(uri"$baseUri/monitors/42").send(http)
     assertEquals(r.code, StatusCode.Ok)
     assert(r.body.exists(_.contains("""<div id="app">""")))
 
-  test("a path that looks like a file 404s instead of returning the index page"):
+  test(
+    "a path that looks like a file 404s instead of returning the index page"
+  ):
     val r = basicRequest.get(uri"$baseUri/nope.js").send(http)
     assertEquals(r.code, StatusCode.NotFound)
 

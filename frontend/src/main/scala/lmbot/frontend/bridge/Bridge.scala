@@ -8,12 +8,13 @@ import scala.concurrent.{ExecutionContext, Future as StdFuture}
 /** The single adapter between foreign async APIs and Gears (spec §5.7.1).
   *
   * Nothing outside this package may mention `scala.concurrent.Future`: sttp's
-  * Scala.js backend returns one, and this is where that fact stops.  Every
-  * layer above speaks Gears `Async`.
+  * Scala.js backend returns one, and this is where that fact stops. Every layer
+  * above speaks Gears `Async`.
   */
 object Bridge:
 
-  private given ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+  private given ExecutionContext =
+    scala.scalajs.concurrent.JSExecutionContext.queue
 
   /** Awaits a foreign Future as a value. Failures come back as `Left` rather
     * than thrown, because a failed network call is an expected outcome, not a
@@ -30,8 +31,10 @@ object Bridge:
     * §5.7.1) — `ApiClient` would otherwise have to spell the type to describe
     * what it is awaiting.
     */
-  def awaitEither[E, T](f: => StdFuture[Either[E, T]])(onFailure: Throwable => E)(using
-    Async
+  def awaitEither[E, T](
+      f: => StdFuture[Either[E, T]]
+  )(onFailure: Throwable => E)(using
+      Async
   ): Either[E, T] =
     await(f) match
       case Right(result) => result

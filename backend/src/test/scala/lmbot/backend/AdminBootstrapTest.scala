@@ -8,7 +8,7 @@ import lmbot.shared.domain.Role
 class AdminBootstrapTest extends PostgresSuite:
 
   test("on an empty database the admin is created from the environment"):
-    val users   = UserRepo(xa)
+    val users = UserRepo(xa)
     val outcome = AdminBootstrap(users).run(Some("root"), Some("hunter2"))
 
     assertEquals(outcome, AdminBootstrap.Outcome.Created("root"))
@@ -20,7 +20,9 @@ class AdminBootstrapTest extends PostgresSuite:
     val users = UserRepo(xa)
     AdminBootstrap(users).run(Some("root"), Some("hunter2"))
 
-    assert(!users.findByUsername("root").exists(_.passwordHash.contains("hunter2")))
+    assert(
+      !users.findByUsername("root").exists(_.passwordHash.contains("hunter2"))
+    )
 
   test("bootstrap is skipped when any user already exists"):
     val users = UserRepo(xa)
@@ -36,7 +38,16 @@ class AdminBootstrapTest extends PostgresSuite:
     val users = UserRepo(xa)
     assertEquals(users.count(), 0L)
 
-    assertEquals(AdminBootstrap(users).run(None, None), AdminBootstrap.Outcome.MissingCredentials)
-    assertEquals(AdminBootstrap(users).run(Some("root"), None), AdminBootstrap.Outcome.MissingCredentials)
-    assertEquals(AdminBootstrap(users).run(None, Some("hunter2")), AdminBootstrap.Outcome.MissingCredentials)
+    assertEquals(
+      AdminBootstrap(users).run(None, None),
+      AdminBootstrap.Outcome.MissingCredentials
+    )
+    assertEquals(
+      AdminBootstrap(users).run(Some("root"), None),
+      AdminBootstrap.Outcome.MissingCredentials
+    )
+    assertEquals(
+      AdminBootstrap(users).run(None, Some("hunter2")),
+      AdminBootstrap.Outcome.MissingCredentials
+    )
     assertEquals(users.count(), 0L)

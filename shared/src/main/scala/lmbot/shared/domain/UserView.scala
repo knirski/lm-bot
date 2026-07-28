@@ -4,9 +4,9 @@ package lmbot.shared.domain
   * password hash and anything else the browser has no business seeing.
   */
 case class UserView(
-  id: Long,
-  username: String,
-  displayName: String,
-  role: Role,
-  telegramLinked: Boolean
+    id: Long,
+    username: String,
+    displayName: String,
+    role: Role,
+    telegramLinked: Boolean
 )

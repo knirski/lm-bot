@@ -9,8 +9,8 @@ import org.slf4j.LoggerFactory
 import java.time.OffsetDateTime
 import scala.jdk.CollectionConverters.*
 
-/** Composition root: everything is wired by hand, in one readable place
-  * (spec §5.7.5 — no DI framework, no reflection).
+/** Composition root: everything is wired by hand, in one readable place (spec
+  * §5.7.5 — no DI framework, no reflection).
   */
 object Main:
 
@@ -23,14 +23,21 @@ object Main:
         sys.exit(1)
 
       case Right(config) =>
-        val ds = Database.dataSource(config.dbUrl, config.dbUser, config.dbPassword.value)
+        val ds = Database.dataSource(
+          config.dbUrl,
+          config.dbUser,
+          config.dbPassword.value
+        )
         Database.migrate(ds)
         val xa = Database.transactor(ds)
 
-        val users    = UserRepo(xa)
+        val users = UserRepo(xa)
         val sessions = SessionRepo(xa)
 
-        AdminBootstrap(users).run(config.adminUsername, config.adminPassword.map(_.value)) match
+        AdminBootstrap(users).run(
+          config.adminUsername,
+          config.adminPassword.map(_.value)
+        ) match
           case AdminBootstrap.Outcome.Created(username) =>
             log.info(s"Created initial admin account '$username'")
           case AdminBootstrap.Outcome.SkippedUsersExist =>
@@ -41,7 +48,12 @@ object Main:
                 "nobody can log in. Set them and restart."
             )
 
-        val auth   = AuthService(users, sessions, config.sessionTtl, () => OffsetDateTime.now())
+        val auth = AuthService(
+          users,
+          sessions,
+          config.sessionTtl,
+          () => OffsetDateTime.now()
+        )
         val routes = AuthRoutes(auth, config.cookieSecure, config.sessionTtl)
 
         val server = Server.start(
@@ -50,7 +62,9 @@ object Main:
           HealthRoutes.endpoints ++ routes.endpoints ++ StaticRoutes.endpoints
         )
 
-        log.info(s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}")
+        log.info(
+          s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}"
+        )
 
         Runtime.getRuntime.addShutdownHook(
           Thread: () =>

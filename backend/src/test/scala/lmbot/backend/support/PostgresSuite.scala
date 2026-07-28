@@ -10,14 +10,19 @@ import org.testcontainers.containers.PostgreSQLContainer
   */
 abstract class PostgresSuite extends munit.FunSuite:
 
-  private var container: PostgreSQLContainer[?] = scala.compiletime.uninitialized
-  private var ds: HikariDataSource              = scala.compiletime.uninitialized
-  protected var xa: Transactor                  = scala.compiletime.uninitialized
+  private var container: PostgreSQLContainer[?] =
+    scala.compiletime.uninitialized
+  private var ds: HikariDataSource = scala.compiletime.uninitialized
+  protected var xa: Transactor = scala.compiletime.uninitialized
 
   override def beforeAll(): Unit =
     container = new PostgreSQLContainer("postgres:17")
     container.start()
-    ds = Database.dataSource(container.getJdbcUrl, container.getUsername, container.getPassword)
+    ds = Database.dataSource(
+      container.getJdbcUrl,
+      container.getUsername,
+      container.getPassword
+    )
     Database.migrate(ds)
     xa = Database.transactor(ds)
 

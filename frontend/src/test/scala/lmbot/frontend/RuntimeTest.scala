@@ -11,11 +11,12 @@ class RuntimeTest extends munit.FunSuite:
     case Inc, Dec, Stop
     case Add(n: Int)
 
-  private def counterUpdate(state: Int, msg: Msg): Transition[Int, Msg] = msg match
-    case Msg.Inc    => Transition(state + 1, Nil)
-    case Msg.Dec    => Transition(state - 1, Nil)
-    case Msg.Add(n) => Transition(state + n, Nil)
-    case Msg.Stop   => Transition(state, Nil)
+  private def counterUpdate(state: Int, msg: Msg): Transition[Int, Msg] =
+    msg match
+      case Msg.Inc    => Transition(state + 1, Nil)
+      case Msg.Dec    => Transition(state - 1, Nil)
+      case Msg.Add(n) => Transition(state + n, Nil)
+      case Msg.Stop   => Transition(state, Nil)
 
   test("update is pure and needs no runtime at all"):
     assertEquals(counterUpdate(0, Msg.Inc).state, 1)
@@ -27,7 +28,7 @@ class RuntimeTest extends munit.FunSuite:
   test("dispatched messages are folded into the store in order"):
     JsAsyncFromSync:
       Async.group:
-        val rt   = new Runtime[Int, Msg](0, counterUpdate)
+        val rt = new Runtime[Int, Msg](0, counterUpdate)
         val loop = Future(rt.run)
 
         rt.dispatch(Msg.Inc)
@@ -51,7 +52,7 @@ class RuntimeTest extends munit.FunSuite:
             Transition(state + 1, List(eff))
           case other => counterUpdate(state, other)
 
-        val rt   = new Runtime[Int, Msg](0, update)
+        val rt = new Runtime[Int, Msg](0, update)
         val loop = Future(rt.run)
 
         rt.dispatch(Msg.Inc)
@@ -72,7 +73,7 @@ class RuntimeTest extends munit.FunSuite:
             Transition(state + 1, List(silent))
           case other => counterUpdate(state, other)
 
-        val rt   = new Runtime[Int, Msg](0, update)
+        val rt = new Runtime[Int, Msg](0, update)
         val loop = Future(rt.run)
         rt.dispatch(Msg.Inc)
         rt.awaitQuiescence()
@@ -88,11 +89,12 @@ class RuntimeTest extends munit.FunSuite:
         def update(state: Int, msg: Msg): Transition[Int, Msg] = msg match
           case Msg.Inc =>
             val bad = new Effect[Msg]:
-              def run(using Async): Option[Msg] = throw new RuntimeException("boom")
+              def run(using Async): Option[Msg] =
+                throw new RuntimeException("boom")
             Transition(state + 1, List(bad))
           case other => counterUpdate(state, other)
 
-        val rt   = new Runtime[Int, Msg](0, update)
+        val rt = new Runtime[Int, Msg](0, update)
         val loop = Future(rt.run)
 
         rt.dispatch(Msg.Inc)

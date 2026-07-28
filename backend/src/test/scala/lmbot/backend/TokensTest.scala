@@ -15,9 +15,14 @@ class TokensTest extends munit.FunSuite:
     val token = Tokens.generate()
     assertEquals(Tokens.hash(token), Tokens.hash(token))
 
-  test("the hash differs from the token, so a database leak reveals no live session"):
+  test(
+    "the hash differs from the token, so a database leak reveals no live session"
+  ):
     val token = Tokens.generate()
     assertNotEquals(Tokens.hash(token), token)
 
   test("different tokens hash differently"):
-    assertNotEquals(Tokens.hash(Tokens.generate()), Tokens.hash(Tokens.generate()))
+    assertNotEquals(
+      Tokens.hash(Tokens.generate()),
+      Tokens.hash(Tokens.generate())
+    )

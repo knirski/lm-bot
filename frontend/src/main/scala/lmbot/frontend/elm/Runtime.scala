@@ -9,8 +9,8 @@ import scala.util.{Failure, Success, Try}
   *
   *   - one store: `store`, the only Airstream `Var` in the app;
   *   - one message channel (Gears `UnboundedChannel`);
-  *   - one event loop fiber, which applies the pure `update` and then runs
-  *     each effect in its own fiber via Gears `Future`.
+  *   - one event loop fiber, which applies the pure `update` and then runs each
+  *     effect in its own fiber via Gears `Future`.
   *
   * Verified working in a browser on Scala.js/Wasm with JSPI enabled — see
   * `wasmConfig` in build.sbt, where `withUseJSPI(true)` is the load-bearing
@@ -32,7 +32,7 @@ class Runtime[S, M](initial: S, update: (S, M) => Transition[S, M]):
     * Plain `var`s are sound here: the browser runs this single-threaded, and
     * this runtime is JS-only.
     */
-  private var queued   = 0
+  private var queued = 0
   private var inFlight = 0
 
   val store: Var[S] = Var(initial)
@@ -45,11 +45,11 @@ class Runtime[S, M](initial: S, update: (S, M) => Transition[S, M]):
   def stop(): Unit = inbox.close()
 
   def run(using Async.Spawn): Unit =
-    var state   = initial
+    var state = initial
     var running = true
     while running do
       inbox.read() match
-        case Left(_) => running = false
+        case Left(_)    => running = false
         case Right(msg) =>
           val Transition(next, effects) = update(state, msg)
           state = next
@@ -67,8 +67,8 @@ class Runtime[S, M](initial: S, update: (S, M) => Transition[S, M]):
               finally inFlight -= 1
           queued -= 1
 
-  /** Waits until every dispatched message — including those produced by
-    * effects — has been handled. Test support; the browser never calls it.
+  /** Waits until every dispatched message — including those produced by effects
+    * — has been handled. Test support; the browser never calls it.
     */
   def awaitQuiescence()(using Async, AsyncOperations): Unit =
     while queued > 0 || inFlight > 0 do AsyncOperations.sleep(1)

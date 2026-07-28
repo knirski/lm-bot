@@ -1,6 +1,12 @@
 package lmbot.backend.db
 
-import com.augustnagro.magnum.{DbCodec, Id, PostgresDbType, SqlNameMapper, Table}
+import com.augustnagro.magnum.{
+  DbCodec,
+  Id,
+  PostgresDbType,
+  SqlNameMapper,
+  Table
+}
 
 import java.time.OffsetDateTime
 
@@ -11,21 +17,21 @@ import java.time.OffsetDateTime
   */
 @Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
 case class UserRow(
-  @Id id: Long,
-  username: String,
-  displayName: String,
-  passwordHash: String,
-  role: String,
-  telegramChatId: Option[Long],
-  disabled: Boolean,
-  createdAt: OffsetDateTime,
-  updatedAt: OffsetDateTime
+    @Id id: Long,
+    username: String,
+    displayName: String,
+    passwordHash: String,
+    role: String,
+    telegramChatId: Option[Long],
+    disabled: Boolean,
+    createdAt: OffsetDateTime,
+    updatedAt: OffsetDateTime
 ) derives DbCodec
 
 @Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
 case class SessionRow(
-  @Id tokenHash: String,
-  userId: Long,
-  expiresAt: OffsetDateTime,
-  createdAt: OffsetDateTime
+    @Id tokenHash: String,
+    userId: Long,
+    expiresAt: OffsetDateTime,
+    createdAt: OffsetDateTime
 ) derives DbCodec

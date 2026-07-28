@@ -10,7 +10,10 @@ import lmbot.shared.domain.Role
 class AdminBootstrap(users: UserRepo):
   import AdminBootstrap.Outcome
 
-  def run(adminUsername: Option[String], adminPassword: Option[String]): Outcome =
+  def run(
+      adminUsername: Option[String],
+      adminPassword: Option[String]
+  ): Outcome =
     if users.count() > 0 then Outcome.SkippedUsersExist
     else
       (adminUsername, adminPassword) match

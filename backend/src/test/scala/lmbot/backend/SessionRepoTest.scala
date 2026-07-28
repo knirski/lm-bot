@@ -12,7 +12,7 @@ class SessionRepoTest extends PostgresSuite:
     UserRepo(xa).insert("krzysiek", "Krzysiek", "hash-1", Role.Admin).id
 
   test("a stored session is retrievable by its token hash"):
-    val repo   = SessionRepo(xa)
+    val repo = SessionRepo(xa)
     val userId = aUser()
     val expiry = OffsetDateTime.now().plusDays(7)
 
@@ -25,7 +25,7 @@ class SessionRepoTest extends PostgresSuite:
     assertEquals(SessionRepo(xa).find("nope"), None)
 
   test("deleting a session revokes it"):
-    val repo   = SessionRepo(xa)
+    val repo = SessionRepo(xa)
     val userId = aUser()
     repo.insert("token-hash-1", userId, OffsetDateTime.now().plusDays(7))
 
@@ -34,9 +34,9 @@ class SessionRepoTest extends PostgresSuite:
     assertEquals(repo.find("token-hash-1"), None)
 
   test("deleteExpired removes only sessions already past their expiry"):
-    val repo   = SessionRepo(xa)
+    val repo = SessionRepo(xa)
     val userId = aUser()
-    val now    = OffsetDateTime.now()
+    val now = OffsetDateTime.now()
     repo.insert("stale", userId, now.minus(Duration.ofMinutes(1)))
     repo.insert("fresh", userId, now.plusDays(7))
 
@@ -48,8 +48,8 @@ class SessionRepoTest extends PostgresSuite:
 
   test("deleting a user cascades to their sessions"):
     val sessions = SessionRepo(xa)
-    val users    = UserRepo(xa)
-    val userId   = aUser()
+    val users = UserRepo(xa)
+    val userId = aUser()
     sessions.insert("token-hash-1", userId, OffsetDateTime.now().plusDays(7))
 
     users.deleteById(userId)
