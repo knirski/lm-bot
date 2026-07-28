@@ -113,7 +113,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 
 | Layer | Choice |
 |---|---|
-| Language | Scala 3.8 (JVM 21+ backend; Scala.js **Wasm** backend frontend) |
+| Language | Scala 3.8 (JVM 25+ backend; Scala.js **Wasm** backend frontend) |
 | Concurrency | Gears (direct style) on both platforms |
 | API contract | Tapir endpoint definitions in a shared cross-compiled module |
 | HTTP server | tapir-jdkhttp-server (`Identity` interpreter) on a virtual-thread executor |
