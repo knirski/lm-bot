@@ -104,7 +104,7 @@ jobs:
         # testFull ignores the sbt action cache. See AGENTS.md for rationale.
         # coverage enables sbt-scoverage instrumentation for JVM targets.
         # Scala.js targets are tested without coverage.
-        run: nix develop --command sbt coverage testFull coverageReport
+        run: nix develop --command sbt "coverage; testFull; coverageReport"
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
