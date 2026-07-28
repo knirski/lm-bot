@@ -72,11 +72,6 @@ jobs:
       - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
         run: nix flake check
 
-      - name: Check Scala formatting (sbt plugin)
-        # Uses sbt-scalafmt plugin rather than the nix devShell's scalafmt
-        # binary, so formatting is enforced regardless of environment.
-        run: nix develop --command sbt scalafmtCheckAll scalafmtSbtCheck
-
       # ── sbt / coursier cache ─────────────────────────────────────────────
       - name: Cache sbt and coursier
         uses: actions/cache@v4
@@ -95,7 +90,9 @@ jobs:
         # testFull, not test: in sbt 2 bare `test` is `testQuick`, which
         # consults a global action cache and can legitimately run nothing.
         # CI must prove the whole suite compiles for this commit.
-        run: nix develop --command sbt "compile; Test/compile"
+        # scalafmtCheckOnCompile is set in build.sbt, so formatting is checked
+        # before compilation. scalafmtSbtCheck covers .sbt files.
+        run: nix develop --command sbt "scalafmtSbtCheck; compile; Test/compile"
 
       - name: Test with coverage
         # testFull ignores the sbt action cache. See AGENTS.md for rationale.

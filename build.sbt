@@ -36,6 +36,7 @@ def jsDep(org: String, artifact: String, version: String): ModuleID =
   org % s"${artifact}_sjs1_3" % version
 
 lazy val commonSettings = Seq(
+  scalafmtCheckOnCompile := true,
   scalacOptions ++= Seq(
     "-deprecation",
     "-feature",

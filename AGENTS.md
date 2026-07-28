@@ -105,8 +105,9 @@ regardless of whether the nix devShell is active.
 - **`sbt scalafmtCheckAll`** — check formatting (non-zero exit if unformatted)
 - **`sbt scalafmtSbtCheck`** — check `.sbt` file formatting
 
-CI runs `scalafmtCheckAll` + `scalafmtSbtCheck` as a format gate before
-compilation.
+CI runs `scalafmtCheckOnCompile` (set in `build.sbt`) so formatting is checked
+before every compilation with no separate CI step. `.sbt` files are checked via
+`scalafmtSbtCheck` during the CI compile step.
 
 The standalone `scalafmt` binary is still in the devShell and can be used
 for one-off formatting, but `sbt scalafmtAll` is the canonical command.
