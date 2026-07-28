@@ -12,11 +12,15 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
+permissions:
+  contents: read
 jobs:
   # ── PR title lint (fast, no Nix) ───────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,7 +92,7 @@ jobs:
         with:
           name: coverage-reports-x86_64
           path: |
-            **/coverage-report/**
+            **/scoverage-report/**
             **/coverage.*.xml
           if-no-files-found: ignore
 
@@ -151,7 +155,7 @@ jobs:
         with:
           name: coverage-reports-arm64
           path: |
-            **/coverage-report/**
+            **/scoverage-report/**
             **/coverage.*.xml
           if-no-files-found: ignore
 
