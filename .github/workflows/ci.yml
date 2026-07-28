@@ -96,9 +96,9 @@ jobs:
         # testFull, not test: in sbt 2 bare `test` is `testQuick`, which
         # consults a global action cache and can legitimately run nothing.
         # CI must prove the whole suite compiles for this commit.
-        # scalafmtCheckOnCompile is set in build.sbt, so formatting is checked
-        # before compilation. scalafmtSbtCheck covers .sbt files.
-        run: nix develop --command sbt "scalafmtSbtCheck; compile; Test/compile"
+        # scalafmtCheckAll + scalafmtSbtCheck run before compilation as a
+        # format gate — through the sbt plugin, not the nix scalafmt binary.
+        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
 
       - name: Test with coverage
         # testFull ignores the sbt action cache. See AGENTS.md for rationale.
