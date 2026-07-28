@@ -137,8 +137,10 @@ jobs:
       - name: Compile everything
         run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
 
-      - name: Test with coverage
-        run: nix develop --command sbt "coverage; testFull; coverageReport"
+      # Backend tests need embedded-postgres which does not ship aarch64
+      # binaries for zonky 2.2.2. Run JS-only tests on ARM instead.
+      - name: Test JS (shared + frontend)
+        run: nix develop --command sbt "sharedJS/testFull; frontend/testFull"
 
       - name: Link frontend (Wasm)
         run: nix develop --command sbt frontend/fullLinkJS
