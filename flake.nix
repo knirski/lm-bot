@@ -81,6 +81,8 @@
                       # Luxmed's API literally returns this misspelling in its
                       # JSON responses; the docs and code quote the API.
                       succeded = "succeded";
+                      # PR Agent config key — not a typo.
+                      commitable = "commitable";
                     };
                   };
                 };
