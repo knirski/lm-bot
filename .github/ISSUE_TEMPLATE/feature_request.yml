@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest an idea for lm-bot
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user need or pain point does this feature address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behaviour, API shape, or UI change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches have you thought about?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to related discussions, external references, or screenshots.

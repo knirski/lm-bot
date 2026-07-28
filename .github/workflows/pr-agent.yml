@@ -43,7 +43,8 @@ jobs:
           fi
 
       - name: PR Agent action step
-        uses: the-pr-agent/pr-agent@v0.40.0
+        # v0.40.0 — pinned by commit hash for supply-chain security.
+        uses: the-pr-agent/pr-agent@6ad7cf75d95cb3bbb54cf2ad92050eb03804964a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
