@@ -80,7 +80,7 @@ final class LuxmedTransport(
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .get(uri(config.oldApi, endpoint, params))
         .headers(oldApiHeaders)
@@ -94,7 +94,7 @@ final class LuxmedTransport(
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .post(uri(config.oldApi, endpoint, Map.empty))
         .headers(oldApiHeaders)
@@ -110,7 +110,7 @@ final class LuxmedTransport(
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
@@ -128,7 +128,7 @@ final class LuxmedTransport(
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = true)(
       mkRequest
         .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
@@ -159,7 +159,7 @@ final class LuxmedTransport(
       .cookies(mergedCookies.toSeq*)
     xsrfToken.foreach: tok =>
       r = r.header("xsrf-token", tok.value)
-    run(a, p)(r)
+    run(a, p, tolerateRedirects = false)(r)
 
   /** POST form-encoded on the new Portal API with optional XSRF protection. */
   def newApiPostForm(
@@ -183,7 +183,7 @@ final class LuxmedTransport(
       .cookies(mergedCookies.toSeq*)
     xsrfToken.foreach: tok =>
       r = r.header("xsrf-token", tok.value)
-    run(a, p)(r)
+    run(a, p, tolerateRedirects = false)(r)
 
   /** Convert a [[LuxmedEndpoint]] to a full URI by appending its path segments
     * and query params to the base.
@@ -197,7 +197,8 @@ final class LuxmedTransport(
 
   private def run(
       async: Async,
-      permit: RequestPermit
+      permit: RequestPermit,
+      tolerateRedirects: Boolean
   )(
       request: Request[String, Any]
   ): Either[LuxmedError, TransportResponse[String]] =
@@ -209,7 +210,7 @@ final class LuxmedTransport(
           val result = Left(LuxmedError.NetworkFailure(safeDiagnostic(e)))
           reportFingerprint(result, null)
           result
-    val classified = response.flatMap(classify)
+    val classified = response.flatMap(r => classify(r, tolerateRedirects))
     response.foreach: resp =>
       reportFingerprint(classified, resp.body)
     classified
@@ -283,7 +284,8 @@ final class LuxmedTransport(
       catch case _: Exception => None
 
   private def classify(
-      response: Response[String]
+      response: Response[String],
+      tolerateRedirects: Boolean
   ): Either[LuxmedError, TransportResponse[String]] =
     val body = response.body
     val status = response.code.code
@@ -323,11 +325,10 @@ final class LuxmedTransport(
         LuxmedError.UnexpectedAuthResponse(LuxmedRedaction.safe(body))
       )
 
-    // Redirects are deliberately not followed. Session-expiry redirects are
-    // errors; other 3xx responses remain available for bootstrap callers to
-    // inspect because Luxmed may attach cookies or authorization headers to
-    // the redirect response itself.
-    if status >= 200 && status < 400 then
+    // Bootstrap requests may see 3xx redirects (Luxmed attaches cookies/headers
+    // to them). For non-bootstrap requests only 2xx is considered success.
+    val maxValidStatus = if tolerateRedirects then 399 else 299
+    if status >= 200 && status <= maxValidStatus then
       Right(
         TransportResponse(
           body = body,
