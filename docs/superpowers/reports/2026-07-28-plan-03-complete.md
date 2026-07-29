@@ -5,6 +5,13 @@
 **Spec:** [`2026-07-27-lm-bot-prd-design.md`](../specs/2026-07-27-lm-bot-prd-design.md)
 **Upstream shapes:** [dyrkin/luxmed-bot](https://github.com/dyrkin/luxmed-bot) (not lmassist)
 
+**changed-files:** Backend client, transport, models, codecs, mocks, fixtures, tests, docs
+**verification-run:** `sbt backend/testFull` (139/139), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate, `git diff --check`
+**skipped-checks:** none
+**branch:** `feat/luxmed-client-plan3-complete`
+**pr:** https://github.com/knirski/lm-bot/pull/20
+**blocker:** none
+
 ## Files and Architecture Delivered
 
 ### Core client (`backend/src/main/scala/lmbot/backend/luxmed/`)
@@ -71,7 +78,7 @@ All checks pass in the flake devShell:
 | Async-vocabulary gate | Clean — no `scala.concurrent` outside `/bridge/` |
 | `git diff --check` | Clean |
 
-### Test count breakdown
+### Test count breakdown (Luxmed client suites only — full `sbt backend/testFull` totals 139)
 
 ```
 AccountGateTest:        6 passed
@@ -82,6 +89,21 @@ WireCodecTest:          15 passed
 DictionaryAndTermsTest:  7 passed
 ReservationPrimitivesTest: 3 passed
 MockConformanceTest:     1 passed
+
+Additional suites (non-Luxmed):
+AdminBootstrapTest:     4 passed
+ConfigTest:            13 passed
+TokensTest:             4 passed
+AuthServiceTest:       14 passed
+HttpApiTest:            6 passed
+SessionRepoTest:       14 passed
+StaticRoutesTest:       5 passed
+EmbeddedPgTest:         1 passed
+PostgresSuite:         12 passed
+BridgeTest:             3 passed
+UpdateTest:             4 passed
+---
+Total:                139 passed
 ```
 
 ## Security Review

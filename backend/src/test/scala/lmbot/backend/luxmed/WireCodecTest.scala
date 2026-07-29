@@ -139,6 +139,11 @@ class WireCodecTest extends munit.FunSuite:
     val result = readFromString[ServiceVariant](json)
     assertEquals(result.id.value, 1L)
     assertEquals(result.name, "test")
+    // Pin the encoded wire shape — unknown fields stripped, canonical order
+    assertEquals(
+      writeToString(result),
+      """{"id":1,"name":"test","expanded":false,"children":[],"isTelemedicine":false,"paymentType":1}"""
+    )
 
   test("service variant codec handles children array"):
     val json =
@@ -147,3 +152,8 @@ class WireCodecTest extends munit.FunSuite:
     assertEquals(result.name, "parent")
     assertEquals(result.children.size, 1)
     assertEquals(result.children.head.name, "child")
+    // Pin the encoded wire shape for nested children
+    assertEquals(
+      writeToString(result),
+      """{"id":1,"name":"parent","expanded":true,"children":[{"id":2,"name":"child","expanded":false,"children":[],"isTelemedicine":false,"paymentType":1}],"isTelemedicine":false,"paymentType":0}"""
+    )
