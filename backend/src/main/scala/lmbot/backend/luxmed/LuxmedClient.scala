@@ -226,7 +226,7 @@ final class LuxmedClient(
         )
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
-        LuxmedError.DecodeFailed(lmbot.backend.config.SafeDiagnostic(msg))
+        LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
     yield tokens
 
   private def refreshGrant(
@@ -245,7 +245,7 @@ final class LuxmedClient(
         )
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
-        LuxmedError.DecodeFailed(lmbot.backend.config.SafeDiagnostic(msg))
+        LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
     yield tokens
 
   private def bootstrapNewPortal(
