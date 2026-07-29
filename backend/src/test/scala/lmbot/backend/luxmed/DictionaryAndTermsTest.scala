@@ -63,22 +63,11 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
       body: (LuxmedClient, MockLuxmedServer, FakeTime) => T
   ): T =
     withClient: (client, mock, fake) =>
-      mock.enqueue(
-        status = 200,
-        body = fixture("auth-password-success.json")
-      )
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Set-Cookie" -> "ASP.NET_SessionId=sess1")
-      )
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map(
-          "Set-Cookie" -> "jwt=JWT1",
-          "Authorization-Token" -> "Bearer JWT_TOKEN_1"
-        )
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "ACCESS_1",
+        refreshToken = "REFRESH_1",
+        jwtToken = "JWT_TOKEN_1",
+        expiresIn = 599
       )
       runAsync:
         client.authenticate()

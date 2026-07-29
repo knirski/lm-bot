@@ -49,25 +49,12 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
         now = () => fake.now()
       )
 
-      // Step 1: password grant
-      mock.enqueue(
-        status = 200,
-        body = fixture("auth-password-success.json")
-      )
-      // Step 2: LogInToApp
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Set-Cookie" -> "ASP.NET_SessionId=sess1")
-      )
-      // Step 3: reservation page
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map(
-          "Set-Cookie" -> "jwt=JWT1",
-          "Authorization-Token" -> "Bearer JWT_TOKEN_1"
-        )
+      // Step 1-3: realistic auth flow (password grant → 302 LogInToApp → 200 ReservationPage)
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "ACCESS_1",
+        refreshToken = "REFRESH_1",
+        jwtToken = "JWT_TOKEN_1",
+        expiresIn = 599
       )
 
       val authResult = runAsync:
@@ -79,20 +66,10 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
         status = 200,
         body = fixture("auth-refresh-success.json")
       )
-      // Step 5: refreshed LogInToApp
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Set-Cookie" -> "ASP.NET_SessionId=sess2")
-      )
-      // Step 6: refreshed reservation page
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map(
-          "Set-Cookie" -> "jwt=JWT2",
-          "Authorization-Token" -> "Bearer JWT_TOKEN_2"
-        )
+      // Step 5-6: realistic bootstrap flow for refresh
+      mock.enqueueRealisticBootstrapFlow(
+        jwtToken = "JWT_TOKEN_2",
+        sessionCookie = "ASP.NET_SessionId=sess2"
       )
 
       fake.advance(java.time.Duration.ofSeconds(301))
