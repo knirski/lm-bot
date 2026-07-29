@@ -457,15 +457,11 @@ final class LuxmedClient(
           extraCookies = extraCookies,
           params = Map("reservationId" -> reservationId.value.toString)
         )
-        .flatMap: resp =>
-          // Release endpoint returns 200 with empty body on success
-          if resp.body.trim.isEmpty then Right(())
-          else
-            // If there's a body, try decoding as error response
-            resp.body.trim match
-              case "true" | "false" => Right(()) // Some APIs return boolean
-              case _                =>
-                decodeBody[ConfirmResponse](resp.body).map(_ => ())
+        .flatMap: _ =>
+          // Release endpoint returns 2xx on success with any body (empty, boolean,
+          // or JSON). Any successful HTTP response from the release endpoint
+          // means the temporary reservation was released.
+          Right(())
 
   // -- Conformance entrypoint (Task 9) --
 
