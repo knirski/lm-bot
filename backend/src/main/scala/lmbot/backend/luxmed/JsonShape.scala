@@ -105,7 +105,9 @@ object JsonShape:
       sb.append(c.toChar)
       c = reader.read()
     if c < 0 then
-      throw IllegalArgumentException("Unterminated string: unexpected end of input")
+      throw IllegalArgumentException(
+        "Unterminated string: unexpected end of input"
+      )
     sb.result()
 
   private def skipString(reader: PushbackReader): Unit =
