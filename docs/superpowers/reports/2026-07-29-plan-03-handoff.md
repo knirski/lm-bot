@@ -5,6 +5,13 @@
 **Plan:** [`docs/superpowers/plans/2026-07-28-lm-bot-03-luxmed-client.md`](../plans/2026-07-28-lm-bot-03-luxmed-client.md)
 **PR:** `feat/luxmed-client-plan3-complete`
 
+**changed-files:** Backend client, transport, models, codecs, mocks, fixtures, tests, docs
+**verification-run:** `sbt backend/testFull` (139/139), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate
+**skipped-checks:** none
+**branch:** `feat/luxmed-client-plan3-complete`
+**pr:** https://github.com/knirski/lm-bot/pull/20
+**blocker:** none
+
 ---
 
 ## What was delivered

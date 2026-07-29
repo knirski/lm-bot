@@ -612,7 +612,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       )
 
   test(
-    "SessionExpired on operation triggers refresh and retry exactly once"
+    "SessionExpired on operation triggers reauthentication via password grant"
   ):
     withClient(): (client, mock, _, _) =>
       mock.enqueue(
@@ -647,8 +647,13 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       val result = runAsync:
         client.cities()
       assert(result.isRight, s"expected success after retry, got $result")
-      // One refresh_token grant happened
+      // Two password grants: one for initial auth, one for reauth after expiry
       assertEquals(
         mock.requests.count(_.body.contains("grant_type=password")),
         2
+      )
+      // No refresh-token grant: session-expired during op triggered full reauth
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        0
       )
