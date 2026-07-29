@@ -8,7 +8,7 @@ lives in the spec, and neither is repeated here.
 
 | Question | Answer lives in |
 |---|---|
-| What are we building, and why this way? | `docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md` |
+| What are we building, and why this way? (PRD) | `docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md` |
 | What order, and what is in scope now? | `docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md` |
 | Exactly how to build the current piece | the numbered plan in `docs/superpowers/plans/` |
 | What Luxmed's API actually does | `docs/superpowers/reports/2026-07-27-luxmed-api-analysis.md` |
@@ -26,9 +26,12 @@ Temurin 25, the sbt launcher, **Node 26**, and Metals.
 
 - **Node 26+ is a hard requirement.** V8 in Node 24/25 stack-overflows in the
   nested async contexts Gears uses throughout.
-- **PostgreSQL is embedded** via zonky embedded-postgres (`io.zonky.test:embedded-postgres`).
-  Tests start one PG per suite on random ports (isolated but run serially due to
-  the shared binary cache).  `sbt startDev` starts one automatically on port 15432.
+- **PostgreSQL is embedded** — by default via [memgres](https://github.com/lhgravendeel/memgres)
+  (`com.memgres:memgres-core`), a fast in-memory PG-compatible engine with no
+  native binaries, no Docker, millisecond startup.  Set `EMBEDDED_DB=zonky` to
+  fall back to zonky embedded-postgres (`io.zonky.test:embedded-postgres`) which
+  runs real PostgreSQL binaries.  Tests start one embedded database per suite on
+  random ports.  `sbt startDev` starts one automatically on port 15432.
   No external PG, no container, no devShell lifecycle needed.
 - **The Cachix binary cache `knirski-lm-bot` is wired into `nixConfig`**, so
   every `nix develop` and `nix build` automatically pulls pre-built closures

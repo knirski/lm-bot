@@ -77,3 +77,4 @@ Returns 200 with empty body. `releaseTerm` returns `Either[LuxmedError, Unit]` a
 4. **`LuxmedError` taxonomy** — it's closed but may need extension for Plan 4's account statuses.
 5. **Cookie `Set-Cookie` decoding** — `TransportResponse.toString` redacts secrets but doesn't decode cookie values. sttp's `unsafeCookies` method can be used if needed.
 6. **`GlobalLang=pl` cookie** must be added during bootstrap (done in `bootstrapNewPortal`). Reminder for any new bootstrap-like flows.
+||||||| 6f942fa
