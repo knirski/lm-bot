@@ -118,7 +118,7 @@ object GuidedContractExplorer:
       deviceUuid = testUuid
     )
 
-    val transport = LuxmedTransport(
+    val transport = LuxmedTransport.production(
       config,
       observer = new WireObserver:
         def observed(fp: WireFingerprint): Unit = fingerprints += fp

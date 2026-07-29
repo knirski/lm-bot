@@ -8,7 +8,13 @@ import scala.io.{Codec, Source}
 
 import lmbot.backend.config.{AppVersion, Secret}
 import lmbot.backend.luxmed.model.*
-import lmbot.backend.luxmed.support.{FakeTime, GearsTest, MockLuxmedServer}
+import lmbot.backend.luxmed.support.{
+  FakeTime,
+  GearsTest,
+  LuxmedResponseScripts,
+  MockResponse,
+  RealHttpLuxmedServer
+}
 import sttp.model.Uri
 
 class MockConformanceTest extends munit.FunSuite with GearsTest:
@@ -25,7 +31,7 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
     finally is.close()
 
   test("full mock conformance flow produces expected ten-step fingerprint"):
-    val mock = MockLuxmedServer()
+    val mock = RealHttpLuxmedServer()
     try
       val config = LuxmedConfig(
         oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
@@ -37,7 +43,8 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
       val testObserver = new WireObserver:
         def observed(fp: WireFingerprint): Unit =
           fingerprints += fp
-      val transport = LuxmedTransport(config, observer = testObserver)
+      val transport =
+        LuxmedTransport.production(config, observer = testObserver)
       val credentials = Credentials("user@example.com", Secret("password123"))
       val fake = FakeTime()
       val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
@@ -50,12 +57,15 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
       )
 
       // Step 1-3: realistic auth flow (password grant → 302 LogInToApp → 200 ReservationPage)
-      mock.enqueueRealisticAuthFlow(
-        accessToken = "ACCESS_1",
-        refreshToken = "REFRESH_1",
-        jwtToken = "JWT_TOKEN_1",
-        expiresIn = 599
-      )
+      LuxmedResponseScripts
+        .realisticAuthFlow(
+          accessToken = "ACCESS_1",
+          refreshToken = "REFRESH_1",
+          jwtToken = "JWT_TOKEN_1",
+          expiresIn = 599
+        )
+        .foreach: (status, headers, body) =>
+          mock.enqueue(MockResponse(status, headers.groupMap(_._1)(_._2), body))
 
       val authResult = runAsync:
         client.authenticate()
@@ -67,10 +77,13 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
         body = fixture("auth-refresh-success.json")
       )
       // Step 5-6: realistic bootstrap flow for refresh
-      mock.enqueueRealisticBootstrapFlow(
-        jwtToken = "JWT_TOKEN_2",
-        sessionCookie = "ASP.NET_SessionId=sess2"
-      )
+      LuxmedResponseScripts
+        .realisticBootstrapFlow(
+          jwtToken = "JWT_TOKEN_2",
+          sessionCookie = "ASP.NET_SessionId=sess2"
+        )
+        .foreach: (status, headers, body) =>
+          mock.enqueue(MockResponse(status, headers.groupMap(_._1)(_._2), body))
 
       fake.advance(java.time.Duration.ofSeconds(301))
       val refreshResult = runAsync:

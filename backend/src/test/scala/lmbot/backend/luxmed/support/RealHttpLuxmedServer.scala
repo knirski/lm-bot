@@ -8,21 +8,17 @@ import scala.jdk.CollectionConverters.*
 
 import com.sun.net.httpserver.HttpServer
 
-final case class MockResponse(
-    status: Int,
-    headers: Map[String, List[String]] = Map.empty,
-    body: String = ""
-)
-
-final case class RecordedRequest(
-    method: String,
-    path: String,
-    rawQuery: Option[String],
-    headers: Map[String, List[String]],
-    body: String
-)
-
-final class MockLuxmedServer(port: Int = 0):
+/** A real loopback HTTP server for wire-boundary tests.
+  *
+  * Exposes both Luxmed base paths on one random-port server and captures
+  * requests for exact method, path, full query parameter, header, cookie, and
+  * body assertions. Response fixtures are enqueued as [[MockResponse]].
+  *
+  * This is the renamed and reduced replacement for [[MockLuxmedServer]].
+  * Luxmed-specific auth scripts are in [[LuxmedResponseScripts]] — this class
+  * has no knowledge of auth flows.
+  */
+final class RealHttpLuxmedServer(port: Int = 0):
 
   private val responseQueue = new ConcurrentLinkedQueue[MockResponse]()
   private val capturedRequests = new ConcurrentLinkedQueue[RecordedRequest]()
