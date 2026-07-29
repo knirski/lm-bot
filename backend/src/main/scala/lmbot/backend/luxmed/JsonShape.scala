@@ -98,17 +98,19 @@ object JsonShape:
         s"Expected string start '\"' but got '${c.toChar}'"
       )
     c = reader.read()
-    while c != '"' do
+    while c != '"' && c >= 0 do
       if c == '\\' then
         sb.append(c.toChar)
         c = reader.read()
       sb.append(c.toChar)
       c = reader.read()
+    if c < 0 then
+      throw IllegalArgumentException("Unterminated string: unexpected end of input")
     sb.result()
 
   private def skipString(reader: PushbackReader): Unit =
     var c = reader.read()
-    while c != '"' do
+    while c != '"' && c >= 0 do
       if c == '\\' then reader.read()
       c = reader.read()
 
