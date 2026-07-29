@@ -64,7 +64,7 @@ class SessionStoreTest extends munit.FunSuite:
     assertEquals(store.clear(), Right(()))
     assertEquals(store.load(), Right(None))
 
-  test("multiple CAS retries on concurrent modification"):
+  test("a matching refresh token replaces the current session"):
     val store = InMemorySessionStore()
     assertEquals(store.replace(None, session1), Right(()))
     assertEquals(store.replace(Some(Secret("RT1")), session2), Right(()))

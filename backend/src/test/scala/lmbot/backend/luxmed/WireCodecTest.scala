@@ -7,6 +7,7 @@ import lmbot.backend.luxmed.CookieJar
 import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.model.WireCodecs.given
 import java.time.Instant
+import scala.io.{Codec, Source}
 
 class WireCodecTest extends munit.FunSuite:
 
@@ -14,8 +15,10 @@ class WireCodecTest extends munit.FunSuite:
   private given listCityCodec: JsonValueCodec[List[City]] = JsonCodecMaker.make
 
   private def fixture(name: String): String =
-    val is = getClass.getResourceAsStream(s"/luxmed/$name")
-    try scala.io.Source.fromInputStream(is).mkString
+    val path = s"/luxmed/$name"
+    val is = Option(getClass.getResourceAsStream(path))
+      .getOrElse(throw IllegalArgumentException(s"Missing fixture: $path"))
+    try Source.fromInputStream(is)(using Codec.UTF8).mkString
     finally is.close()
 
   private val sampleSession = LuxmedSession(
@@ -33,12 +36,28 @@ class WireCodecTest extends munit.FunSuite:
     assertEquals(value.expiresIn, 599)
     assertEquals(value.tokenType, "bearer")
     assertEquals(value.refreshToken.value, "REFRESH_1")
+    assertEquals(
+      writeToString(value),
+      """{"access_token":"ACCESS_1","expires_in":599,"refresh_token":"REFRESH_1","token_type":"bearer"}"""
+    )
 
   test("OAuth refresh tokens also decode correctly"):
     val value =
       readFromString[OAuthTokens](fixture("auth-refresh-success.json"))
     assertEquals(value.expiresIn, 600)
     assertEquals(value.refreshToken.value, "REFRESH_2")
+    assertEquals(
+      writeToString(value),
+      """{"access_token":"ACCESS_2","expires_in":600,"refresh_token":"REFRESH_2","token_type":"bearer"}"""
+    )
+
+  test("missing fixture reports its resource path"):
+    val error = intercept[IllegalArgumentException]:
+      fixture("does-not-exist.json")
+    assertEquals(
+      error.getMessage,
+      "Missing fixture: /luxmed/does-not-exist.json"
+    )
 
   test("both datetime forms normalize to Europe/Warsaw"):
     val response =
@@ -75,7 +94,7 @@ class WireCodecTest extends munit.FunSuite:
 
   test("session rendering never reveals bearer credentials"):
     val rendered = sampleSession.toString
-    List("ACCESS_1", "REFRESH_1", "JWT_1").foreach(secret =>
+    List("ACCESS_1", "REFRESH_1", "JWT_1", "sess_1").foreach(secret =>
       assert(!rendered.contains(secret), s"$secret leaked into toString")
     )
 
