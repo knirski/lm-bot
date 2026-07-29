@@ -361,15 +361,27 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 ## 8. Testing
 
 - **shared/domain:** pure unit tests (slot filtering, dedup, monitor state transitions) — most logic lives here by design.
-- **Luxmed client:** tested against a mock Luxmed server, replicating lmassist's `luxmed-mock-server` *approach* — but with fixtures transcribed from the shapes documented in luxmed-bot's model sources, **not** from lmassist's invented ones (§1). Coverage: the three-step auth flow, XSRF acquisition, dictionaries, terms search (including both datetime forms in one response), lock → confirm, lock → release, and each error variant (session-expiry 302, bad-credentials 409, all three error-body shapes, 429, version rejection).
-- The mock uses the JDK `HttpServer`, exposes both Luxmed base paths on one
-  random-port server, and captures requests for exact method, path, full query
-  parameter, header, cookie, and body assertions. Its response fixtures are
-  literal JSON files transcribed from recorded responses and
-  `dyrkin/luxmed-bot`; they are **not generated with the production codecs**.
-  Sharing DTO types between client and mock is desirable, but sharing the
-  encoder that produces expected fixture bytes would let the same wrong codec
-  pass both sides of a round-trip.
+- **Luxmed client:** tested with a hybrid architecture that keeps each test at
+  the lowest HTTP layer capable of proving its claim:
+  - **Session and client policy tests** (auth flow, refresh logic, error
+    classification) inject an sttp `SttpBackendStub.synchronous` via the
+    package-visible `LuxmedTransport.withBackend` construction path and a
+    `StubLuxmedBackend` test harness. These tests remove socket lifecycle and
+    expose the request description directly. They must assert consumer-visible
+    results and hand-derived request properties rather than merely asserting
+    that the stub was invoked.
+  - **Wire-boundary tests** (redirect handling, raw `Set-Cookie` preservation,
+    empty-body behavior, body serialization, method/path/header transmission,
+    connection failures) use a real loopback HTTP server (`RealHttpLuxmedServer`,
+    built on the JDK `HttpServer`). These tests prove what the JDK backend
+    actually serializes and interprets, which no stub can verify.
+  - A full mock conformance test (`MockConformanceTest`) crosses a real HTTP
+    boundary end-to-end, proving the entire client pipeline produces the expected
+    ten-step fingerprint.
+- Realistic auth-response scripts live in a backend-independent shared test
+  utility (`LuxmedResponseScripts`), constructed with literal response values
+  rather than production JSON codecs. This avoids the encoder-contamination
+  problem where the same codec passes both sides of a round-trip.
 - Session tests use injected clock, sleeper, and UUID sources. They cover the
   ~300 s refresh threshold, refresh-token rotation, compare-and-set rejection,
   retry of pending persistence without a second HTTP refresh, rejected-refresh
