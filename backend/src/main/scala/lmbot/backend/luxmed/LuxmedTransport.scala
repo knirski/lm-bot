@@ -149,12 +149,12 @@ final class LuxmedTransport(config: LuxmedConfig):
       request: Request[String, Any]
   ): Either[LuxmedError, TransportResponse[String]] =
     permit.beforeRequest()(using async)
-    try
-      val resp = request.send(backend)
-      classify(resp)
-    catch
-      case e: Exception =>
-        Left(LuxmedError.NetworkFailure(exceptionMessage(e)))
+    val response =
+      try Right(request.send(backend))
+      catch
+        case e: SttpClientException =>
+          Left(LuxmedError.NetworkFailure(exceptionMessage(e)))
+    response.flatMap(classify)
 
   private def classify(
       response: Response[String]
