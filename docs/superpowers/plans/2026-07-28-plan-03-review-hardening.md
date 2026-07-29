@@ -47,7 +47,7 @@
 - [ ] Add a fresh-client test with a pre-populated non-expiring store session; assert `withSession` loads it and sends no password grant.
 - [ ] Run `nix develop -c sbt "backend/testOnly lmbot.backend.luxmed.LuxmedClientAuthTest"`; confirm the new tests fail before production changes.
 - [ ] After red, set `PendingBootstrap` immediately after each successful OAuth grant, set `PendingPersistence` after bootstrap, and publish `Ready` only after CAS success. On `Unloaded`, load the store first. On refresh rejection, clear the stale store and permit one password fallback. Use `Duration.between(now(), expiresAt).getSeconds <= 300`.
-- [ ] Run the auth and store focused suites, then commit with `git commit -m "fix: resume rotated Luxmed sessions safely"`.
+- [ ] Run the auth- and store-focused suites, then commit with `git commit -m "fix: resume rotated Luxmed sessions safely"`.
 
 ---
 
