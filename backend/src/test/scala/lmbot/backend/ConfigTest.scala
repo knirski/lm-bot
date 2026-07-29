@@ -1,6 +1,6 @@
 package lmbot.backend
 
-import lmbot.backend.config.{Config, Secret}
+import lmbot.backend.config.{AppVersion, Config, Port, Secret}
 
 class ConfigTest extends munit.FunSuite:
 
@@ -15,7 +15,7 @@ class ConfigTest extends munit.FunSuite:
       case Right(c) =>
         assertEquals(c.dbUrl, "jdbc:postgresql://localhost:5432/lmbot")
         assertEquals(c.httpHost, "0.0.0.0")
-        assertEquals(c.httpPort, 8080)
+        assertEquals(c.httpPort.value, 8080)
         assertEquals(c.cookieSecure, true)
         assertEquals(c.sessionTtl.toDays, 7L)
         assertEquals(c.adminUsername, None)
@@ -37,7 +37,7 @@ class ConfigTest extends munit.FunSuite:
     )
     Config.fromEnv(env) match
       case Right(c) =>
-        assertEquals(c.httpPort, 9000)
+        assertEquals(c.httpPort.value, 9000)
         assertEquals(c.cookieSecure, false)
         assertEquals(c.httpHost, "127.0.0.1")
       case Left(errs) => fail(s"expected success, got $errs")
@@ -58,14 +58,14 @@ class ConfigTest extends munit.FunSuite:
 
   test("Luxmed app version defaults to the measured refresh-compatible floor"):
     val Right(config) = Config.fromEnv(minimal): @unchecked
-    assertEquals(config.luxmedAppVersion, "4.44.0")
+    assertEquals(config.luxmedAppVersion.value, "4.44.0")
 
   test("Luxmed app version is configurable without changing the client"):
     val Right(config) =
       Config.fromEnv(
         minimal.updated("LUXMED_APP_VERSION", "4.45.1")
       ): @unchecked
-    assertEquals(config.luxmedAppVersion, "4.45.1")
+    assertEquals(config.luxmedAppVersion.value, "4.45.1")
 
   test("an empty Luxmed app version is rejected"):
     val result = Config.fromEnv(minimal.updated("LUXMED_APP_VERSION", ""))
@@ -84,3 +84,19 @@ class ConfigTest extends munit.FunSuite:
     val rendered = c.toString
     assert(!rendered.contains("secret"), s"db password leaked: $rendered")
     assert(!rendered.contains("hunter2"), s"admin password leaked: $rendered")
+
+  test("port outside valid range is rejected"):
+    val result = Config.fromEnv(minimal + ("HTTP_PORT" -> "0"))
+    assert(result.left.exists(_.exists(_.contains("Port"))))
+
+  test("app version below minimum floor is rejected"):
+    val result = Config.fromEnv(
+      minimal.updated("LUXMED_APP_VERSION", "4.43.0")
+    )
+    assert(result.left.exists(_.exists(_.contains("AppVersion"))))
+
+  test("non-parseable app version is rejected"):
+    val result = Config.fromEnv(
+      minimal.updated("LUXMED_APP_VERSION", "not-a-version")
+    )
+    assert(result.left.exists(_.exists(_.contains("AppVersion"))))

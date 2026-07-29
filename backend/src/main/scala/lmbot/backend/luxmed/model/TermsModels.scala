@@ -13,12 +13,12 @@ final case class LuxmedDateTime(value: ZonedDateTime)
   */
 final case class TermsQuery(
     cityId: Long,
-    serviceVariantId: Long,
+    serviceVariantId: ServiceVariantId,
     searchDateFrom: LocalDate,
     searchDateTo: LocalDate,
     processId: UUID = UUID.randomUUID(),
-    facilityIds: Option[Long] = None,
-    doctorIds: Option[Long] = None,
+    facilityIds: Option[FacilityId] = None,
+    doctorIds: Option[DoctorId] = None,
     languageId: Long = 10,
     searchDatePreset: Int = 14
 )
@@ -62,6 +62,6 @@ final case class Term(
     isImpediment: Boolean,
     isTelemedicine: Boolean,
     roomId: Long,
-    scheduleId: Long,
-    serviceId: Long
+    scheduleId: ScheduleId,
+    serviceId: ServiceVariantId
 )

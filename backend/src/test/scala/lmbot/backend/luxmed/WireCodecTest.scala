@@ -23,7 +23,7 @@ class WireCodecTest extends munit.FunSuite:
 
   private val sampleSession = LuxmedSession(
     accessToken = Secret("ACCESS_1"),
-    tokenType = "bearer",
+    tokenType = TokenType.Bearer,
     refreshToken = Secret("REFRESH_1"),
     expiresAt = Instant.parse("2026-08-03T12:00:00Z"),
     jwtToken = Secret("JWT_1"),
@@ -34,7 +34,7 @@ class WireCodecTest extends munit.FunSuite:
     val value =
       readFromString[OAuthTokens](fixture("auth-password-success.json"))
     assertEquals(value.expiresIn, 599)
-    assertEquals(value.tokenType, "bearer")
+    assertEquals(value.tokenType, TokenType.Bearer)
     assertEquals(value.refreshToken.value, "REFRESH_1")
     assertEquals(
       writeToString(value),
@@ -121,12 +121,12 @@ class WireCodecTest extends munit.FunSuite:
   test("lock success decodes"):
     val response =
       readFromString[LockTermResponse](fixture("lock-success.json"))
-    assertEquals(response.value.temporaryReservationId, 222222L)
+    assertEquals(response.value.temporaryReservationId.value, 222222L)
     assert(response.value.valuations.nonEmpty, "valuations not empty")
     assertEquals(response.value.valuations.head.valuationType, 1L)
 
   test("confirm success decodes"):
     val response =
       readFromString[ConfirmResponse](fixture("confirm-success.json"))
-    assertEquals(response.value.reservationId, 2222222L)
+    assertEquals(response.value.reservationId.value, 2222222L)
     assertEquals(response.value.canSelfConfirm, false)

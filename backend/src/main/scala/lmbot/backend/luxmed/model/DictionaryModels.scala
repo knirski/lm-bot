@@ -8,7 +8,7 @@ final case class City(id: Long, name: String)
   * /PatientPortal/NewPortal/Dictionary/serviceVariantsGroups.
   */
 final case class ServiceVariant(
-    id: Long,
+    id: ServiceVariantId,
     name: String,
     expanded: Boolean,
     children: List[ServiceVariant],
@@ -27,13 +27,13 @@ final case class Doctor(
     firstName: Option[String],
     isEnglishSpeaker: Option[Boolean],
     genderId: Option[Long],
-    id: Long,
+    id: DoctorId,
     lastName: Option[String]
 )
 
 /** A named facility.
   */
-final case class Facility(id: Long, name: String)
+final case class Facility(id: FacilityId, name: String)
 
 /** The combined facilities and doctors response.
   */

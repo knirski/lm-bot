@@ -1,6 +1,6 @@
 package lmbot.backend.luxmed
 
-import lmbot.backend.config.Secret
+import lmbot.backend.config.{AppVersion, SafeDiagnostic, Secret}
 import lmbot.backend.luxmed.support.{
   FakeTime,
   GearsTest,
@@ -48,7 +48,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       val config = LuxmedConfig(
         oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
         newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = "4.44.0",
+        appVersion = AppVersion.unsafeFromString("4.44.0"),
         deviceUuid = testUuid
       )
       val transport = LuxmedTransport(config)
@@ -91,6 +91,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       val session = result.toOption.get
       assertEquals(session.refreshToken.value, "RT1")
       assertEquals(session.jwtToken.value, "JWT_TOKEN_1")
+      assertEquals(session.tokenType, TokenType.Bearer)
       val requests = mock.requests
       assertEquals(requests.map(_.method), List("POST", "GET", "GET"))
       assertEquals(
@@ -147,7 +148,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
     withClient(): (client, mock, fake, store) =>
       val oldSession = LuxmedSession(
         accessToken = Secret("AT_OLD"),
-        tokenType = "bearer",
+        tokenType = TokenType.Bearer,
         refreshToken = Secret("RT_OLD"),
         expiresAt = fake.now().plusSeconds(600),
         jwtToken = Secret("JWT_OLD"),
@@ -337,8 +338,8 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         client.authenticate()
       result match
         case Left(LuxmedError.DecodeFailed(details)) =>
-          assert(!details.contains("ACCESS_SECRET"))
-          assert(!details.contains("REFRESH_SECRET"))
+          assert(!details.value.contains("ACCESS_SECRET"))
+          assert(!details.value.contains("REFRESH_SECRET"))
         case other => fail(s"expected DecodeFailed, got $other")
 
   test(
@@ -591,7 +592,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
     withClient(): (client, mock, fake, store) =>
       val stored = LuxmedSession(
         accessToken = Secret("AT_STORED"),
-        tokenType = "bearer",
+        tokenType = TokenType.Bearer,
         refreshToken = Secret("RT_STORED"),
         expiresAt = fake.now().plusSeconds(600),
         jwtToken = Secret("JWT_STORED"),

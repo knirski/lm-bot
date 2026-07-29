@@ -13,10 +13,10 @@ case class Config(
     dbUser: String,
     dbPassword: Secret,
     httpHost: String,
-    httpPort: Int,
+    httpPort: Port,
     cookieSecure: Boolean,
     sessionTtl: Duration,
-    luxmedAppVersion: String,
+    luxmedAppVersion: AppVersion,
     adminUsername: Option[String],
     adminPassword: Option[Secret]
 )
@@ -52,9 +52,7 @@ object Config:
     val dbUser = required("DATABASE_USER")
     val dbPassword = required("DATABASE_PASSWORD")
     val host = env.get("HTTP_HOST").filter(_.nonEmpty).getOrElse("0.0.0.0")
-    val port = int("HTTP_PORT", 8080)
-    // Secure by default: the operator terminates TLS in front of us (spec §6).
-    // Only a deliberate override turns it off, for plain-HTTP local dev.
+    val portRaw = int("HTTP_PORT", 8080)
     val secure = bool("COOKIE_SECURE", true)
     val ttlDays = int("SESSION_TTL_DAYS", 7)
 
@@ -66,6 +64,16 @@ object Config:
           errors += "LUXMED_APP_VERSION must not be empty"
           "4.44.0"
 
+    // Validate port at config boundary
+    Port.fromInt(portRaw) match
+      case Left(msg) => errors += msg
+      case _         => ()
+
+    // Validate app version at config boundary
+    AppVersion.fromString(luxmedAppVersion) match
+      case Left(msg) => errors += s"LUXMED_APP_VERSION: $msg"
+      case _         => ()
+
     val built = errors.result()
     if built.nonEmpty then Left(built)
     else
@@ -75,10 +83,11 @@ object Config:
           dbUser = dbUser,
           dbPassword = Secret(dbPassword),
           httpHost = host,
-          httpPort = port,
+          httpPort = Port.fromInt(portRaw).toOption.get,
           cookieSecure = secure,
           sessionTtl = Duration.ofDays(ttlDays.toLong),
-          luxmedAppVersion = luxmedAppVersion,
+          luxmedAppVersion =
+            AppVersion.fromString(luxmedAppVersion).toOption.get,
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
             env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply)

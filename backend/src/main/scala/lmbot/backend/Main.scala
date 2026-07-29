@@ -71,7 +71,7 @@ object Main:
 
         val server = Server.start(
           config.httpHost,
-          config.httpPort,
+          config.httpPort.value,
           HealthRoutes.endpoints ++ routes.endpoints ++ StaticRoutes.endpoints
         )
 
