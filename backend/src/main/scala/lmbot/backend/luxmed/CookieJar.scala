@@ -2,29 +2,28 @@ package lmbot.backend.luxmed
 
 import lmbot.backend.config.Secret
 
-/** An immutable, case-insensitive-by-name cookie jar. Cookies are merged by
-  * name: a newer response cookie replaces an older one with the same name.
+/** An immutable cookie jar. Cookie names are retained exactly as received; a
+  * newer response cookie replaces an older one with the same exact name.
   * Cookies with an empty value are treated as deletion signals and remove the
   * corresponding stored cookie.
   */
 final case class CookieJar private (entries: Map[String, Secret]):
 
-  /** Return the stored cookie by its lowercased name. */
-  def get(name: String): Option[Secret] = entries.get(name.toLowerCase)
+  /** Return the stored cookie by its exact name. */
+  def get(name: String): Option[Secret] = entries.get(name)
 
-  /** All stored cookie names (original casing is lost on merge). */
+  /** All stored cookie names, preserving server-provided casing. */
   def names: Set[String] = entries.keySet
 
   /** Merge the given response cookies into this jar. Each cookie replaces an
-    * existing cookie of the same lowercased name. A cookie whose value is empty
+    * existing cookie of the same exact name. A cookie whose value is empty
     * removes the existing cookie.
     */
   def merge(responseCookies: List[(String, Secret)]): CookieJar =
     val merged = responseCookies.foldLeft(entries) {
       case (acc, (name, value)) =>
-        val key = name.toLowerCase
-        if value.value.isEmpty then acc - key
-        else acc + (key -> value)
+        if value.value.isEmpty then acc - name
+        else acc + (name -> value)
     }
     CookieJar(merged)
 
@@ -50,4 +49,4 @@ object CookieJar:
   def empty: CookieJar = CookieJar(Map.empty)
 
   def apply(pairs: (String, Secret)*): CookieJar =
-    CookieJar(pairs.map { (k, v) => k.toLowerCase -> v }.toMap)
+    CookieJar(pairs.toMap)

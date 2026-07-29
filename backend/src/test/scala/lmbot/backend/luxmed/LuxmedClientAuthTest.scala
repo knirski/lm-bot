@@ -120,7 +120,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       )
       assertEquals(
         header(requests(2), "Cookie"),
-        Some("asp.net_sessionid=sess1")
+        Some("ASP.NET_SessionId=sess1")
       )
 
   test("authenticate stores session in the store"):

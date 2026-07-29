@@ -55,19 +55,23 @@ class WireCodecTest extends munit.FunSuite:
     val merged = CookieJar("A" -> Secret("old"), "B" -> Secret("keep"))
       .merge(List("A" -> Secret("new"), "C" -> Secret("added")))
     assertEquals(merged.get("A").map(_.value), Some("new"))
-    assertEquals(merged.names, Set("a", "b", "c"))
+    assertEquals(merged.names, Set("A", "B", "C"))
 
-  test("cookie jar is case-insensitive for name lookup"):
-    val jar = CookieJar("SessionId" -> Secret("abc"))
-    assertEquals(jar.get("sessionid").map(_.value), Some("abc"))
-    assertEquals(jar.get("SESSIONID").map(_.value), Some("abc"))
+  test("cookie jar preserves names and replaces only exact matches"):
+    val jar = CookieJar(
+      "SID" -> Secret("upper"),
+      "sid" -> Secret("lower")
+    ).merge(List("SID" -> Secret("replaced")))
+    assertEquals(jar.get("SID").map(_.value), Some("replaced"))
+    assertEquals(jar.get("sid").map(_.value), Some("lower"))
+    assertEquals(jar.names, Set("SID", "sid"))
 
   test("request cookie header includes cookie names and values"):
     val header = CookieJar(
       "A" -> Secret("one"),
       "B" -> Secret("two")
     ).requestCookies.head._2
-    assertEquals(header.split("; ").toSet, Set("a=one", "b=two"))
+    assertEquals(header.split("; ").toSet, Set("A=one", "B=two"))
 
   test("session rendering never reveals bearer credentials"):
     val rendered = sampleSession.toString
