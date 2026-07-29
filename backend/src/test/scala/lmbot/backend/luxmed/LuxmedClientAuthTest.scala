@@ -326,15 +326,57 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         1
       )
 
-  test("malformed OAuth success is DecodeFailed"):
+  test("malformed OAuth success does not expose tokens in DecodeFailed"):
     withClient(): (client, mock, _, _) =>
-      mock.enqueue(status = 200, body = "not-json")
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"ACCESS_SECRET","refresh_token":"REFRESH_SECRET","expires_in":oops}"""
+      )
       val result = runAsync:
         client.authenticate()
-      assert(result.left.exists {
-        case LuxmedError.DecodeFailed(_) => true
-        case _                           => false
-      })
+      result match
+        case Left(LuxmedError.DecodeFailed(details)) =>
+          assert(!details.contains("ACCESS_SECRET"))
+          assert(!details.contains("REFRESH_SECRET"))
+        case other => fail(s"expected DecodeFailed, got $other")
+
+  test(
+    "initial bootstrap expiry returns without a second password grant and retries bootstrap"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "session has expired")
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+
+      val first = runAsync:
+        client.withSession: (_, session) =>
+          Right(session.accessToken.value)
+
+      assertEquals(first, Left(LuxmedError.SessionExpired))
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+      val second = runAsync:
+        client.withSession: (_, session) =>
+          Right(session.accessToken.value)
+
+      assertEquals(second, Right("AT1"))
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
 
   test("persistence failure retries the store without another HTTP request"):
     withClient(FailOnceStore()): (client, mock, _, _) =>
@@ -399,6 +441,61 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       assertEquals(second, Right("AT2"))
       assertEquals(
         mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        1
+      )
+
+  test(
+    "bootstrap expiry after refresh returns without password fallback and retries bootstrap"
+  ):
+    withClient(): (client, mock, fake, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      fake.advance(Duration.ofSeconds(301))
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "session has expired")
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_2")
+      )
+
+      val first = runAsync:
+        client.withSession: (_, session) =>
+          Right(session.accessToken.value)
+
+      assertEquals(first, Left(LuxmedError.SessionExpired))
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+      val second = runAsync:
+        client.withSession: (_, session) =>
+          Right(session.accessToken.value)
+
+      assertEquals(second, Right("AT2"))
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        1
+      )
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
         1
       )
 

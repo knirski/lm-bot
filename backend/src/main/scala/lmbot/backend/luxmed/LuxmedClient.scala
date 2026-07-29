@@ -46,8 +46,6 @@ final class LuxmedClient(
     gate.serialized:
       given AccountGatePermit = summon[AccountGatePermit]
       ensureSession() match
-        case Left(LuxmedError.SessionExpired) =>
-          reauthenticateAfterExpiry(op)
         case Left(e)        => Left(e)
         case Right(session) => runOperation(op, session)
 
@@ -102,11 +100,11 @@ final class LuxmedClient(
   ): Either[LuxmedError, LuxmedSession] =
     refreshGrant(oldSession.refreshToken) match
       case Left(_: LuxmedError.ApiRejected) =>
-        state = ClientSessionState.Unloaded
-        Left(LuxmedError.SessionExpired)
+        reauthenticateSession()
       case Left(LuxmedError.AuthFailed) =>
-        state = ClientSessionState.Unloaded
-        Left(LuxmedError.SessionExpired)
+        reauthenticateSession()
+      case Left(LuxmedError.SessionExpired) =>
+        reauthenticateSession()
       case Left(error)  => Left(error)
       case Right(oauth) =>
         state = ClientSessionState.PendingBootstrap(
@@ -178,13 +176,18 @@ final class LuxmedClient(
       permit: AccountGatePermit,
       async: Async
   ): Either[LuxmedError, A] =
+    reauthenticateSession() match
+      case Left(error)         => Left(error)
+      case Right(freshSession) => op(permit, freshSession)
+
+  private def reauthenticateSession()(using
+      permit: AccountGatePermit,
+      async: Async
+  ): Either[LuxmedError, LuxmedSession] =
     state = ClientSessionState.Unloaded
     store.clear() match
       case Left(error) => Left(toLuxmedError(error))
-      case Right(())   =>
-        authenticateInternal() match
-          case Left(error)         => Left(error)
-          case Right(freshSession) => op(permit, freshSession)
+      case Right(())   => authenticateInternal()
 
   private def toLuxmedError(error: SessionStoreError): LuxmedError =
     error match
@@ -263,12 +266,4 @@ final class LuxmedClient(
       codec: com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec[A]
   ): Either[String, A] =
     try Right(readFromString[A](json))
-    catch case e: Exception => Left(exceptionMessage(e))
-
-  private def exceptionMessage(error: Throwable): String =
-    Option(error.getMessage)
-      .map(_.nn)
-      .filter(_.nonEmpty)
-      .getOrElse(
-        error.getClass.getSimpleName
-      )
+    catch case _: Exception => Left("Malformed JSON response")
