@@ -26,9 +26,12 @@ Temurin 25, the sbt launcher, **Node 26**, and Metals.
 
 - **Node 26+ is a hard requirement.** V8 in Node 24/25 stack-overflows in the
   nested async contexts Gears uses throughout.
-- **PostgreSQL is embedded** via zonky embedded-postgres (`io.zonky.test:embedded-postgres`).
-  Tests start one PG per suite on random ports (isolated but run serially due to
-  the shared binary cache).  `sbt startDev` starts one automatically on port 15432.
+- **PostgreSQL is embedded** — by default via [memgres](https://github.com/lhgravendeel/memgres)
+  (`com.memgres:memgres-core`), a fast in-memory PG-compatible engine with no
+  native binaries, no Docker, millisecond startup.  Set `EMBEDDED_DB=zonky` to
+  fall back to zonky embedded-postgres (`io.zonky.test:embedded-postgres`) which
+  runs real PostgreSQL binaries.  Tests start one embedded database per suite on
+  random ports.  `sbt startDev` starts one automatically on port 15432.
   No external PG, no container, no devShell lifecycle needed.
 - **The Cachix binary cache `knirski-lm-bot` is wired into `nixConfig`**, so
   every `nix develop` and `nix build` automatically pulls pre-built closures
