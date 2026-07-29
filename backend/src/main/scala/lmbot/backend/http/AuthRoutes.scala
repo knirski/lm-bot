@@ -1,11 +1,11 @@
 package lmbot.backend.http
 
+import java.time.Duration
+
 import lmbot.backend.auth.AuthService
 import lmbot.shared.api.AuthEndpoints
 import sttp.shared.Identity
 import sttp.tapir.server.ServerEndpoint
-
-import java.time.Duration
 
 /** Translates HTTP to service calls and back. No policy lives here. */
 class AuthRoutes(

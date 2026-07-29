@@ -1,9 +1,9 @@
 package lmbot.backend.http
 
+import java.time.Duration
+
 import sttp.model.headers.Cookie.SameSite
 import sttp.model.headers.CookieValueWithMeta
-
-import java.time.Duration
 
 object SessionCookie:
 

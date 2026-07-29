@@ -1,8 +1,10 @@
 package lmbot.backend.support
 
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.sql.{DriverManager, SQLException}
+
 import scala.sys.process.*
+
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 
 private[support] enum BootstrapObject(val duplicateSqlState: String):
   case Role extends BootstrapObject("42710")

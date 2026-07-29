@@ -6,16 +6,16 @@ import java.time.LocalTime
   */
 final case class LockTermRequest(
     date: String,
-    doctorId: Long,
-    facilityId: Long,
+    doctorId: DoctorId,
+    facilityId: FacilityId,
     impedimentText: Option[String],
     isAdditional: Boolean,
     isImpediment: Boolean,
     isPreparationRequired: Boolean,
     isTelemedicine: Boolean,
     roomId: Long,
-    scheduleId: Long,
-    serviceVariantId: Long,
+    scheduleId: ScheduleId,
+    serviceVariantId: ServiceVariantId,
     timeFrom: String,
     timeTo: String
 )
@@ -35,7 +35,7 @@ final case class LockTermResponseValue(
     conflictedVisit: Option[String],
     doctorDetails: Doctor,
     relatedVisits: List[RelatedVisit],
-    temporaryReservationId: Long,
+    temporaryReservationId: ReservationId,
     valuations: List[Valuation]
 )
 
@@ -43,7 +43,7 @@ final case class RelatedVisit(
     doctor: Doctor,
     facilityName: String,
     isTelemedicine: Boolean,
-    reservationId: Long,
+    reservationId: ReservationId,
     timeFrom: LocalTime,
     timeTo: LocalTime
 )
@@ -68,12 +68,12 @@ final case class Valuation(
   */
 final case class ConfirmRequest(
     date: String,
-    doctorId: Long,
-    facilityId: Long,
+    doctorId: DoctorId,
+    facilityId: FacilityId,
     roomId: Long,
-    scheduleId: Long,
-    serviceVariantId: Long,
-    temporaryReservationId: Long,
+    scheduleId: ScheduleId,
+    serviceVariantId: ServiceVariantId,
+    temporaryReservationId: ReservationId,
     timeFrom: LocalTime,
     valuation: Valuation
 )
@@ -91,6 +91,6 @@ final case class ConfirmResponse(
 final case class ConfirmValue(
     canSelfConfirm: Boolean,
     npsToken: String,
-    reservationId: Long,
+    reservationId: ReservationId,
     serviceInstanceId: Long
 )

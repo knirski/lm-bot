@@ -1,8 +1,9 @@
 package lmbot.backend.luxmed.model
 
+import java.time.Instant
+
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.CookieJar
-import java.time.Instant
 
 /** OAuth tokens returned by the password and refresh grants on the old
   * PatientPortalMobileAPI. Wire names are measured snake_case.
@@ -15,13 +16,13 @@ import java.time.Instant
   * @param refreshToken
   *   Single-use refresh token.
   * @param tokenType
-  *   Always "bearer".
+  *   Token type — always "bearer" on the wire, but modelled as a closed enum.
   */
 final case class OAuthTokens(
     accessToken: Secret,
     expiresIn: Int,
     refreshToken: Secret,
-    tokenType: String
+    tokenType: TokenType
 )
 
 /** Plain credentials for the password grant.
@@ -38,7 +39,7 @@ final case class Credentials(username: String, password: Secret)
   * @param accessToken
   *   The OAuth access token from the most recent password or refresh grant.
   * @param tokenType
-  *   The token type string (e.g. "bearer").
+  *   The token type enum (e.g. Bearer).
   * @param refreshToken
   *   The current single-use refresh token.
   * @param expiresAt
@@ -51,7 +52,7 @@ final case class Credentials(username: String, password: Secret)
   */
 final case class LuxmedSession(
     accessToken: Secret,
-    tokenType: String,
+    tokenType: TokenType,
     refreshToken: Secret,
     expiresAt: Instant,
     jwtToken: Secret,

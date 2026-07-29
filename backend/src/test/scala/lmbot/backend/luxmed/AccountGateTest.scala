@@ -1,10 +1,11 @@
 package lmbot.backend.luxmed
 
-import lmbot.backend.luxmed.support.{FakeTime, GearsTest}
-import gears.async.{Async, Future}
 import java.time.Duration
-import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+
+import gears.async.{Async, Future}
+import lmbot.backend.luxmed.support.{FakeTime, GearsTest}
 
 class AccountGateTest extends munit.FunSuite with GearsTest:
 

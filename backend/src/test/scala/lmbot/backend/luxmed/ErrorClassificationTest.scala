@@ -1,9 +1,12 @@
 package lmbot.backend.luxmed
 
-import lmbot.backend.luxmed.support.{GearsTest, MockLuxmedServer}
-import gears.async.Async
-import sttp.model.Uri
 import java.util.UUID
+
+import gears.async.Async
+import lmbot.backend.config.AppVersion
+import lmbot.backend.luxmed.model.LuxmedEndpoint
+import lmbot.backend.luxmed.support.{GearsTest, MockLuxmedServer}
+import sttp.model.Uri
 
 class ErrorClassificationTest extends munit.FunSuite with GearsTest:
 
@@ -15,7 +18,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       val config = LuxmedConfig(
         oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
         newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = "4.44.0",
+        appVersion = AppVersion.unsafeFromString("4.44.0"),
         deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
       )
       val transport = LuxmedTransport(config)
@@ -34,7 +37,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/redirect")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.SessionExpired))
       assertEquals(mock.requests.size, 1)
 
@@ -47,7 +50,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/redirect")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
   test("redirect body naming LogOn is session expired"):
@@ -55,7 +58,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       mock.enqueue(status = 302, body = "/PatientPortal/LogOn")
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/redirect")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
   test("429 is RateLimited"):
@@ -63,7 +66,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       mock.enqueue(status = 429, body = """{"message":"slow down"}""")
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/limited")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.RateLimited))
 
   test("a 409 credential message is AuthFailed"):
@@ -74,7 +77,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/token")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.AuthFailed))
 
   test("Polish credential message 409 is AuthFailed"):
@@ -86,7 +89,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/token")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.AuthFailed))
 
   test("a 409 without credential message is ApiRejected"):
@@ -97,7 +100,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/token")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(result.isLeft)
       assert(result.left.exists {
         case LuxmedError.ApiRejected(_) => true
@@ -112,7 +115,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/check")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(result.left.exists {
         case LuxmedError.ApiRejected(_) => true
         case _                          => false
@@ -126,7 +129,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/check")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(result.left.exists {
         case LuxmedError.ApiRejected(_) => true
         case _                          => false
@@ -140,7 +143,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/check")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
   test("logged out due to inactivity is SessionExpired"):
@@ -152,7 +155,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/check")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
   test("5xx is Transient"):
@@ -160,7 +163,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       mock.enqueue(status = 503, body = "Service Unavailable")
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/down")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(result, Left(LuxmedError.Transient(503)))
 
   test("old app version error is VersionRejected"):
@@ -172,7 +175,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/token")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(result.left.exists {
         case LuxmedError.VersionRejected(_) => true
         case _                              => false
@@ -187,7 +190,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/login")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(result.left.exists {
         case LuxmedError.UnexpectedAuthResponse(_) => true
         case _                                     => false
@@ -197,13 +200,13 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
     val config = LuxmedConfig(
       oldApi = Uri.unsafeParse("http://localhost:1/PatientPortalMobileAPI/api"),
       newApi = Uri.unsafeParse("http://localhost:1/PatientPortal"),
-      appVersion = "4.44.0",
+      appVersion = AppVersion.unsafeFromString("4.44.0"),
       deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
     )
     val transport = LuxmedTransport(config)
     val result = runAsync:
       given RequestPermit = testPermit
-      transport.oldApiGet("/token")
+      transport.oldApiGet(LuxmedEndpoint.Token)
     assert(result.left.exists {
       case LuxmedError.NetworkFailure(_) => true
       case _                             => false
@@ -218,7 +221,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/cookies")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assertEquals(
         result.toOption
           .flatMap(_.cookies.find(_._1 == "token"))
@@ -239,7 +242,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/secrets")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       val rendered = result.toString
       List(
         "ACCESS_SECRET",
@@ -259,7 +262,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/challenge")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       assert(!result.toString.contains("AUTH_SECRET"))
 
   test("error diagnostics redact JWT cookies and phone-like values"):
@@ -271,7 +274,7 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
       )
       val result = runAsync:
         given RequestPermit = testPermit
-        transport.oldApiGet("/challenge")
+        transport.oldApiGet(LuxmedEndpoint.Token)
       val rendered = result.toString
       List(
         "JWT_SECRET",

@@ -1,13 +1,13 @@
 package lmbot.backend
 
+import java.time.{Duration, OffsetDateTime}
+
 import com.augustnagro.magnum.{sql, transact}
 import lmbot.backend.auth.{AuthService, Passwords, Tokens}
 import lmbot.backend.db.{SessionRepo, UserRepo}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.api.ApiError
 import lmbot.shared.domain.Role
-
-import java.time.{Duration, OffsetDateTime}
 
 class AuthServiceTest extends PostgresSuite:
 

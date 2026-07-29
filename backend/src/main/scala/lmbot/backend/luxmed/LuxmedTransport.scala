@@ -1,12 +1,13 @@
 package lmbot.backend.luxmed
 
+import java.net.http.HttpClient
+import java.time.Duration
+
 import gears.async.Async
-import lmbot.backend.config.Secret
+import lmbot.backend.config.{SafeDiagnostic, Secret}
 import lmbot.backend.luxmed.model.*
 import sttp.client3.*
 import sttp.model.Uri
-import java.net.http.HttpClient
-import java.time.Duration
 
 private[luxmed] trait RequestPermit:
   def beforeRequest()(using Async): Unit
@@ -33,7 +34,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   )
 
   private val deviceAgent =
-    s"Patient Portal; ${config.appVersion}; ${config.deviceUuid}; Android; ${config.apiLevel}; ${config.deviceModel}"
+    s"Patient Portal; ${config.appVersion.value}; ${config.deviceUuid}; Android; ${config.apiLevel}; ${config.deviceModel}"
 
   private val oldApiHeaders = commonHeaders ++ Map(
     "X-Api-Client-Identifier" -> "Android",
@@ -52,8 +53,9 @@ final class LuxmedTransport(config: LuxmedConfig):
       .followRedirects(false)
       .asInstanceOf[Request[String, Any]]
 
+  /** GET on the old API (PatientPortalMobileAPI). */
   def oldApiGet(
-      path: String,
+      endpoint: LuxmedEndpoint,
       params: Map[String, String] = Map.empty
   )(using
       a: Async,
@@ -61,12 +63,13 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(endpoint(config.oldApi, path, params))
+        .get(uri(config.oldApi, endpoint, params))
         .headers(oldApiHeaders)
     )
 
+  /** POST form-encoded on the old API (PatientPortalMobileAPI). */
   def oldApiPostForm(
-      path: String,
+      endpoint: LuxmedEndpoint,
       body: Map[String, String]
   )(using
       a: Async,
@@ -74,13 +77,14 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .post(endpoint(config.oldApi, path, Map.empty))
+        .post(uri(config.oldApi, endpoint, Map.empty))
         .headers(oldApiHeaders)
         .body(body)
     )
 
+  /** GET on the new Portal API with an authenticated session. */
   def newApiGet(
-      path: String,
+      endpoint: LuxmedEndpoint,
       params: Map[String, String] = Map.empty,
       session: LuxmedSession
   )(using
@@ -89,14 +93,15 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(endpoint(config.newApi, path, params))
+        .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
         .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
         .cookies(session.cookies.toSeq*)
     )
 
+  /** GET on the new Portal API during the bootstrap flow (no JWT yet). */
   def newApiBootstrapGet(
-      path: String,
+      endpoint: LuxmedEndpoint,
       accessToken: Secret,
       cookies: CookieJar,
       params: Map[String, String] = Map.empty
@@ -106,15 +111,16 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p)(
       mkRequest
-        .get(endpoint(config.newApi, path, params))
+        .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
         .header("Authorization", accessToken.value)
         .header("X-Requested-With", "pl.luxmed.pp")
         .cookies(cookies.toSeq*)
     )
 
+  /** POST JSON on the new Portal API with optional XSRF protection. */
   def newApiPost(
-      path: String,
+      endpoint: LuxmedEndpoint,
       body: String,
       session: LuxmedSession,
       xsrfToken: Option[Secret] = None,
@@ -125,7 +131,7 @@ final class LuxmedTransport(config: LuxmedConfig):
   ): Either[LuxmedError, TransportResponse[String]] =
     val mergedCookies = session.cookies.merge(extraCookies.toList)
     var r = mkRequest
-      .post(endpoint(config.newApi, path, Map.empty))
+      .post(uri(config.newApi, endpoint, Map.empty))
       .headers(newApiHeaders)
       .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
       .header("Content-Type", "application/json")
@@ -135,12 +141,15 @@ final class LuxmedTransport(config: LuxmedConfig):
       r = r.header("xsrf-token", tok.value)
     run(a, p)(r)
 
-  private def endpoint(
+  /** Convert a [[LuxmedEndpoint]] to a full URI by appending its path segments
+    * and query params to the base.
+    */
+  private def uri(
       base: Uri,
-      path: String,
+      ep: LuxmedEndpoint,
       params: Map[String, String]
   ): Uri =
-    base.addPath(path.split('/').toSeq).addParams(params)
+    base.addPath(ep.path.split('/').toSeq).addParams(params)
 
   private def run(
       async: Async,
@@ -153,7 +162,7 @@ final class LuxmedTransport(config: LuxmedConfig):
       try Right(request.send(backend))
       catch
         case e: SttpClientException =>
-          Left(LuxmedError.NetworkFailure(exceptionMessage(e)))
+          Left(LuxmedError.NetworkFailure(safeDiagnostic(e)))
     response.flatMap(classify)
 
   private def classify(
@@ -190,10 +199,12 @@ final class LuxmedTransport(config: LuxmedConfig):
     if body.contains(
         "Obecnie zainstalowana wersja aplikacji nie jest wspierana"
       )
-    then return Left(LuxmedError.VersionRejected(redactBody(body)))
+    then return Left(LuxmedError.VersionRejected(LuxmedRedaction.safe(body)))
 
     if body.contains("\"challengeId\"") then
-      return Left(LuxmedError.UnexpectedAuthResponse(redactBody(body)))
+      return Left(
+        LuxmedError.UnexpectedAuthResponse(LuxmedRedaction.safe(body))
+      )
 
     if status >= 200 && status < 300 then
       Right(
@@ -210,7 +221,10 @@ final class LuxmedTransport(config: LuxmedConfig):
             .map(h => Secret(h.value))
         )
       )
-    else Left(LuxmedError.ApiRejected(redactBody(body)))
+    else
+      Left(
+        LuxmedError.ApiRejected(LuxmedRedaction.safe(body))
+      )
 
   private def extractCookies(
       response: Response[String]
@@ -232,16 +246,13 @@ final class LuxmedTransport(config: LuxmedConfig):
       }
       .toList
 
-  private def redactBody(body: String): String =
-    LuxmedRedaction.summary(body)
-
-  private def exceptionMessage(error: Throwable): String =
-    Option(error.getMessage)
-      .map(_.nn)
-      .filter(_.nonEmpty)
-      .getOrElse(
-        error.getClass.getSimpleName
-      )
+  private def safeDiagnostic(error: Throwable): SafeDiagnostic =
+    SafeDiagnostic(
+      Option(error.getMessage)
+        .map(_.nn)
+        .filter(_.nonEmpty)
+        .getOrElse(error.getClass.getSimpleName)
+    )
 
 final case class TransportResponse[+A](
     body: A,
@@ -256,6 +267,12 @@ final case class TransportResponse[+A](
       s"cookies=${cookies.map(_._1).distinct}, " +
       s"bodySummary=${LuxmedRedaction.summary(body.toString)})"
 
+/** Redaction logic for diagnostic messages.
+  *
+  * Extracted as a package-level utility so it can be reused by
+  * [[TransportResponse.toString]] and [[SafeDiagnostic]] construction without
+  * duplication.
+  */
 private[luxmed] object LuxmedRedaction:
   private val secretFields =
     """(?i)((?:access_token|refresh_token|password|jwt|jwtToken|cookie|authorization-token|authorization)\s*["':=]+\s*"?)[^",}\s]+("?)""".r
@@ -264,6 +281,11 @@ private[luxmed] object LuxmedRedaction:
     """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""".r
   private val phone = """\b\d{3}\s\d{3}\s\d{3}\b""".r
 
+  /** Produce a redacted [[SafeDiagnostic]] from raw content. */
+  def safe(raw: String): SafeDiagnostic =
+    SafeDiagnostic(summary(raw))
+
+  /** Produce a redacted string summary from raw content. */
   def summary(body: String): String =
     val withBearer = bearerToken.replaceAllIn(
       body,

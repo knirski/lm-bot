@@ -1,14 +1,15 @@
 package lmbot.backend.luxmed
 
-import gears.async.Async
-import lmbot.backend.config.Secret
-import lmbot.backend.luxmed.model.*
-import lmbot.backend.luxmed.model.WireCodecs.given
+import java.time.{Duration, Instant}
+
 import com.github.plokhotnyuk.jsoniter_scala.core.{
   JsonValueCodec,
   readFromString
 }
-import java.time.{Duration, Instant}
+import gears.async.Async
+import lmbot.backend.config.{SafeDiagnostic, Secret}
+import lmbot.backend.luxmed.model.*
+import lmbot.backend.luxmed.model.WireCodecs.given
 
 private enum ClientSessionState:
   case Unloaded
@@ -156,11 +157,19 @@ final class LuxmedClient(
         Right(session)
       case Left(SessionStoreError.ConcurrentModification) =>
         state = ClientSessionState.Unloaded
-        Left(LuxmedError.PersistenceFailed("CAS conflict"))
+        Left(
+          LuxmedError.PersistenceFailed(
+            lmbot.backend.config.SafeDiagnostic("CAS conflict")
+          )
+        )
       case Left(SessionStoreError.Unavailable(m)) =>
         state =
           ClientSessionState.PendingPersistence(expectedRefreshToken, session)
-        Left(LuxmedError.PersistenceFailed(m))
+        Left(
+          LuxmedError.PersistenceFailed(
+            lmbot.backend.config.SafeDiagnostic(m)
+          )
+        )
 
   private def runOperation[A](
       op: (AccountGatePermit, LuxmedSession) => Either[LuxmedError, A],
@@ -195,9 +204,13 @@ final class LuxmedClient(
   private def toLuxmedError(error: SessionStoreError): LuxmedError =
     error match
       case SessionStoreError.Unavailable(message) =>
-        LuxmedError.PersistenceFailed(message)
+        LuxmedError.PersistenceFailed(
+          lmbot.backend.config.SafeDiagnostic(message)
+        )
       case SessionStoreError.ConcurrentModification =>
-        LuxmedError.PersistenceFailed("CAS conflict")
+        LuxmedError.PersistenceFailed(
+          lmbot.backend.config.SafeDiagnostic("CAS conflict")
+        )
 
   private def passwordGrant()(using
       permit: AccountGatePermit,
@@ -205,7 +218,7 @@ final class LuxmedClient(
   ): Either[LuxmedError, OAuthTokens] =
     for
       resp <- transport.oldApiPostForm(
-        "token",
+        LuxmedEndpoint.Token,
         Map(
           "client_id" -> "Android",
           "grant_type" -> "password",
@@ -214,7 +227,7 @@ final class LuxmedClient(
         )
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
-        LuxmedError.DecodeFailed(msg)
+        LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
     yield tokens
 
   private def refreshGrant(
@@ -225,7 +238,7 @@ final class LuxmedClient(
   ): Either[LuxmedError, OAuthTokens] =
     for
       resp <- transport.oldApiPostForm(
-        "token",
+        LuxmedEndpoint.Token,
         Map(
           "client_id" -> "Android",
           "grant_type" -> "refresh_token",
@@ -233,7 +246,7 @@ final class LuxmedClient(
         )
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
-        LuxmedError.DecodeFailed(msg)
+        LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
     yield tokens
 
   private def bootstrapNewPortal(
@@ -245,14 +258,14 @@ final class LuxmedClient(
   ): Either[LuxmedError, (CookieJar, Secret)] =
     for
       loginResp <- transport.newApiBootstrapGet(
-        "Account/LogInToApp",
+        LuxmedEndpoint.LogInToApp,
         accessToken,
         cookies,
         Map("app" -> "search", "client" -> "3", "lang" -> "pl")
       )
       loginCookies = cookies.merge(loginResp.cookies)
       pageResp <- transport.newApiBootstrapGet(
-        "NewPortal/Page/Reservation",
+        LuxmedEndpoint.ReservationPage,
         accessToken,
         loginCookies
       )
@@ -262,7 +275,13 @@ final class LuxmedClient(
           val token = jwt.value.stripPrefix("Bearer ").trim
           Right(Secret(token))
         case None =>
-          Left(LuxmedError.ProtocolViolation("Authorization-Token missing"))
+          Left(
+            LuxmedError.ProtocolViolation(
+              SafeDiagnostic(
+                "Authorization-Token missing"
+              )
+            )
+          )
     yield (mergedCookies, jwtToken)
 
   private def decodeJson[A](json: String)(using

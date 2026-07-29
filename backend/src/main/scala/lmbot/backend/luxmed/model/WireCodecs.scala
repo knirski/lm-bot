@@ -1,14 +1,15 @@
 package lmbot.backend.luxmed.model
 
+import java.time.*
+import java.time.format.{DateTimeFormatter, DateTimeParseException}
+import java.util.UUID
+
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.{
   CodecMakerConfig,
   JsonCodecMaker
 }
 import lmbot.backend.config.Secret
-import java.time.*
-import java.time.format.{DateTimeFormatter, DateTimeParseException}
-import java.util.UUID
 
 /** Wire codecs for all Luxmed wire models.
   *
@@ -22,6 +23,9 @@ import java.util.UUID
   *
   * ServiceVariant uses a custom codec because jsoniter does not support
   * recursive types in derived codecs.
+  *
+  * Opaque ID codecs (DoctorId, FacilityId, etc.) are defined in their companion
+  * objects and picked up automatically by the derived codecs.
   */
 object WireCodecs:
 
@@ -103,6 +107,8 @@ object WireCodecs:
     def nullValue: UUID = null.asInstanceOf[UUID]
 
   // -- OAuthTokens derived codec (snake_case wire names) --
+  // TokenType has its own codec in its companion object, which is picked up
+  // automatically by the derived codec.
 
   given JsonValueCodec[OAuthTokens] = JsonCodecMaker.make(oauthConfig)
 
@@ -112,7 +118,7 @@ object WireCodecs:
     def decodeValue(in: JsonReader, default: ServiceVariant): ServiceVariant =
       if in.isNextToken('n') then nullValue
       else
-        var id: Long = 0L
+        var id: ServiceVariantId = ServiceVariantId(0L)
         var name: String = ""
         var expanded: Boolean = false
         var children: List[ServiceVariant] = Nil
@@ -120,7 +126,7 @@ object WireCodecs:
         var paymentType: Long = 0L
         while !in.isNextToken('}') do
           in.readKeyAsString() match
-            case "id"             => id = in.readLong()
+            case "id"             => id = ServiceVariantId(in.readLong())
             case "name"           => name = in.readString(null)
             case "expanded"       => expanded = in.readBoolean()
             case "children"       => children = readChildrenArray(in)
@@ -139,7 +145,7 @@ object WireCodecs:
     def encodeValue(x: ServiceVariant, out: JsonWriter): Unit =
       out.writeObjectStart()
       out.writeKey("id")
-      out.writeVal(x.id)
+      out.writeVal(x.id.value)
       out.writeKey("name")
       out.writeVal(x.name)
       out.writeKey("expanded")
@@ -166,6 +172,7 @@ object WireCodecs:
       builder.result()
 
   // -- Derived NewPortal codecs (camelCase, skip unexpected fields) --
+  // Opaque ID codecs are in their companion objects and auto-resolved.
 
   given JsonValueCodec[City] = JsonCodecMaker.make(newPortalConfig)
   given JsonValueCodec[Doctor] = JsonCodecMaker.make(newPortalConfig)

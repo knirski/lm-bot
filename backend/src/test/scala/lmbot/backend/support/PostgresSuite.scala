@@ -1,6 +1,6 @@
 package lmbot.backend.support
 
-import com.augustnagro.magnum.{Transactor, transact, sql}
+import com.augustnagro.magnum.{Transactor, sql, transact}
 import com.zaxxer.hikari.HikariDataSource
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import lmbot.backend.db.Database

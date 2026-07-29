@@ -1,10 +1,12 @@
 package lmbot.backend.luxmed.support
 
-import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
+
 import scala.io.Source
 import scala.jdk.CollectionConverters.*
+
+import com.sun.net.httpserver.HttpServer
 
 final case class MockResponse(
     status: Int,
@@ -43,7 +45,7 @@ final class MockLuxmedServer(port: Int = 0):
     )
     val response = Option(responseQueue.poll()).getOrElse(MockResponse(404))
     response.headers.foreach { (k, vs) =>
-      vs.foreach { v => exchange.getResponseHeaders.add(k, v) }
+      vs.foreach(v => exchange.getResponseHeaders.add(k, v))
     }
     val bodyBytes = response.body.getBytes("UTF-8")
     exchange.sendResponseHeaders(response.status, bodyBytes.length)
@@ -65,7 +67,7 @@ final class MockLuxmedServer(port: Int = 0):
     responseQueue.add(
       MockResponse(
         status = status,
-        headers = headers.map { (k, v) => k -> List(v) },
+        headers = headers.map((k, v) => k -> List(v)),
         body = body
       )
     )

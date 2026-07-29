@@ -1,16 +1,16 @@
 package lmbot.backend
 
+import java.time.OffsetDateTime
+
+import scala.jdk.CollectionConverters.*
+
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import lmbot.backend.auth.{AdminBootstrap, AuthService}
 import lmbot.backend.config.Config
 import lmbot.backend.db.{Database, SessionRepo, UserRepo}
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, Server, StaticRoutes}
 import lmbot.backend.support.EmbeddedPg
-
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.slf4j.LoggerFactory
-
-import java.time.OffsetDateTime
-import scala.jdk.CollectionConverters.*
 
 /** Composition root: everything is wired by hand, in one readable place (spec
   * §5.7.5 — no DI framework, no reflection).
@@ -71,7 +71,7 @@ object Main:
 
         val server = Server.start(
           config.httpHost,
-          config.httpPort,
+          config.httpPort.value,
           HealthRoutes.endpoints ++ routes.endpoints ++ StaticRoutes.endpoints
         )
 

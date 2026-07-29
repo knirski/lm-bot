@@ -1,10 +1,10 @@
 package lmbot.backend.http
 
+import java.util.concurrent.Executors
+
 import sttp.shared.Identity
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.jdkhttp.{HttpServer, JdkHttpServer}
-
-import java.util.concurrent.Executors
 
 object Server:
 

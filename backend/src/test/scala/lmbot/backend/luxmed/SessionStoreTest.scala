@@ -1,14 +1,15 @@
 package lmbot.backend.luxmed
 
+import java.time.Instant
+
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
-import java.time.Instant
 
 class SessionStoreTest extends munit.FunSuite:
 
   private val session1 = LuxmedSession(
     accessToken = Secret("AT1"),
-    tokenType = "bearer",
+    tokenType = TokenType.Bearer,
     refreshToken = Secret("RT1"),
     expiresAt = Instant.parse("2026-08-03T13:00:00Z"),
     jwtToken = Secret("JWT1"),
@@ -17,7 +18,7 @@ class SessionStoreTest extends munit.FunSuite:
 
   private val session2 = LuxmedSession(
     accessToken = Secret("AT2"),
-    tokenType = "bearer",
+    tokenType = TokenType.Bearer,
     refreshToken = Secret("RT2"),
     expiresAt = Instant.parse("2026-08-03T14:00:00Z"),
     jwtToken = Secret("JWT2"),
