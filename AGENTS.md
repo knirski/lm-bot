@@ -8,7 +8,7 @@ lives in the spec, and neither is repeated here.
 
 | Question | Answer lives in |
 |---|---|
-| What are we building, and why this way? | `docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md` |
+| What are we building, and why this way? (PRD) | `docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md` |
 | What order, and what is in scope now? | `docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md` |
 | Exactly how to build the current piece | the numbered plan in `docs/superpowers/plans/` |
 | What Luxmed's API actually does | `docs/superpowers/reports/2026-07-27-luxmed-api-analysis.md` |
