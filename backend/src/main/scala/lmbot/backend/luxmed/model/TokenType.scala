@@ -8,25 +8,26 @@ import com.github.plokhotnyuk.jsoniter_scala.core.{
 
 /** The type of OAuth token returned by Luxmed's password and refresh grants.
   *
-  * Currently only "bearer" is observed on the wire, but modelling it as a
-  * closed enum lets the compiler (not the next developer) decide what happens
-  * when a new value appears.
+  * Currently only "bearer" is observed on the wire. Unknown values are
+  * preserved via [[Custom]] so they round-trip without data loss — the decoder
+  * never silently discards a wire value.
   */
 enum TokenType(val wireValue: String):
   case Bearer extends TokenType("bearer")
 
-  /** Parse from the wire string. Unknown values are still returned as parsed so
-    * they round-trip; they are not rejected at decode time.
+  /** An unrecognised token type. The raw wire value is retained so re-encoding
+    * produces the original string, even if the application has no specific
+    * logic for it.
     */
-  def wireName: String = wireValue
+  case Custom(raw: String) extends TokenType(raw)
 
 object TokenType:
 
-  private val valuesByWire =
-    TokenType.values.map(tt => tt.wireValue -> tt).toMap
+  private val knownWireValues: Set[String] = Set("bearer")
 
   def fromWire(s: String): TokenType =
-    valuesByWire.getOrElse(s, Bearer)
+    if knownWireValues.contains(s) then Bearer
+    else Custom(s)
 
   given JsonValueCodec[TokenType] with
     def decodeValue(in: JsonReader, default: TokenType): TokenType =
