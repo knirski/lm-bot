@@ -3,6 +3,7 @@ package lmbot.backend.luxmed.support
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
+import scala.io.Source
 import scala.jdk.CollectionConverters.*
 
 final case class MockResponse(
@@ -28,7 +29,7 @@ final class MockLuxmedServer(port: Int = 0):
   server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
   val context = server.createContext("/")
   context.setHandler { exchange =>
-    val body = scala.io.Source.fromInputStream(exchange.getRequestBody).mkString
+    val body = Source.fromInputStream(exchange.getRequestBody).mkString
     capturedRequests.add(
       RecordedRequest(
         method = exchange.getRequestMethod,

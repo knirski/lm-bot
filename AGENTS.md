@@ -133,6 +133,30 @@ not Gears bugs. Check the flag first.
   in this project were invisible to the compiler, the linker, and 92 green
   tests. Load the app in a real browser and drive it.
 
+## Scala style
+
+- Do not use fully qualified names in Scala expressions or signatures. Import
+  the type or value at the top of the file, using an alias when names collide.
+- Prefer immutable values and persistent collections. Use `val` by default;
+  keep unavoidable mutation private, minimal, and confined to a concurrency,
+  performance, or foreign-library boundary.
+- Keep the functional core pure and push HTTP, persistence, clocks, randomness,
+  and other effects to explicit outer boundaries.
+- Model alternatives and state transitions with enums, sealed ADTs, opaque
+  types, and exhaustive pattern matching. Make invalid states unrepresentable
+  when the domain has a real invariant.
+- Prefer total functions. Return `Either`, `Option`, or a domain ADT for
+  expected absence and failure; do not use `null`, sentinel values, partial
+  collection operations, or exceptions for control flow.
+- Validate and narrow primitive input at the boundary, then pass the domain
+  type internally. Do not wrap primitives when the wrapper enforces no
+  invariant or prevents no meaningful mix-up.
+- Prefer expressions, `map`/`flatMap`/`fold`, and for-comprehensions over
+  mutable accumulators, early `return`, and statement-oriented control flow
+  when the expression remains clearer.
+- Preserve referential transparency unless the code is an explicit effect
+  boundary. Encapsulated state must expose behavior, not mutable storage.
+
 ## API contract rules
 
 The `shared` module is the single definition of the API; server and browser

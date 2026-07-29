@@ -2,6 +2,7 @@ package lmbot.backend.http
 
 import lmbot.backend.auth.AuthService
 import lmbot.shared.api.AuthEndpoints
+import sttp.shared.Identity
 import sttp.tapir.server.ServerEndpoint
 
 import java.time.Duration
@@ -13,7 +14,7 @@ class AuthRoutes(
     sessionTtl: Duration
 ):
 
-  private val loginRoute: ServerEndpoint[Any, sttp.shared.Identity] =
+  private val loginRoute: ServerEndpoint[Any, Identity] =
     AuthEndpoints.login.serverLogicPure { req =>
       auth
         .login(req.username, req.password)
@@ -22,12 +23,12 @@ class AuthRoutes(
         }
     }
 
-  private val meRoute: ServerEndpoint[Any, sttp.shared.Identity] =
+  private val meRoute: ServerEndpoint[Any, Identity] =
     AuthEndpoints.me
       .serverSecurityLogicPure(auth.authenticate)
       .serverLogicPure(user => (_: Unit) => Right(user.toView))
 
-  private val logoutRoute: ServerEndpoint[Any, sttp.shared.Identity] =
+  private val logoutRoute: ServerEndpoint[Any, Identity] =
     AuthEndpoints.logout
       .serverSecurityLogicPure(token => Right(token))
       .serverLogicPure { token => (_: Unit) =>
@@ -35,5 +36,5 @@ class AuthRoutes(
         Right(Some(SessionCookie.clear(cookieSecure)))
       }
 
-  val endpoints: List[ServerEndpoint[Any, sttp.shared.Identity]] =
+  val endpoints: List[ServerEndpoint[Any, Identity]] =
     List(loginRoute, meRoute, logoutRoute)

@@ -1,6 +1,7 @@
 package lmbot.backend.support
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import java.sql.{DriverManager, SQLException}
 import scala.sys.process.*
 
 /** Embedded PostgreSQL starter with support for NixOS via `patchelf`.
@@ -35,7 +36,7 @@ object EmbeddedPg:
         patchAndRetry(builder)
 
   private def bootstrap(pg: EmbeddedPostgres): Unit =
-    val conn = java.sql.DriverManager.getConnection(
+    val conn = DriverManager.getConnection(
       pg.getJdbcUrl("postgres", "postgres"),
       "postgres",
       "postgres"
@@ -46,14 +47,14 @@ object EmbeddedPg:
         .execute(
           "CREATE ROLE lmbot WITH LOGIN PASSWORD 'lmbot'"
         )
-    catch case _: java.sql.SQLException => ()
+    catch case _: SQLException => ()
     try
       conn
         .createStatement()
         .execute(
           "CREATE DATABASE lmbot OWNER lmbot"
         )
-    catch case _: java.sql.SQLException => ()
+    catch case _: SQLException => ()
     finally conn.close()
 
   private def patchAndRetry(

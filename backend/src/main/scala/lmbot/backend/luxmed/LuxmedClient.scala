@@ -4,7 +4,10 @@ import gears.async.Async
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.model.WireCodecs.given
-import com.github.plokhotnyuk.jsoniter_scala.core.readFromString
+import com.github.plokhotnyuk.jsoniter_scala.core.{
+  JsonValueCodec,
+  readFromString
+}
 import java.time.{Duration, Instant}
 
 private enum ClientSessionState:
@@ -263,7 +266,7 @@ final class LuxmedClient(
     yield (mergedCookies, jwtToken)
 
   private def decodeJson[A](json: String)(using
-      codec: com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec[A]
+      codec: JsonValueCodec[A]
   ): Either[String, A] =
     try Right(readFromString[A](json))
     catch case _: Exception => Left("Malformed JSON response")
