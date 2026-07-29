@@ -2,6 +2,7 @@
   "name": "lm-bot",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Self-hosted monitoring and booking for Luxmed appointments",
   "repository": {
     "type": "git",
