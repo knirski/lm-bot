@@ -258,7 +258,7 @@ final case class TransportResponse[+A](
 
 private[luxmed] object LuxmedRedaction:
   private val secretFields =
-    """(?i)(access_token|refresh_token|password|jwt|jwtToken|cookie|authorization-token|authorization)\s*["':=]+\s*"?[^",}\s]+"?""".r
+    """(?i)((?:access_token|refresh_token|password|jwt|jwtToken|cookie|authorization-token|authorization)\s*["':=]+\s*"?)[^",}\s]+("?)""".r
   private val bearerToken = """(?i)\bBearer\s+[^\s",}]+""".r
   private val email =
     """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""".r
@@ -270,6 +270,9 @@ private[luxmed] object LuxmedRedaction:
       m => m.group(0).take(7) + "***"
     )
     val withSecrets =
-      secretFields.replaceAllIn(withBearer, m => m.group(0).take(12) + "***")
+      secretFields.replaceAllIn(
+        withBearer,
+        m => s"${m.group(1)}***${m.group(2)}"
+      )
     val withEmails = email.replaceAllIn(withSecrets, "<redacted-email>")
     phone.replaceAllIn(withEmails, "<redacted-phone>").take(200)

@@ -279,3 +279,9 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
         "501 234 567",
         "person@example.com"
       ).foreach(secret => assert(!rendered.contains(secret), s"leaked $secret"))
+
+  test("redaction replaces secret characters rather than preserving prefixes"):
+    assertEquals(
+      LuxmedRedaction.summary("""{"jwt":"J","password":"P"}"""),
+      """{"jwt":"***","password":"***"}"""
+    )
