@@ -85,7 +85,7 @@ All checks pass in the flake devShell:
 
 ### Test count breakdown (Luxmed client suites only — full `sbt backend/testFull` totals 152)
 
-```
+```text
 AccountGateTest:           6 passed
 ErrorClassificationTest:  20 passed
 LuxmedClientAuthTest:     19 passed
