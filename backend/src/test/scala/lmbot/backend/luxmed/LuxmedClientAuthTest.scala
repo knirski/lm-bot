@@ -143,6 +143,36 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
           Right(session.accessToken.value)
       assertEquals(stored, Right("AT1"))
 
+  test("authenticate replaces an existing stored session"):
+    withClient(): (client, mock, fake, store) =>
+      val oldSession = LuxmedSession(
+        accessToken = Secret("AT_OLD"),
+        tokenType = "bearer",
+        refreshToken = Secret("RT_OLD"),
+        expiresAt = fake.now().plusSeconds(600),
+        jwtToken = Secret("JWT_OLD"),
+        cookies = CookieJar.empty
+      )
+      assertEquals(store.replace(None, oldSession), Right(()))
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT_NEW","expires_in":600,"refresh_token":"RT_NEW","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_NEW")
+      )
+      val result = runAsync:
+        client.authenticate()
+      assertEquals(result.map(_.refreshToken.value), Right("RT_NEW"))
+      assertEquals(
+        store.load().map(_.map(_.refreshToken.value)),
+        Right(Some("RT_NEW"))
+      )
+
   test("missing JWT in response is ProtocolViolation"):
     withClient(): (client, mock, _, _) =>
       mock.enqueue(

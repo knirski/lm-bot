@@ -34,7 +34,11 @@ final class LuxmedClient(
 
   def authenticate()(using Async): Either[LuxmedError, LuxmedSession] =
     gate.serialized:
-      authenticateInternal()
+      store.clear() match
+        case Left(error) => Left(toLuxmedError(error))
+        case Right(())   =>
+          state = ClientSessionState.Unloaded
+          authenticateInternal()
 
   def withSession[A](
       op: (AccountGatePermit, LuxmedSession) => Either[LuxmedError, A]
