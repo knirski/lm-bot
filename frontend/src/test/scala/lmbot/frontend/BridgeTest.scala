@@ -1,9 +1,9 @@
 package lmbot.frontend
 
+import scala.concurrent.Future as StdFuture
+
 import gears.async.js.JsAsyncFromSync
 import lmbot.frontend.bridge.Bridge
-
-import scala.concurrent.Future as StdFuture
 
 class BridgeTest extends munit.FunSuite:
 

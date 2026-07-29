@@ -1,11 +1,12 @@
 package lmbot.backend.luxmed
 
-import lmbot.backend.config.AppVersion
-import lmbot.backend.luxmed.support.{GearsTest, MockLuxmedServer}
-import lmbot.backend.luxmed.model.LuxmedEndpoint
-import gears.async.Async
-import sttp.model.Uri
 import java.util.UUID
+
+import gears.async.Async
+import lmbot.backend.config.AppVersion
+import lmbot.backend.luxmed.model.LuxmedEndpoint
+import lmbot.backend.luxmed.support.{GearsTest, MockLuxmedServer}
+import sttp.model.Uri
 
 class ErrorClassificationTest extends munit.FunSuite with GearsTest:
 

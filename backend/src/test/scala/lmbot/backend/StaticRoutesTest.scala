@@ -1,11 +1,12 @@
 package lmbot.backend
 
+import scala.compiletime.uninitialized
+
 import com.sun.net.httpserver.HttpServer
 import lmbot.backend.http.{Server, StaticRoutes}
 import sttp.client3.*
 import sttp.model.StatusCode
 import sttp.model.Uri
-import scala.compiletime.uninitialized
 
 class StaticRoutesTest extends munit.FunSuite:
 

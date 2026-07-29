@@ -1,6 +1,7 @@
 package lmbot.backend.luxmed.model
 
 import java.time.{LocalDate, LocalTime, ZoneId}
+
 import scala.util.Try
 
 /** A Warsaw-normalised appointment slot (parked, for Tasks 6-7).

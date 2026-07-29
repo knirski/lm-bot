@@ -1,7 +1,8 @@
 package lmbot.backend.luxmed
 
-import gears.async.{Async, JvmAsyncOperations, Semaphore}
 import java.time.{Duration, Instant}
+
+import gears.async.{Async, JvmAsyncOperations, Semaphore}
 
 /** A pacing capability that the `AccountGate` hands out to the body of
   * `serialized`. Only `AccountGate` can construct an instance.

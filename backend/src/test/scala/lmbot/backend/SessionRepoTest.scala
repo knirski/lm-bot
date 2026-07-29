@@ -1,10 +1,10 @@
 package lmbot.backend
 
+import java.time.{Duration, OffsetDateTime}
+
 import lmbot.backend.db.{SessionRepo, UserRepo}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.domain.Role
-
-import java.time.{Duration, OffsetDateTime}
 
 class SessionRepoTest extends PostgresSuite:
 

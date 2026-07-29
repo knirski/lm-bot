@@ -1,8 +1,9 @@
 package lmbot.backend.luxmed.model
 
+import java.time.Instant
+
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.CookieJar
-import java.time.Instant
 
 /** OAuth tokens returned by the password and refresh grants on the old
   * PatientPortalMobileAPI. Wire names are measured snake_case.

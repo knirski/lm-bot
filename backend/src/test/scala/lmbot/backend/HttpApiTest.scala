@@ -1,17 +1,18 @@
 package lmbot.backend
 
+import java.time.{Duration, OffsetDateTime}
+
+import scala.compiletime.uninitialized
+
 import com.augustnagro.magnum.{sql, transact}
+import com.sun.net.httpserver.HttpServer
 import lmbot.backend.auth.{AuthService, Passwords}
 import lmbot.backend.db.{SessionRepo, UserRepo}
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, Server}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.domain.Role
-import com.sun.net.httpserver.HttpServer
 import sttp.client3.*
 import sttp.model.{StatusCode, Uri}
-
-import java.time.{Duration, OffsetDateTime}
-import scala.compiletime.uninitialized
 
 /** Drives the real server over real HTTP against real Postgres. */
 class HttpApiTest extends PostgresSuite:

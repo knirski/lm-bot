@@ -1,17 +1,18 @@
 package lmbot.backend.luxmed
 
+import java.time.Duration
+import java.util.UUID
+
+import gears.async.{Async, Future}
 import lmbot.backend.config.{AppVersion, SafeDiagnostic, Secret}
+import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.support.{
   FakeTime,
   GearsTest,
   MockLuxmedServer,
   RecordedRequest
 }
-import lmbot.backend.luxmed.model.*
-import gears.async.{Async, Future}
 import sttp.model.Uri
-import java.util.UUID
-import java.time.Duration
 
 class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
@@ -22,7 +23,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       case (key, values) if key.equalsIgnoreCase(name) => values.head
     }
 
-  private final class FailOnceStore extends SessionStore:
+  final private class FailOnceStore extends SessionStore:
     private val delegate = InMemorySessionStore()
     private var failNextReplace = true
 

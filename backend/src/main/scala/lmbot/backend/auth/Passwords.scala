@@ -1,9 +1,9 @@
 package lmbot.backend.auth
 
-import de.mkammerer.argon2.{Argon2, Argon2Factory}
-import de.mkammerer.argon2.Argon2Factory.Argon2Types
-
 import scala.util.Try
+
+import de.mkammerer.argon2.Argon2Factory.Argon2Types
+import de.mkammerer.argon2.{Argon2, Argon2Factory}
 
 object Passwords:
   private val argon2: Argon2 = Argon2Factory.create(Argon2Types.ARGON2id)

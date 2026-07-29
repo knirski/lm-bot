@@ -1,8 +1,8 @@
 package lmbot.backend.db
 
-import com.augustnagro.magnum.{Transactor, connect, sql, transact}
-
 import java.time.OffsetDateTime
+
+import com.augustnagro.magnum.{Transactor, connect, sql, transact}
 
 class SessionRepo(xa: Transactor):
 

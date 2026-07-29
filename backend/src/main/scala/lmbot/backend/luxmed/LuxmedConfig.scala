@@ -1,8 +1,9 @@
 package lmbot.backend.luxmed
 
+import java.util.UUID
+
 import lmbot.backend.config.AppVersion
 import sttp.model.Uri
-import java.util.UUID
 
 /** Configuration for the Luxmed API client.
   *

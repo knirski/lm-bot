@@ -1,14 +1,15 @@
 package lmbot.backend.luxmed.model
 
+import java.time.*
+import java.time.format.{DateTimeFormatter, DateTimeParseException}
+import java.util.UUID
+
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.{
   CodecMakerConfig,
   JsonCodecMaker
 }
 import lmbot.backend.config.Secret
-import java.time.*
-import java.time.format.{DateTimeFormatter, DateTimeParseException}
-import java.util.UUID
 
 /** Wire codecs for all Luxmed wire models.
   *

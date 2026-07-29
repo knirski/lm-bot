@@ -4,8 +4,8 @@ import com.raquo.laminar.api.L.render
 import gears.async.*
 import gears.async.js.JsAsyncFromSync
 import lmbot.frontend.api.ApiClient
+import lmbot.frontend.elm.Effect
 import lmbot.frontend.elm.Runtime as ElmRuntime
-import lmbot.frontend.elm.{Effect}
 import lmbot.frontend.view.AppView
 import org.scalajs.dom
 import sttp.model.Uri

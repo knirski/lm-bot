@@ -1,8 +1,9 @@
 package lmbot.backend.luxmed
 
+import java.time.Instant
+
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.*
-import java.time.Instant
 
 class SessionStoreTest extends munit.FunSuite:
 

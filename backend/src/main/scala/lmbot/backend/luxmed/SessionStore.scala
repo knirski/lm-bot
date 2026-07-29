@@ -1,8 +1,9 @@
 package lmbot.backend.luxmed
 
+import java.util.concurrent.atomic.AtomicReference
+
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.model.LuxmedSession
-import java.util.concurrent.atomic.AtomicReference
 
 /** Errors that can arise from session store operations.
   */

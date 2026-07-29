@@ -1,13 +1,15 @@
 package lmbot.backend.luxmed
 
+import java.time.Instant
+
+import scala.io.{Codec, Source}
+
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import lmbot.backend.config.Secret
 import lmbot.backend.luxmed.CookieJar
 import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.model.WireCodecs.given
-import java.time.Instant
-import scala.io.{Codec, Source}
 
 class WireCodecTest extends munit.FunSuite:
 

@@ -1,12 +1,13 @@
 package lmbot.backend.luxmed
 
+import java.net.http.HttpClient
+import java.time.Duration
+
 import gears.async.Async
 import lmbot.backend.config.{SafeDiagnostic, Secret}
 import lmbot.backend.luxmed.model.*
 import sttp.client3.*
 import sttp.model.Uri
-import java.net.http.HttpClient
-import java.time.Duration
 
 private[luxmed] trait RequestPermit:
   def beforeRequest()(using Async): Unit

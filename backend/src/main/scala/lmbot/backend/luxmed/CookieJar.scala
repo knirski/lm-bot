@@ -33,13 +33,13 @@ final case class CookieJar private (entries: Map[String, Secret]):
     else
       List(
         "Cookie" -> entries
-          .map { (name, value) => s"$name=${value.value}" }
+          .map((name, value) => s"$name=${value.value}")
           .mkString("; ")
       )
 
   /** Produce (name, value) tuples for sttp's cookies method. */
   def toSeq: Seq[(String, String)] =
-    entries.map { (k, v) => (k, v.value) }.toSeq
+    entries.map((k, v) => (k, v.value)).toSeq
 
   /** Produce (name, Secret) pairs for merging. */
   def toList: List[(String, Secret)] =

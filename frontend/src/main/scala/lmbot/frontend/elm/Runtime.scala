@@ -1,9 +1,9 @@
 package lmbot.frontend.elm
 
+import scala.util.{Failure, Success, Try}
+
 import com.raquo.laminar.api.L.Var
 import gears.async.*
-
-import scala.util.{Failure, Success, Try}
 
 /** The Elm architecture on Gears (spec §5.6).
   *

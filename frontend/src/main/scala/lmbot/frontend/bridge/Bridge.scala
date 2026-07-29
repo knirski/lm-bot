@@ -1,10 +1,10 @@
 package lmbot.frontend.bridge
 
-import gears.async.ScalaConverters.asGears
-import gears.async.Async
-
 import scala.concurrent.{ExecutionContext, Future as StdFuture}
 import scala.scalajs.concurrent.JSExecutionContext
+
+import gears.async.Async
+import gears.async.ScalaConverters.asGears
 
 /** The single adapter between foreign async APIs and Gears (spec §5.7.1).
   *

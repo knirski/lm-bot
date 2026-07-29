@@ -1,14 +1,15 @@
 package lmbot.backend.luxmed
 
-import gears.async.Async
-import lmbot.backend.config.{SafeDiagnostic, Secret}
-import lmbot.backend.luxmed.model.*
-import lmbot.backend.luxmed.model.WireCodecs.given
+import java.time.{Duration, Instant}
+
 import com.github.plokhotnyuk.jsoniter_scala.core.{
   JsonValueCodec,
   readFromString
 }
-import java.time.{Duration, Instant}
+import gears.async.Async
+import lmbot.backend.config.{SafeDiagnostic, Secret}
+import lmbot.backend.luxmed.model.*
+import lmbot.backend.luxmed.model.WireCodecs.given
 
 private enum ClientSessionState:
   case Unloaded

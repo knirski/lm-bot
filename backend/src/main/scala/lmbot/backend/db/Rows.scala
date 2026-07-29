@@ -1,5 +1,7 @@
 package lmbot.backend.db
 
+import java.time.OffsetDateTime
+
 import com.augustnagro.magnum.{
   DbCodec,
   Id,
@@ -7,8 +9,6 @@ import com.augustnagro.magnum.{
   SqlNameMapper,
   Table
 }
-
-import java.time.OffsetDateTime
 
 /** Persistence shapes. `role` is a `String` rather than the shared `Role` enum
   * on purpose: deriving a Magnum `DbCodec` for `Role` would drag a JVM-only
