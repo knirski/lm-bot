@@ -2,7 +2,7 @@ package lmbot.backend.luxmed.model
 
 /** A city as returned by /PatientPortal/NewPortal/Dictionary/cities.
   */
-final case class City(id: Long, name: String)
+final case class City(id: CityId, name: String)
 
 /** A service variant (recursive tree node) as returned by
   * /PatientPortal/NewPortal/Dictionary/serviceVariantsGroups.

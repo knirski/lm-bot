@@ -120,9 +120,13 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         header(requests(1), "X-Requested-With"),
         Some("pl.luxmed.pp")
       )
-      assertEquals(
-        header(requests(2), "Cookie"),
-        Some("ASP.NET_SessionId=sess1")
+      // ReservationPage request includes session cookie plus GlobalLang (added after LogInToApp)
+      val cookieHeader = header(requests(2), "Cookie")
+      assert(
+        cookieHeader.exists(h =>
+          h.contains("ASP.NET_SessionId=sess1") && h.contains("GlobalLang=pl")
+        ),
+        s"expected cookies with ASP.NET_SessionId and GlobalLang, got $cookieHeader"
       )
 
   test("authenticate stores session in the store"):
@@ -605,3 +609,107 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
           Right(session.accessToken.value)
       assertEquals(result, Right("AT_STORED"))
       assertEquals(mock.requests, Nil)
+
+  // -- Retry-policy tests (Task 8) --
+
+  test(
+    "RateLimited passes through and does not trigger reauthentication"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      mock.enqueue(status = 429, body = """{"message":"slow down"}""")
+      val result = runAsync:
+        client.cities()
+      assertEquals(result, Left(LuxmedError.RateLimited))
+      // No additional password grant was triggered
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+  test(
+    "VersionRejected passes through without password fallback"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      mock.enqueue(
+        status = 409,
+        body =
+          """{"ErrorCode":301,"Message":"Obecnie zainstalowana wersja aplikacji nie jest wspierana przez nowy system Portalu Pacjenta. Zaktualizuj aplikację do najnowszej wersji, aby móc z niej korzystać."}"""
+      )
+      val result = runAsync:
+        client.cities()
+      assert(result.left.exists:
+        case LuxmedError.VersionRejected(_) => true
+        case _                              => false)
+      // No additional password grant should occur
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+  test(
+    "SessionExpired on operation triggers refresh and retry exactly once"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      // First cities() call gets SessionExpired
+      mock.enqueue(status = 200, body = "session has expired")
+      // Reauthentication via password grant + bootstrap
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_2")
+      )
+      // Retried cities() succeeds
+      mock.enqueue(status = 200, body = """[{"id":70,"name":"Białystok"}]""")
+      val result = runAsync:
+        client.cities()
+      assert(result.isRight, s"expected success after retry, got $result")
+      // One refresh_token grant happened
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        2
+      )

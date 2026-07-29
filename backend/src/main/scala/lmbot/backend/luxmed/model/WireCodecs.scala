@@ -116,23 +116,26 @@ object WireCodecs:
 
   given JsonValueCodec[ServiceVariant] with
     def decodeValue(in: JsonReader, default: ServiceVariant): ServiceVariant =
-      if in.isNextToken('n') then nullValue
-      else
+      if in.isNextToken('{') then
         var id: ServiceVariantId = ServiceVariantId(0L)
         var name: String = ""
         var expanded: Boolean = false
         var children: List[ServiceVariant] = Nil
         var isTelemedicine: Boolean = false
         var paymentType: Long = 0L
-        while !in.isNextToken('}') do
-          in.readKeyAsString() match
-            case "id"             => id = ServiceVariantId(in.readLong())
-            case "name"           => name = in.readString(null)
-            case "expanded"       => expanded = in.readBoolean()
-            case "children"       => children = readChildrenArray(in)
-            case "isTelemedicine" => isTelemedicine = in.readBoolean()
-            case "paymentType"    => paymentType = in.readLong()
-            case _                => in.skip()
+        if !in.isNextToken('}') then
+          in.rollbackToken()
+          while
+            in.readKeyAsString() match
+              case "id"             => id = ServiceVariantId(in.readLong())
+              case "name"           => name = in.readString(null)
+              case "expanded"       => expanded = in.readBoolean()
+              case "children"       => children = readChildrenArray(in)
+              case "isTelemedicine" => isTelemedicine = in.readBoolean()
+              case "paymentType"    => paymentType = in.readLong()
+              case _                => in.skip()
+            in.isNextToken(',')
+          do ()
         ServiceVariant(
           id,
           name,
@@ -141,6 +144,7 @@ object WireCodecs:
           isTelemedicine,
           paymentType
         )
+      else in.readNullOrTokenError(default, '{')
 
     def encodeValue(x: ServiceVariant, out: JsonWriter): Unit =
       out.writeObjectStart()
@@ -164,12 +168,57 @@ object WireCodecs:
 
   private def readChildrenArray(in: JsonReader): List[ServiceVariant] =
     val codec = summon[JsonValueCodec[ServiceVariant]]
-    if in.isNextToken('n') then Nil
+    if in.isNextToken('[') then
+      if in.isNextToken(']') then Nil
+      else
+        in.rollbackToken()
+        val builder = List.newBuilder[ServiceVariant]
+        while
+          builder += codec.decodeValue(in, null.asInstanceOf[ServiceVariant])
+          in.isNextToken(',')
+        do ()
+        builder.result()
     else
-      val builder = List.newBuilder[ServiceVariant]
-      while !in.isNextToken(']') do
-        builder += codec.decodeValue(in, null.asInstanceOf[ServiceVariant])
-      builder.result()
+      // isNextToken('[') consumed the first byte. If it was 'n' (start of null),
+      // read the rest of null and return Nil. Otherwise this throws.
+      in.readNullOrTokenError(List.empty[ServiceVariant], '[')
+
+  /** Codec for [[List[ServiceVariant]]] using the same array-reading strategy
+    * as [[readChildrenArray]]. jsoniter's derived codecs only support acyclic
+    * type graphs, so for this recursive type we manually delegate to the custom
+    * element codec. The custom codec is captured at initialization time via
+    * `summon`, which finds the `given JsonValueCodec[ServiceVariant]` defined
+    * above.
+    */
+  lazy val listServiceVariantCodec: JsonValueCodec[List[ServiceVariant]] =
+    val elemCodec = summon[JsonValueCodec[ServiceVariant]]
+    new JsonValueCodec[List[ServiceVariant]]:
+      def decodeValue(
+          in: JsonReader,
+          default: List[ServiceVariant]
+      ): List[ServiceVariant] =
+        if in.isNextToken('[') then
+          if in.isNextToken(']') then Nil
+          else
+            in.rollbackToken()
+            val builder = List.newBuilder[ServiceVariant]
+            while
+              builder +=
+                elemCodec.decodeValue(in, null.asInstanceOf[ServiceVariant])
+              in.isNextToken(',')
+            do ()
+            builder.result()
+        else null.asInstanceOf[List[ServiceVariant]]
+
+      def encodeValue(x: List[ServiceVariant], out: JsonWriter): Unit =
+        out.writeArrayStart()
+        x.foreach(elemCodec.encodeValue(_, out))
+        out.writeArrayEnd()
+
+      def nullValue: List[ServiceVariant] =
+        null.asInstanceOf[List[ServiceVariant]]
+
+  given JsonValueCodec[List[ServiceVariant]] = listServiceVariantCodec
 
   // -- Derived NewPortal codecs (camelCase, skip unexpected fields) --
   // Opaque ID codecs are in their companion objects and auto-resolved.

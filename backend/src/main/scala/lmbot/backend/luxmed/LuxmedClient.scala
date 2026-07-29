@@ -4,8 +4,10 @@ import java.time.{Duration, Instant}
 
 import com.github.plokhotnyuk.jsoniter_scala.core.{
   JsonValueCodec,
-  readFromString
+  readFromString,
+  writeToString
 }
+import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import gears.async.Async
 import lmbot.backend.config.{SafeDiagnostic, Secret}
 import lmbot.backend.luxmed.model.*
@@ -87,14 +89,14 @@ final class LuxmedClient(
       async: Async
   ): Either[LuxmedError, LuxmedSession] =
     passwordGrant() match
-      case Left(error)  => Left(error)
-      case Right(oauth) =>
+      case Left(error)                  => Left(error)
+      case Right((oauth, oauthCookies)) =>
         state = ClientSessionState.PendingBootstrap(
           expectedRefreshToken = None,
           oauth = oauth,
-          cookies = CookieJar.empty
+          cookies = oauthCookies
         )
-        completeBootstrap(None, oauth, CookieJar.empty)
+        completeBootstrap(None, oauth, oauthCookies)
 
   private def refreshAndBootstrap(
       oldSession: LuxmedSession
@@ -109,17 +111,18 @@ final class LuxmedClient(
         reauthenticateSession()
       case Left(LuxmedError.SessionExpired) =>
         reauthenticateSession()
-      case Left(error)  => Left(error)
-      case Right(oauth) =>
+      case Left(error)                    => Left(error)
+      case Right((oauth, refreshCookies)) =>
+        val mergedCookies = oldSession.cookies.merge(refreshCookies.toList)
         state = ClientSessionState.PendingBootstrap(
           expectedRefreshToken = Some(oldSession.refreshToken),
           oauth = oauth,
-          cookies = oldSession.cookies
+          cookies = mergedCookies
         )
         completeBootstrap(
           Some(oldSession.refreshToken),
           oauth,
-          oldSession.cookies
+          mergedCookies
         )
 
   private def completeBootstrap(
@@ -215,7 +218,7 @@ final class LuxmedClient(
   private def passwordGrant()(using
       permit: AccountGatePermit,
       async: Async
-  ): Either[LuxmedError, OAuthTokens] =
+  ): Either[LuxmedError, (OAuthTokens, CookieJar)] =
     for
       resp <- transport.oldApiPostForm(
         LuxmedEndpoint.Token,
@@ -228,14 +231,15 @@ final class LuxmedClient(
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
         LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
-    yield tokens
+      oauthCookies = CookieJar(resp.cookies*)
+    yield (tokens, oauthCookies)
 
   private def refreshGrant(
       refreshToken: Secret
   )(using
       permit: AccountGatePermit,
       async: Async
-  ): Either[LuxmedError, OAuthTokens] =
+  ): Either[LuxmedError, (OAuthTokens, CookieJar)] =
     for
       resp <- transport.oldApiPostForm(
         LuxmedEndpoint.Token,
@@ -247,7 +251,8 @@ final class LuxmedClient(
       )
       tokens <- decodeJson[OAuthTokens](resp.body).left.map: msg =>
         LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
-    yield tokens
+      oauthCookies = CookieJar(resp.cookies*)
+    yield (tokens, oauthCookies)
 
   private def bootstrapNewPortal(
       accessToken: Secret,
@@ -264,24 +269,39 @@ final class LuxmedClient(
         Map("app" -> "search", "client" -> "3", "lang" -> "pl")
       )
       loginCookies = cookies.merge(loginResp.cookies)
+      // Add GlobalLang cookie as the reference implementation does
+      loginCookiesWithLang = loginCookies.merge(
+        List("GlobalLang" -> Secret("pl"))
+      )
       pageResp <- transport.newApiBootstrapGet(
         LuxmedEndpoint.ReservationPage,
         accessToken,
-        loginCookies
+        loginCookiesWithLang
       )
-      mergedCookies = loginCookies.merge(pageResp.cookies)
-      jwtToken <- pageResp.jwtHeader match
-        case Some(jwt) =>
-          val token = jwt.value.stripPrefix("Bearer ").trim
-          Right(Secret(token))
-        case None =>
-          Left(
-            LuxmedError.ProtocolViolation(
-              SafeDiagnostic(
-                "Authorization-Token missing"
-              )
-            )
-          )
+      mergedCookies = loginCookiesWithLang.merge(pageResp.cookies)
+      // Extract JWT from multiple sources, matching dyrkin/luxmed-bot:
+      // 1. Cookies (Authorization-Token set as cookie)
+      // 2. LogInToApp response header
+      // 3. ReservationPage response header
+      // 4. Fall back to OAuth access token (matches dyrkin behavior)
+      jwtToken <- mergedCookies.get("Authorization-Token") match
+        case Some(token) => Right(Secret(token.value))
+        case None        =>
+          loginResp.jwtHeader match
+            case Some(jwt) =>
+              Right(Secret(jwt.value.stripPrefix("Bearer ").trim))
+            case None =>
+              pageResp.jwtHeader match
+                case Some(jwt) =>
+                  Right(Secret(jwt.value.stripPrefix("Bearer ").trim))
+                case None =>
+                  Left(
+                    LuxmedError.ProtocolViolation(
+                      SafeDiagnostic(
+                        "Authorization-Token missing from cookies, headers, and body"
+                      )
+                    )
+                  )
     yield (mergedCookies, jwtToken)
 
   private def decodeJson[A](json: String)(using
@@ -289,3 +309,192 @@ final class LuxmedClient(
   ): Either[String, A] =
     try Right(readFromString[A](json))
     catch case _: Exception => Left("Malformed JSON response")
+
+  private def decodeBody[A](json: String)(using
+      codec: JsonValueCodec[A]
+  ): Either[LuxmedError, A] =
+    decodeJson[A](json).left.map: msg =>
+      LuxmedError.DecodeFailed(LuxmedRedaction.safe(msg))
+
+  // -- Dictionary operations (Task 6) --
+
+  def cities()(using Async): Either[LuxmedError, List[City]] =
+    given JsonValueCodec[List[City]] = JsonCodecMaker.make
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      transport
+        .newApiGet(LuxmedEndpoint.Cities, Map.empty, session)
+        .flatMap: resp =>
+          decodeBody[List[City]](resp.body)
+
+  def serviceVariants()(using
+      Async
+  ): Either[LuxmedError, List[ServiceVariant]] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      transport
+        .newApiGet(
+          LuxmedEndpoint.ServiceVariantsGroups,
+          Map.empty,
+          session
+        )
+        .flatMap: resp =>
+          decodeBody[List[ServiceVariant]](resp.body)
+
+  def facilitiesAndDoctors(
+      cityId: CityId,
+      serviceVariantId: ServiceVariantId
+  )(using Async): Either[LuxmedError, FacilitiesAndDoctors] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      transport
+        .newApiGet(
+          LuxmedEndpoint.FacilitiesAndDoctors,
+          Map(
+            "cityId" -> cityId.value.toString,
+            "serviceVariantId" -> serviceVariantId.value.toString
+          ),
+          session
+        )
+        .flatMap: resp =>
+          decodeBody[FacilitiesAndDoctors](resp.body)
+
+  // -- Terms search (Task 6) --
+
+  def searchTerms(
+      query: TermsQuery
+  )(using Async): Either[LuxmedError, TermsResponse] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      val params = Map.newBuilder[String, String]
+      params += "searchPlace.id" -> query.cityId.toString
+      params += "searchPlace.type" -> "0"
+      params += "serviceVariantId" -> query.serviceVariantId.value.toString
+      params += "languageId" -> query.languageId.toString
+      params += "searchDateFrom" -> query.searchDateFrom.toString
+      params += "searchDateTo" -> query.searchDateTo.toString
+      params += "searchDatePreset" -> query.searchDatePreset.toString
+      params += "processId" -> query.processId.toString
+      params += "serviceVariantSource" -> "0"
+      params += "nextSearch" -> "false"
+      params += "searchByMedicalSpecialist" -> "false"
+      params += "delocalized" -> "false"
+      query.facilityIds.foreach: id =>
+        params += "facilitiesIds" -> id.value.toString
+      query.doctorIds.foreach: id =>
+        params += "doctorsIds" -> id.value.toString
+      transport
+        .newApiGet(LuxmedEndpoint.TermsIndex, params.result(), session)
+        .flatMap: resp =>
+          decodeBody[TermsResponse](resp.body)
+
+  // -- XSRF token (Task 7) --
+
+  def getXsrfToken()(using
+      Async
+  ): Either[LuxmedError, (XsrfToken, CookieJar)] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      transport
+        .newApiGet(LuxmedEndpoint.ForgeryToken, Map.empty, session)
+        .flatMap: resp =>
+          decodeBody[XsrfToken](resp.body).map: token =>
+            (token, session.cookies.merge(resp.cookies))
+
+  // -- Reservation primitives (Task 7) --
+
+  def lockTerm(
+      request: LockTermRequest,
+      xsrfToken: XsrfToken,
+      extraCookies: CookieJar
+  )(using Async): Either[LuxmedError, LockTermResponse] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      val jsonBody = writeToString(request)
+      transport
+        .newApiPost(
+          LuxmedEndpoint.LockTerm,
+          jsonBody,
+          session,
+          xsrfToken = Some(xsrfToken.token),
+          extraCookies = extraCookies
+        )
+        .flatMap: resp =>
+          decodeBody[LockTermResponse](resp.body)
+
+  def confirm(
+      request: ConfirmRequest,
+      xsrfToken: XsrfToken,
+      extraCookies: CookieJar
+  )(using Async): Either[LuxmedError, ConfirmResponse] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      val jsonBody = writeToString(request)
+      transport
+        .newApiPost(
+          LuxmedEndpoint.ConfirmTerm,
+          jsonBody,
+          session,
+          xsrfToken = Some(xsrfToken.token),
+          extraCookies = extraCookies
+        )
+        .flatMap: resp =>
+          decodeBody[ConfirmResponse](resp.body)
+
+  def releaseTerm(
+      reservationId: ReservationId,
+      xsrfToken: XsrfToken,
+      extraCookies: CookieJar
+  )(using Async): Either[LuxmedError, Unit] =
+    withSession: (permit, session) =>
+      given AccountGatePermit = permit
+      transport
+        .newApiPost(
+          LuxmedEndpoint.ReleaseTerm,
+          body = "{}",
+          session,
+          xsrfToken = Some(xsrfToken.token),
+          extraCookies = extraCookies,
+          params = Map("reservationId" -> reservationId.value.toString)
+        )
+        .flatMap: resp =>
+          // Release endpoint returns 200 with empty body on success
+          if resp.body.trim.isEmpty then Right(())
+          else
+            // If there's a body, try decoding as error response
+            resp.body.trim match
+              case "true" | "false" => Right(()) // Some APIs return boolean
+              case _                =>
+                decodeBody[ConfirmResponse](resp.body).map(_ => ())
+
+  // -- Conformance entrypoint (Task 9) --
+
+  private[luxmed] def refreshNowForConformance()(using
+      Async
+  ): Either[LuxmedError, LuxmedSession] =
+    gate.serialized:
+      state match
+        case ClientSessionState.Ready(session) =>
+          refreshAndBootstrap(session)
+        case ClientSessionState.Unloaded =>
+          store.load() match
+            case Left(error) => Left(toLuxmedError(error))
+            case Right(None) =>
+              Left(
+                LuxmedError.ProtocolViolation(
+                  SafeDiagnostic(
+                    "No session to refresh — authenticate first"
+                  )
+                )
+              )
+            case Right(Some(session)) =>
+              state = ClientSessionState.Ready(session)
+              refreshAndBootstrap(session)
+        case other =>
+          Left(
+            LuxmedError.ProtocolViolation(
+              SafeDiagnostic(
+                s"Unexpected session state for conformance refresh: $other"
+              )
+            )
+          )

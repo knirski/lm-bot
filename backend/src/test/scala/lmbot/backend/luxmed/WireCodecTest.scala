@@ -103,7 +103,7 @@ class WireCodecTest extends munit.FunSuite:
   test("cities decode from JSON array"):
     val cities = readFromString[List[City]](fixture("cities.json"))
     assert(cities.exists(_.name == "Białystok"), "cities contain Białystok")
-    assertEquals(cities.find(_.id == 70).map(_.name), Some("Białystok"))
+    assertEquals(cities.find(_.id == CityId(70)).map(_.name), Some("Białystok"))
 
   test("facilities-and-doctors decode correctly"):
     val result = readFromString[FacilitiesAndDoctors](
@@ -132,3 +132,18 @@ class WireCodecTest extends munit.FunSuite:
       readFromString[ConfirmResponse](fixture("confirm-success.json"))
     assertEquals(response.value.reservationId.value, 2222222L)
     assertEquals(response.value.canSelfConfirm, false)
+
+  test("service variant codec handles extra fields with skip"):
+    val json =
+      """{"id":1,"name":"test","expanded":false,"children":[],"isTelemedicine":false,"paymentType":1,"extraField":"skip"}"""
+    val result = readFromString[ServiceVariant](json)
+    assertEquals(result.id.value, 1L)
+    assertEquals(result.name, "test")
+
+  test("service variant codec handles children array"):
+    val json =
+      """{"id":1,"name":"parent","expanded":true,"children":[{"id":2,"name":"child","expanded":false,"children":[],"isTelemedicine":false,"paymentType":1}],"isTelemedicine":false,"paymentType":0}"""
+    val result = readFromString[ServiceVariant](json)
+    assertEquals(result.name, "parent")
+    assertEquals(result.children.size, 1)
+    assertEquals(result.children.head.name, "child")

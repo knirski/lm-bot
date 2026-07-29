@@ -79,3 +79,16 @@ object ReservationId:
     def encodeValue(x: ReservationId, out: JsonWriter): Unit =
       out.writeVal(x.value)
     def nullValue: ReservationId = null.asInstanceOf[ReservationId]
+
+opaque type CityId = Long
+
+object CityId:
+  def apply(value: Long): CityId = value
+  extension (id: CityId) def value: Long = id
+
+  given JsonValueCodec[CityId] with
+    def decodeValue(in: JsonReader, default: CityId): CityId =
+      CityId(in.readLong())
+    def encodeValue(x: CityId, out: JsonWriter): Unit =
+      out.writeVal(x.value)
+    def nullValue: CityId = null.asInstanceOf[CityId]

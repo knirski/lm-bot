@@ -12,7 +12,7 @@ final case class LuxmedDateTime(value: ZonedDateTime)
 /** Query parameters for the /PatientPortal/NewPortal/terms/index endpoint.
   */
 final case class TermsQuery(
-    cityId: Long,
+    cityId: CityId,
     serviceVariantId: ServiceVariantId,
     searchDateFrom: LocalDate,
     searchDateTo: LocalDate,
