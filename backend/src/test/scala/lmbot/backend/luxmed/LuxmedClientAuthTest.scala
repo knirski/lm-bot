@@ -66,26 +66,9 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       body(client, mock, fake, store)
     finally mock.close()
 
-  test("three-step auth flow succeeds"):
+  test("three-step auth flow succeeds with realistic mock responses"):
     withClient(): (client, mock, _, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":599,"refresh_token":"RT1","token_type":"bearer"}"""
-      )
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Set-Cookie" -> "ASP.NET_SessionId=sess1")
-      )
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map(
-          "Set-Cookie" -> "jwt=JWT1",
-          "Authorization-Token" -> "Bearer JWT_TOKEN_1"
-        )
-      )
+      mock.enqueueRealisticAuthFlow()
       val result = runAsync:
         client.authenticate()
       assert(result.isRight, s"expected success, got $result")
@@ -120,23 +103,21 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         header(requests(1), "X-Requested-With"),
         Some("pl.luxmed.pp")
       )
-      assertEquals(
-        header(requests(2), "Cookie"),
-        Some("ASP.NET_SessionId=sess1")
+      // ReservationPage request includes session cookie plus GlobalLang (added after LogInToApp)
+      val cookieHeader = header(requests(2), "Cookie")
+      assert(
+        cookieHeader.exists(h =>
+          h.contains("ASP.NET_SessionId=sess1") && h.contains("GlobalLang=pl")
+        ),
+        s"expected cookies with ASP.NET_SessionId and GlobalLang, got $cookieHeader"
       )
 
   test("authenticate stores session in the store"):
     withClient(): (client, mock, _, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
-      )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT1",
+        refreshToken = "RT1",
+        jwtToken = "JWT_1"
       )
       runAsync:
         client.authenticate()
@@ -156,16 +137,10 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         cookies = CookieJar.empty
       )
       assertEquals(store.replace(None, oldSession), Right(()))
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT_NEW","expires_in":600,"refresh_token":"RT_NEW","token_type":"bearer"}"""
-      )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_NEW")
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT_NEW",
+        refreshToken = "RT_NEW",
+        jwtToken = "JWT_NEW"
       )
       val result = runAsync:
         client.authenticate()
@@ -177,12 +152,16 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   test("missing JWT in response is ProtocolViolation"):
     withClient(): (client, mock, _, _) =>
+      // Token endpoint — 200 with WAF cookies but ReservationPage has no Authorization-Token
       mock.enqueue(
         status = 200,
         body =
           """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
       )
-      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = ""
+      )
       mock.enqueue(status = 200, body = "")
       val result = runAsync:
         client.authenticate()
@@ -192,28 +171,20 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   test("refresh happens when session is expiring"):
     withClient(): (client, mock, _, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":30,"refresh_token":"RT1","token_type":"bearer"}"""
+      // Auth with expires_in=30 so session is immediately expiring
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT1",
+        refreshToken = "RT1",
+        jwtToken = "JWT_1",
+        expiresIn = 30
       )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_1")
-      )
+      // Refresh: token response + realistic bootstrap
       mock.enqueue(
         status = 200,
         body =
           """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
       )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_2")
-      )
+      mock.enqueueRealisticBootstrapFlow(jwtToken = "JWT_2")
       runAsync:
         client.authenticate()
       val result = runAsync:
@@ -223,16 +194,10 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   test("301 seconds remaining does not refresh"):
     withClient(): (client, mock, fake, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
-      )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT1",
+        refreshToken = "RT1",
+        jwtToken = "JWT_1"
       )
       runAsync:
         client.authenticate()
@@ -248,16 +213,10 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   test("300 seconds remaining refreshes exactly once"):
     withClient(): (client, mock, fake, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
-      )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT1",
+        refreshToken = "RT1",
+        jwtToken = "JWT_1"
       )
       runAsync:
         client.authenticate()
@@ -267,12 +226,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         body =
           """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
       )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_2")
-      )
+      mock.enqueueRealisticBootstrapFlow(jwtToken = "JWT_2")
       val result = runAsync:
         client.withSession: (_, session) =>
           Right(session.refreshToken.value)
@@ -284,16 +238,10 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
 
   test("concurrent session operations perform one refresh transaction"):
     withClient(): (client, mock, fake, _) =>
-      mock.enqueue(
-        status = 200,
-        body =
-          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
-      )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      mock.enqueueRealisticAuthFlow(
+        accessToken = "AT1",
+        refreshToken = "RT1",
+        jwtToken = "JWT_1"
       )
       runAsync:
         client.authenticate()
@@ -303,12 +251,7 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         body =
           """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
       )
-      mock.enqueue(status = 200, body = "")
-      mock.enqueue(
-        status = 200,
-        body = "",
-        headers = Map("Authorization-Token" -> "Bearer JWT_2")
-      )
+      mock.enqueueRealisticBootstrapFlow(jwtToken = "JWT_2")
       val results = runAsync:
         Async.group:
           val first = Future:
@@ -605,3 +548,112 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
           Right(session.accessToken.value)
       assertEquals(result, Right("AT_STORED"))
       assertEquals(mock.requests, Nil)
+
+  // -- Retry-policy tests (Task 8) --
+
+  test(
+    "RateLimited passes through and does not trigger reauthentication"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      mock.enqueue(status = 429, body = """{"message":"slow down"}""")
+      val result = runAsync:
+        client.cities()
+      assertEquals(result, Left(LuxmedError.RateLimited))
+      // No additional password grant was triggered
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+  test(
+    "VersionRejected passes through without password fallback"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      mock.enqueue(
+        status = 409,
+        body =
+          """{"ErrorCode":301,"Message":"Obecnie zainstalowana wersja aplikacji nie jest wspierana przez nowy system Portalu Pacjenta. Zaktualizuj aplikację do najnowszej wersji, aby móc z niej korzystać."}"""
+      )
+      val result = runAsync:
+        client.cities()
+      assert(result.left.exists:
+        case LuxmedError.VersionRejected(_) => true
+        case _                              => false)
+      // No additional password grant should occur
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        1
+      )
+
+  test(
+    "SessionExpired on operation triggers reauthentication via password grant"
+  ):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      // First cities() call gets SessionExpired
+      mock.enqueue(status = 200, body = "session has expired")
+      // Reauthentication via password grant + bootstrap
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_2")
+      )
+      // Retried cities() succeeds
+      mock.enqueue(status = 200, body = """[{"id":70,"name":"Białystok"}]""")
+      val result = runAsync:
+        client.cities()
+      assert(result.isRight, s"expected success after retry, got $result")
+      // Two password grants: one for initial auth, one for reauth after expiry
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        2
+      )
+      // No refresh-token grant: session-expired during op triggered full reauth
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        0
+      )

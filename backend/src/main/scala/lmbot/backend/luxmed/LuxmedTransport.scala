@@ -18,7 +18,26 @@ final case class RedactedResponse(
     bodySummary: String
 )
 
-final class LuxmedTransport(config: LuxmedConfig):
+private[luxmed] trait WireObserver:
+  def observed(fingerprint: WireFingerprint): Unit
+
+object WireObserver:
+  object Noop extends WireObserver:
+    def observed(fingerprint: WireFingerprint): Unit = ()
+
+final case class WireFingerprint(
+    step: String,
+    status: Int,
+    headerNames: Set[String],
+    cookieNames: Set[String],
+    decodedBody: String,
+    bodyShape: Option[JsonShape]
+)
+
+final class LuxmedTransport(
+    config: LuxmedConfig,
+    observer: WireObserver = WireObserver.Noop
+):
 
   private val backend = HttpClientSyncBackend.usingClient(
     HttpClient
@@ -61,7 +80,7 @@ final class LuxmedTransport(config: LuxmedConfig):
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .get(uri(config.oldApi, endpoint, params))
         .headers(oldApiHeaders)
@@ -75,7 +94,7 @@ final class LuxmedTransport(config: LuxmedConfig):
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .post(uri(config.oldApi, endpoint, Map.empty))
         .headers(oldApiHeaders)
@@ -91,7 +110,7 @@ final class LuxmedTransport(config: LuxmedConfig):
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = false)(
       mkRequest
         .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
@@ -109,7 +128,7 @@ final class LuxmedTransport(config: LuxmedConfig):
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
-    run(a, p)(
+    run(a, p, tolerateRedirects = true)(
       mkRequest
         .get(uri(config.newApi, endpoint, params))
         .headers(newApiHeaders)
@@ -124,14 +143,15 @@ final class LuxmedTransport(config: LuxmedConfig):
       body: String,
       session: LuxmedSession,
       xsrfToken: Option[Secret] = None,
-      extraCookies: CookieJar = CookieJar.empty
+      extraCookies: CookieJar = CookieJar.empty,
+      params: Map[String, String] = Map.empty
   )(using
       a: Async,
       p: RequestPermit
   ): Either[LuxmedError, TransportResponse[String]] =
     val mergedCookies = session.cookies.merge(extraCookies.toList)
     var r = mkRequest
-      .post(uri(config.newApi, endpoint, Map.empty))
+      .post(uri(config.newApi, endpoint, params))
       .headers(newApiHeaders)
       .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
       .header("Content-Type", "application/json")
@@ -139,7 +159,31 @@ final class LuxmedTransport(config: LuxmedConfig):
       .cookies(mergedCookies.toSeq*)
     xsrfToken.foreach: tok =>
       r = r.header("xsrf-token", tok.value)
-    run(a, p)(r)
+    run(a, p, tolerateRedirects = false)(r)
+
+  /** POST form-encoded on the new Portal API with optional XSRF protection. */
+  def newApiPostForm(
+      endpoint: LuxmedEndpoint,
+      body: Map[String, String],
+      session: LuxmedSession,
+      xsrfToken: Option[Secret] = None,
+      extraCookies: CookieJar = CookieJar.empty,
+      params: Map[String, String] = Map.empty
+  )(using
+      a: Async,
+      p: RequestPermit
+  ): Either[LuxmedError, TransportResponse[String]] =
+    val mergedCookies = session.cookies.merge(extraCookies.toList)
+    var r = mkRequest
+      .post(uri(config.newApi, endpoint, params))
+      .headers(newApiHeaders)
+      .header("Authorization-Token", s"Bearer ${session.jwtToken.value}")
+      .header("Content-Type", "application/x-www-form-urlencoded")
+      .body(body)
+      .cookies(mergedCookies.toSeq*)
+    xsrfToken.foreach: tok =>
+      r = r.header("xsrf-token", tok.value)
+    run(a, p, tolerateRedirects = false)(r)
 
   /** Convert a [[LuxmedEndpoint]] to a full URI by appending its path segments
     * and query params to the base.
@@ -153,7 +197,8 @@ final class LuxmedTransport(config: LuxmedConfig):
 
   private def run(
       async: Async,
-      permit: RequestPermit
+      permit: RequestPermit,
+      tolerateRedirects: Boolean
   )(
       request: Request[String, Any]
   ): Either[LuxmedError, TransportResponse[String]] =
@@ -162,11 +207,85 @@ final class LuxmedTransport(config: LuxmedConfig):
       try Right(request.send(backend))
       catch
         case e: SttpClientException =>
-          Left(LuxmedError.NetworkFailure(safeDiagnostic(e)))
-    response.flatMap(classify)
+          val result = Left(LuxmedError.NetworkFailure(safeDiagnostic(e)))
+          reportFingerprint(result, null)
+          result
+    val classified = response.flatMap(r => classify(r, tolerateRedirects))
+    response.foreach: resp =>
+      reportFingerprint(classified, resp.body)
+    classified
+
+  private def reportFingerprint(
+      result: Either[LuxmedError, TransportResponse[String]],
+      rawBody: String | Null
+  ): Unit =
+    val fingerprint = result match
+      case Right(resp) =>
+        val jsonShape =
+          if rawBody != null then
+            try Some(JsonShape.parse(rawBody))
+            catch case _: Exception => None
+          else None
+        val bodyLabel = result.toOption
+          .flatMap(r =>
+            if r.status >= 200 && r.status < 300 then guessBodyLabel(r.body)
+            else None
+          )
+          .getOrElse(
+            result.fold(
+              _.getClass.getSimpleName,
+              r => if r.body.isEmpty then "EmptySuccess" else "SuccessBody"
+            )
+          )
+        WireFingerprint(
+          step = "",
+          status = resp.status,
+          headerNames = resp.headers.map(_._1.toLowerCase).toSet,
+          cookieNames = resp.cookies.map(_._1).toSet,
+          decodedBody = bodyLabel,
+          bodyShape = jsonShape
+        )
+      case Left(err) =>
+        WireFingerprint(
+          step = "",
+          status = 0,
+          headerNames = Set.empty,
+          cookieNames = Set.empty,
+          decodedBody = err.getClass.getSimpleName,
+          bodyShape = None
+        )
+    observer.observed(fingerprint)
+
+  private def guessBodyLabel(body: String): Option[String] =
+    if body.isEmpty then Some("EmptySuccess")
+    else
+      try
+        body.take(100) match
+          case s if s.contains("""access_token""") => Some("OAuthTokens")
+          case s
+              if s.contains("""cities""") || (s
+                .startsWith("[") && s.contains("""name""")) =>
+            if s.contains("""id""") && s.contains("""expanded""") then
+              Some("ServiceVariants")
+            else Some("Cities")
+          case s if s.contains("""facilities""") && s.contains("""doctors""") =>
+            Some("FacilitiesAndDoctors")
+          case s if s.contains("""correlationId""") => Some("TermsResponse")
+          case s if s.contains("""token""") && s.length < 100 =>
+            Some("XsrfToken")
+          case s if s.contains("""temporaryReservationId""") =>
+            Some("LockResponse")
+          case s
+              if s.contains("""reservationId""") && s.contains(
+                """canSelfConfirm"""
+              ) =>
+            Some("ConfirmResponse")
+          case _ => None
+      catch case _: Exception => None
 
   private def classify(
-      response: Response[String]
+      response: Response[String],
+      tolerateRedirects: Boolean
   ): Either[LuxmedError, TransportResponse[String]] =
     val body = response.body
     val status = response.code.code
@@ -206,11 +325,20 @@ final class LuxmedTransport(config: LuxmedConfig):
         LuxmedError.UnexpectedAuthResponse(LuxmedRedaction.safe(body))
       )
 
-    if status >= 200 && status < 300 then
+    // Bootstrap requests may see 3xx redirects (Luxmed attaches cookies/headers
+    // to them). For non-bootstrap requests only 2xx is considered success.
+    val maxValidStatus = if tolerateRedirects then 399 else 299
+    if status >= 200 && status <= maxValidStatus then
       Right(
         TransportResponse(
           body = body,
-          headers = response.headers.map(h => h.name -> h.value).toList,
+          // Include history defensively if a different backend configuration
+          // supplies it; the production request configuration does not follow
+          // redirects.
+          headers = (response.history.flatMap(_.headers) ++ response.headers)
+            .map(h => h.name -> h.value)
+            .toList,
+          // Preserve cookies attached to the response.
           cookies = extractCookies(response),
           status = status,
           authTokenHeader = response.headers
@@ -229,7 +357,9 @@ final class LuxmedTransport(config: LuxmedConfig):
   private def extractCookies(
       response: Response[String]
   ): List[(String, Secret)] =
-    response.headers
+    // Preserve any history defensively, though production requests do not
+    // follow redirects.
+    (response.history.flatMap(_.headers) ++ response.headers)
       .filter(h => h.name.equalsIgnoreCase("Set-Cookie"))
       .flatMap { h =>
         h.value

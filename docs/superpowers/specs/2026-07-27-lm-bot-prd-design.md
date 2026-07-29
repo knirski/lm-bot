@@ -191,7 +191,12 @@ Rules:
 - `Custom-User-Agent` app version string is **configurable via env var** — Luxmed rejects outdated versions (401 / 409 "old app version") and this must be changeable without redeploy.
 - In-memory session cache per account; re-login on 401 or on a detected session expiry.
 - Per-account rate limiter and mutex: one in-flight request per Luxmed account, minimum spacing between calls.
-- Redirects are **not** followed automatically; a 302 is a signal, not a hop (see session-expiry detection below).
+- Redirects are **not** followed automatically; a 302 is a signal, not a hop
+  (see session-expiry detection below). The transport classifies redirects to
+  `/LogOn` or `/UniversalLink` as session expiry. Other 3xx responses are
+  returned to the caller as undecoded transport responses because Luxmed uses
+  them during bootstrap and may attach cookies or authorization headers to the
+  response itself.
 - Any response that fails to decode is logged with the raw payload — the early-warning system for upstream API changes. Credentials and tokens are masked in all such output (§6).
 
 **Plan 3 client boundaries.** The client is backend-internal; Luxmed's wire
@@ -215,6 +220,12 @@ types do not enter the browser-facing `shared` module.
   protocol. Plan 4 supplies its AES-256-GCM-encrypted PostgreSQL
   implementation and restart round-trip coverage. Plan 3 adds no database,
   lm-bot HTTP endpoint, or UI.
+
+**Plan 4 account-domain ownership.** Plan 4 defines lm-bot's `AccountId` in
+the account/application domain alongside the persisted Luxmed-account model.
+It is not a Luxmed wire identifier and must not be added to
+`lmbot.backend.luxmed.model.OpaqueIds`, whose types and codecs represent
+identifiers received from or sent to Luxmed.
 
 The implementation is **direct-style functional Scala with Gears**. Suspended
 operations have ordinary synchronous-looking signatures with `(using Async)`;

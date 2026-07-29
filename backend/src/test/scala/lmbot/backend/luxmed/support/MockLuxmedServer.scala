@@ -72,6 +72,88 @@ final class MockLuxmedServer(port: Int = 0):
       )
     )
 
+  /** Enqueue the full realistic auth flow (matching real Luxmed API behavior):
+    *
+    *   1. OAuth password grant (200) with WAF cookies and OAuth tokens
+    *   2. LogInToApp (302) with session cookie and Location header
+    *   3. ReservationPage (200) with Authorization-Token header
+    */
+  def enqueueRealisticAuthFlow(
+      accessToken: String = "AT1",
+      refreshToken: String = "RT1",
+      jwtToken: String = "JWT_TOKEN_1",
+      sessionCookie: String = "ASP.NET_SessionId=sess1",
+      expiresIn: Int = 600
+  ): Unit =
+    // 1. Token endpoint — 200 with OAuth tokens and WAF cookies
+    enqueue(
+      MockResponse(
+        status = 200,
+        headers = Map(
+          "Set-Cookie" -> List(
+            "visid_incap_2269135=waf123; Domain=.luxmed.pl; HttpOnly",
+            "incap_ses_683_2269135=waf456; Domain=.luxmed.pl"
+          ),
+          "Content-Type" -> List("application/json")
+        ),
+        body =
+          s"""{"access_token":"$accessToken","expires_in":$expiresIn,"refresh_token":"$refreshToken","token_type":"bearer"}"""
+      )
+    )
+    // 2. LogInToApp — 302 redirect with session cookie
+    enqueue(
+      MockResponse(
+        status = 302,
+        headers = Map(
+          "Set-Cookie" -> List(sessionCookie),
+          "Location" -> List("/PatientPortal/NewPortal/Page/Reservation")
+        ),
+        body = ""
+      )
+    )
+    // 3. ReservationPage — 200 with Authorization-Token header
+    enqueue(
+      MockResponse(
+        status = 200,
+        headers = Map(
+          "Authorization-Token" -> List(s"Bearer $jwtToken")
+        ),
+        body = ""
+      )
+    )
+
+  /** Enqueue the bootstrap flow (LogInToApp + ReservationPage) with realistic
+    * responses:
+    *   - LogInToApp: 302 redirect with session cookie
+    *   - ReservationPage: 200 with Authorization-Token header
+    *
+    * This is the common second half of both the initial auth and the refresh
+    * flow.
+    */
+  def enqueueRealisticBootstrapFlow(
+      jwtToken: String = "JWT_TOKEN_1",
+      sessionCookie: String = "ASP.NET_SessionId=sess1"
+  ): Unit =
+    enqueue(
+      MockResponse(
+        status = 302,
+        headers = Map(
+          "Set-Cookie" -> List(sessionCookie),
+          "Location" -> List("/PatientPortal/NewPortal/Page/Reservation")
+        ),
+        body = ""
+      )
+    )
+    enqueue(
+      MockResponse(
+        status = 200,
+        headers = Map(
+          "Authorization-Token" -> List(s"Bearer $jwtToken")
+        ),
+        body = ""
+      )
+    )
+
   def requests: List[RecordedRequest] = capturedRequests.asScala.toList
 
   def close(): Unit = server.stop(0)
