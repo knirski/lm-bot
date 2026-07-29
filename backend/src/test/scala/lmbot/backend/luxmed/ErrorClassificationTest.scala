@@ -50,6 +50,14 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
         transport.oldApiGet("/redirect")
       assertEquals(result, Left(LuxmedError.SessionExpired))
 
+  test("redirect body naming LogOn is session expired"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(status = 302, body = "/PatientPortal/LogOn")
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/redirect")
+      assertEquals(result, Left(LuxmedError.SessionExpired))
+
   test("429 is RateLimited"):
     withTransport: (transport, mock) =>
       mock.enqueue(status = 429, body = """{"message":"slow down"}""")
@@ -91,6 +99,34 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
         given RequestPermit = testPermit
         transport.oldApiGet("/token")
       assert(result.isLeft)
+      assert(result.left.exists {
+        case LuxmedError.ApiRejected(_) => true
+        case _                          => false
+      })
+
+  test("list-shaped error envelope is ApiRejected"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 400,
+        body = """{"errors":[{"code":"invalid","message":"bad request"}]}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/check")
+      assert(result.left.exists {
+        case LuxmedError.ApiRejected(_) => true
+        case _                          => false
+      })
+
+  test("map-shaped error envelope is ApiRejected"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 400,
+        body = """{"errors":{"password":["Password is required"]}}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/check")
       assert(result.left.exists {
         case LuxmedError.ApiRejected(_) => true
         case _                          => false
@@ -214,6 +250,17 @@ class ErrorClassificationTest extends munit.FunSuite with GearsTest:
         "person@example.com",
         "501 234 567"
       ).foreach(secret => assert(!rendered.contains(secret), s"leaked $secret"))
+
+  test("error diagnostics redact bearer authorization values"):
+    withTransport: (transport, mock) =>
+      mock.enqueue(
+        status = 200,
+        body = """{"challengeId":"x","authorization":"Bearer AUTH_SECRET"}"""
+      )
+      val result = runAsync:
+        given RequestPermit = testPermit
+        transport.oldApiGet("/challenge")
+      assert(!result.toString.contains("AUTH_SECRET"))
 
   test("error diagnostics redact JWT cookies and phone-like values"):
     withTransport: (transport, mock) =>

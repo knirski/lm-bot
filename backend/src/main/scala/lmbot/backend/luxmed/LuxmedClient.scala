@@ -97,6 +97,12 @@ final class LuxmedClient(
       async: Async
   ): Either[LuxmedError, LuxmedSession] =
     refreshGrant(oldSession.refreshToken) match
+      case Left(_: LuxmedError.ApiRejected) =>
+        state = ClientSessionState.Unloaded
+        Left(LuxmedError.SessionExpired)
+      case Left(LuxmedError.AuthFailed) =>
+        state = ClientSessionState.Unloaded
+        Left(LuxmedError.SessionExpired)
       case Left(error)  => Left(error)
       case Right(oauth) =>
         state = ClientSessionState.PendingBootstrap(
@@ -253,4 +259,12 @@ final class LuxmedClient(
       codec: com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec[A]
   ): Either[String, A] =
     try Right(readFromString[A](json))
-    catch case e: Exception => Left(e.getMessage.nn)
+    catch case e: Exception => Left(exceptionMessage(e))
+
+  private def exceptionMessage(error: Throwable): String =
+    Option(error.getMessage)
+      .map(_.nn)
+      .filter(_.nonEmpty)
+      .getOrElse(
+        error.getClass.getSimpleName
+      )

@@ -154,23 +154,27 @@ final class LuxmedTransport(config: LuxmedConfig):
       classify(resp)
     catch
       case e: Exception =>
-        Left(LuxmedError.NetworkFailure(e.getMessage.nn))
+        Left(LuxmedError.NetworkFailure(exceptionMessage(e)))
 
   private def classify(
       response: Response[String]
   ): Either[LuxmedError, TransportResponse[String]] =
     val body = response.body
     val status = response.code.code
+    val bodyLower = body.toLowerCase
 
     if status >= 300 && status < 400 then
       val location = response.headers
         .find(h => h.name.equalsIgnoreCase("Location"))
         .map(_.value)
         .getOrElse("")
-      if location.contains("/LogOn") || location.contains("/UniversalLink") then
-        return Left(LuxmedError.SessionExpired)
+      val locationLower = location.toLowerCase
+      if locationLower.contains("/logon") ||
+        locationLower.contains("/universallink") ||
+        bodyLower.contains("/logon") ||
+        bodyLower.contains("/universallink")
+      then return Left(LuxmedError.SessionExpired)
 
-    val bodyLower = body.toLowerCase
     if bodyLower.contains("session has expired") ||
       bodyLower.contains("logged out due to inactivity")
     then return Left(LuxmedError.SessionExpired)
@@ -231,6 +235,14 @@ final class LuxmedTransport(config: LuxmedConfig):
   private def redactBody(body: String): String =
     LuxmedRedaction.summary(body)
 
+  private def exceptionMessage(error: Throwable): String =
+    Option(error.getMessage)
+      .map(_.nn)
+      .filter(_.nonEmpty)
+      .getOrElse(
+        error.getClass.getSimpleName
+      )
+
 final case class TransportResponse[+A](
     body: A,
     headers: List[(String, String)],
@@ -247,12 +259,17 @@ final case class TransportResponse[+A](
 private[luxmed] object LuxmedRedaction:
   private val secretFields =
     """(?i)(access_token|refresh_token|password|jwt|jwtToken|cookie|authorization-token|authorization)\s*["':=]+\s*"?[^",}\s]+"?""".r
+  private val bearerToken = """(?i)\bBearer\s+[^\s",}]+""".r
   private val email =
     """[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""".r
   private val phone = """\b\d{3}\s\d{3}\s\d{3}\b""".r
 
   def summary(body: String): String =
+    val withBearer = bearerToken.replaceAllIn(
+      body,
+      m => m.group(0).take(7) + "***"
+    )
     val withSecrets =
-      secretFields.replaceAllIn(body, m => m.group(0).take(12) + "***")
+      secretFields.replaceAllIn(withBearer, m => m.group(0).take(12) + "***")
     val withEmails = email.replaceAllIn(withSecrets, "<redacted-email>")
     phone.replaceAllIn(withEmails, "<redacted-phone>").take(200)

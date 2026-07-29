@@ -8,6 +8,7 @@ import lmbot.backend.luxmed.support.{
   RecordedRequest
 }
 import lmbot.backend.luxmed.model.*
+import gears.async.{Async, Future}
 import sttp.model.Uri
 import java.util.UUID
 import java.time.Duration
@@ -249,6 +250,62 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         1
       )
 
+  test("concurrent session operations perform one refresh transaction"):
+    withClient(): (client, mock, fake, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      fake.advance(Duration.ofSeconds(301))
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_2")
+      )
+      val results = runAsync:
+        Async.group:
+          val first = Future:
+            client.withSession: (_, session) =>
+              Right(session.accessToken.value)
+          val second = Future:
+            client.withSession: (_, session) =>
+              Right(session.accessToken.value)
+          List(first.awaitResult, second.awaitResult)
+      assert(results.forall(_.isSuccess))
+      assertEquals(
+        results.flatMap(_.toOption),
+        List(Right("AT2"), Right("AT2"))
+      )
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        1
+      )
+
+  test("malformed OAuth success is DecodeFailed"):
+    withClient(): (client, mock, _, _) =>
+      mock.enqueue(status = 200, body = "not-json")
+      val result = runAsync:
+        client.authenticate()
+      assert(result.left.exists {
+        case LuxmedError.DecodeFailed(_) => true
+        case _                           => false
+      })
+
   test("persistence failure retries the store without another HTTP request"):
     withClient(FailOnceStore()): (client, mock, _, _) =>
       mock.enqueue(
@@ -360,6 +417,47 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
       assertEquals(
         store.load().map(_.map(_.refreshToken.value)),
         Right(Some("RT2"))
+      )
+
+  test("invalid refresh grant performs one password fallback"):
+    withClient(): (client, mock, fake, _) =>
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT1","expires_in":600,"refresh_token":"RT1","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_1")
+      )
+      runAsync:
+        client.authenticate()
+      fake.advance(Duration.ofSeconds(301))
+      mock.enqueue(status = 401, body = """{"error":"invalid_grant"}""")
+      mock.enqueue(
+        status = 200,
+        body =
+          """{"access_token":"AT2","expires_in":600,"refresh_token":"RT2","token_type":"bearer"}"""
+      )
+      mock.enqueue(status = 200, body = "")
+      mock.enqueue(
+        status = 200,
+        body = "",
+        headers = Map("Authorization-Token" -> "Bearer JWT_2")
+      )
+      val result = runAsync:
+        client.withSession: (_, session) =>
+          Right(session.accessToken.value)
+      assertEquals(result, Right("AT2"))
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=refresh_token")),
+        1
+      )
+      assertEquals(
+        mock.requests.count(_.body.contains("grant_type=password")),
+        2
       )
 
   test("a fresh client loads a non-expiring stored session"):

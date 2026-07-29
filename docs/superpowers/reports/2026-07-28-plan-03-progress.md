@@ -62,11 +62,11 @@ does not retry a failed refresh grant with the same token.
 
 ## Test coverage
 
-`nix develop -c sbt testFull` passed with **106 tests**, including:
+`nix develop -c sbt testFull` passed with **113 tests**, including:
 
 - 6 `AccountGateTest`
-- 15 `ErrorClassificationTest`
-- 10 `LuxmedClientAuthTest`
+- 19 `ErrorClassificationTest`
+- 13 `LuxmedClientAuthTest`
 - 12 `WireCodecTest`
 - 7 `SessionStoreTest`
 - the existing shared, frontend, backend, repository, API, password, and
