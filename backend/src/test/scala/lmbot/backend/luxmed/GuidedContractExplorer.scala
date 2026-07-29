@@ -56,6 +56,11 @@ object GuidedContractExplorer:
     */
   private var foundTerms: List[Term] = Nil
 
+  /** XSRF token and cookies from the required phase, reused in optional
+    * lock/release to stay within the 12-request budget.
+    */
+  private var savedXsrfToken: Option[(XsrfToken, CookieJar)] = None
+
   def main(args: Array[String]): Unit =
     val console = System.console()
     if console == null then
@@ -295,8 +300,9 @@ object GuidedContractExplorer:
     step("XSRF token")
     val xsrfResult = client.getXsrfToken()
     xsrfResult match
-      case Right((token, _)) =>
+      case Right((token, extraCookies)) =>
         requestCount += 1
+        savedXsrfToken = Some((token, extraCookies))
         println(
           s"  Got XSRF token (first 20 chars): ${token.token.value.take(20)}..."
         )
@@ -345,52 +351,50 @@ object GuidedContractExplorer:
     println(s"    Facility (clinicGroupId): ${term.clinicGroupId}")
     println(s"    Service variant ID: ${term.serviceId.value}")
 
-    // Get XSRF token fresh
-    val xsrfResult = client.getXsrfToken()
-    xsrfResult match
-      case Right((xsrfToken, extraCookies)) =>
+    // Reuse the XSRF token from the required phase (per Plan 3 spec) to
+    // stay within the 12-request budget (10 required + 2 optional).
+    val (xsrfToken, extraCookies) = savedXsrfToken.getOrElse:
+      fail("No XSRF token from required phase — cannot lock/release.")
+    requestCount += 1 // XSRF was already counted in required phase
+    val lockRequest = LockTermRequest(
+      date = date,
+      doctorId = term.doctor.id,
+      facilityId = FacilityId(term.clinicGroupId),
+      impedimentText = None,
+      isAdditional = term.isAdditional,
+      isImpediment = term.isImpediment,
+      isPreparationRequired = false,
+      isTelemedicine = term.isTelemedicine,
+      roomId = term.roomId,
+      scheduleId = term.scheduleId,
+      serviceVariantId = term.serviceId,
+      timeFrom = timeFrom,
+      timeTo = timeTo
+    )
+    val lockResult = client.lockTerm(lockRequest, xsrfToken, extraCookies)
+    lockResult match
+      case Right(response) =>
         requestCount += 1
-        val lockRequest = LockTermRequest(
-          date = date,
-          doctorId = term.doctor.id,
-          facilityId = FacilityId(term.clinicGroupId),
-          impedimentText = None,
-          isAdditional = term.isAdditional,
-          isImpediment = term.isImpediment,
-          isPreparationRequired = false,
-          isTelemedicine = term.isTelemedicine,
-          roomId = term.roomId,
-          scheduleId = term.scheduleId,
-          serviceVariantId = term.serviceId,
-          timeFrom = timeFrom,
-          timeTo = timeTo
-        )
-        val lockResult = client.lockTerm(lockRequest, xsrfToken, extraCookies)
-        lockResult match
-          case Right(response) =>
-            requestCount += 1
-            val tempId = response.value.temporaryReservationId
-            println(s"  Locked, temporary reservation ID: ${tempId.value}")
+        val tempId = response.value.temporaryReservationId
+        println(s"  Locked, temporary reservation ID: ${tempId.value}")
 
-            // Always release in finally
-            try
-              println("  Releasing...")
-              val releaseResult = client.releaseTerm(
-                tempId,
-                xsrfToken,
-                extraCookies
-              )
-              releaseResult match
-                case Right(()) =>
-                  requestCount += 1
-                  println("  Released successfully")
-                case Left(error) =>
-                  println(s"  WARNING: Release failed: $error")
-            finally ()
-          case Left(error) =>
-            fail(s"Lock failed: $error")
+        // Always release in finally
+        try
+          println("  Releasing...")
+          val releaseResult = client.releaseTerm(
+            tempId,
+            xsrfToken,
+            extraCookies
+          )
+          releaseResult match
+            case Right(()) =>
+              requestCount += 1
+              println("  Released successfully")
+            case Left(error) =>
+              println(s"  WARNING: Release failed: $error")
+        finally ()
       case Left(error) =>
-        fail(s"XSRF token for lock/release failed: $error")
+        fail(s"Lock failed: $error")
 
   private def step(label: String): Unit =
     println()
