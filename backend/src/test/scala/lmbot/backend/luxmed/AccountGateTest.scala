@@ -3,6 +3,8 @@ package lmbot.backend.luxmed
 import lmbot.backend.luxmed.support.{FakeTime, GearsTest}
 import gears.async.{Async, Future}
 import java.time.Duration
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.AtomicInteger
 
 class AccountGateTest extends munit.FunSuite with GearsTest:
 
@@ -15,16 +17,39 @@ class AccountGateTest extends munit.FunSuite with GearsTest:
       now = () => fake.now(),
       sleeper = fake.sleeper
     )
+    val firstEntered = CountDownLatch(1)
+    val secondStarted = CountDownLatch(1)
+    val secondEntered = CountDownLatch(1)
+    val releaseFirst = CountDownLatch(1)
+    val active = AtomicInteger(0)
+    val maxActive = AtomicInteger(0)
+
+    def recordEntry(): Unit =
+      val current = active.incrementAndGet()
+      maxActive.synchronized:
+        maxActive.set(Math.max(maxActive.get(), current))
+
     runAsync:
       Async.group:
-        val entered = Future:
+        val first = Future:
           gate.serialized:
-            fake.advance(millis(100))
+            recordEntry()
+            firstEntered.countDown()
+            try releaseFirst.await(1, TimeUnit.SECONDS)
+            finally active.decrementAndGet()
+        assert(firstEntered.await(1, TimeUnit.SECONDS))
         val second = Future:
+          secondStarted.countDown()
           gate.serialized:
-            ()
-        entered.awaitResult
+            recordEntry()
+            secondEntered.countDown()
+            active.decrementAndGet()
+        assert(secondStarted.await(1, TimeUnit.SECONDS))
+        try assert(!secondEntered.await(100, TimeUnit.MILLISECONDS))
+        finally releaseFirst.countDown()
+        first.awaitResult
         second.awaitResult
+        assertEquals(maxActive.get(), 1)
 
   test("a permit spaces each HTTP request, not only each public operation"):
     val fake = FakeTime()
