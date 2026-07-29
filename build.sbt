@@ -31,6 +31,7 @@ val Vhikari = "7.1.0"
 val Vargon2 = "2.12"
 val Vlogback = "1.6.0"
 val Vmunit = "1.3.4"
+val Vmemgres = "0.2.4"
 val VembeddedPg = "2.2.2"
 
 /** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
@@ -139,13 +140,15 @@ lazy val backend = project
       "com.zaxxer" % "HikariCP" % Vhikari,
       "de.mkammerer" % "argon2-jvm" % Vargon2,
       "ch.qos.logback" % "logback-classic" % Vlogback,
+      "com.memgres" % "memgres-core" % Vmemgres,
       "io.zonky.test" % "embedded-postgres" % VembeddedPg,
       "org.scalameta" %% "munit" % Vmunit % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp
     ),
-    // Each test suite manages its own embedded PostgreSQL on a random port
-    // (fully isolated).  Suites run serially because they share the embedded-postgres
-    // binary cache at /tmp/embedded-pg/.
+    // Each test suite manages its own embedded database on a random port
+    // (fully isolated).  Suites run serially because the zonky backend shares
+    // a binary cache at /tmp/embedded-pg/; memgres has no shared state but
+    // serial execution is harmless and keeps switching between backends safe.
     Test / parallelExecution := false,
 
     // Virtual threads want a real JVM 25+.

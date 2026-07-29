@@ -23,4 +23,8 @@ class SessionRepo(xa: Transactor):
     ()
 
   def deleteExpired(now: OffsetDateTime): Int = transact(xa):
-    sql"delete from sessions where expires_at < $now".update.run()
+    // Uses to_timestamp to avoid memgres's broken < comparison with
+    // OffsetDateTime parameters.  epoch-second comparison sidesteps the
+    // timestamptz wire-format issue entirely.
+    sql"delete from sessions where expires_at < to_timestamp(${now.toEpochSecond})".update
+      .run()

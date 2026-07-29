@@ -119,7 +119,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 | HTTP server | tapir-jdkhttp-server (`Identity` interpreter) on a virtual-thread executor |
 | HTTP client | sttp (backend: Luxmed + Telegram; frontend: Tapir-derived API client) |
 | Frontend UI | Laminar |
-| Database | PostgreSQL, Flyway migrations; Magnum over blocking JDBC on virtual threads |
+| Database | PostgreSQL (embedded via memgres by default, zonky embedded-postgres opt-in), Flyway migrations; Magnum over blocking JDBC on virtual threads |
 | JSON | jsoniter-scala (Scala 3-native, cross-compiles to Scala.js) |
 
 **Verified versions** (checked against Maven Central 2026-07-27; all three platforms confirmed published where needed):
@@ -137,7 +137,8 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 | Magnum | 2.0.0-M3 | milestone only — accepted |
 | Flyway | 11.8.2 | |
 | PostgreSQL JDBC | 42.7.7 | |
-| Testcontainers | 1.21.3 | |
+| Memgres | 0.2.4 | in-memory PG-compatible engine (default embedded DB) |
+| Zonky embedded-postgres | 2.2.2 | real PostgreSQL binary (opt-in: `EMBEDDED_DB=zonky`) |
 | MUnit | 1.3.4 | |
 | argon2-jvm | 2.12 | |
 | logback-classic | 1.6.0 | |
@@ -389,7 +390,7 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   login loop. It is opt-in and never runs in CI, but one successful required
   exploration is completion evidence for Plan 3; the optional lock/release
   result is recorded separately.
-- **Backend API:** integration tests with real Postgres (Testcontainers) against Tapir endpoints in-process.
+- **Backend API:** integration tests with an embedded PostgreSQL-compatible database (memgres by default, zonky embedded-postgres opt-in) against Tapir endpoints in-process.
 - **Frontend:** domain logic unit-tested; minimal DOM smoke tests in v1.
 - TDD throughout; CI runs everything on every push.
 

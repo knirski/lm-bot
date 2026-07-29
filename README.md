@@ -17,7 +17,9 @@ Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
 - **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
   to WebAssembly via Scala.js + JSPI.
 - **No external PostgreSQL needed.**  The dev server and tests use an embedded
-  PostgreSQL via zonky embedded-postgres — real PG, no container, no setup.
+  PostgreSQL-compatible database — [memgres](https://github.com/lhgravendeel/memgres)
+  by default (in-memory, no native binaries, millisecond startup), or zonky
+  embedded-postgres when you set `EMBEDDED_DB=zonky`.
 
 Node's version is not a preference: Node 24 and 25 contain a V8 bug that
 stack-overflows in the nested async contexts Gears relies on. The flake pins

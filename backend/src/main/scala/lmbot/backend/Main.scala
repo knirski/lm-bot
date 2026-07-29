@@ -4,11 +4,11 @@ import java.time.OffsetDateTime
 
 import scala.jdk.CollectionConverters.*
 
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import lmbot.backend.auth.{AdminBootstrap, AuthService}
 import lmbot.backend.config.Config
 import lmbot.backend.db.{Database, SessionRepo, UserRepo}
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, Server, StaticRoutes}
+import lmbot.backend.support.EmbeddedDb
 import lmbot.backend.support.EmbeddedPg
 import org.slf4j.LoggerFactory
 
@@ -26,14 +26,13 @@ object Main:
         sys.exit(1)
 
       case Right(config) =>
-        // Start embedded PostgreSQL in dev mode (EMBEDDED_PG env var set by
-        // build.sbt's Compile / envVars).  The shutdown hook stops PG when the
-        // JVM exits.
+        // Start embedded database in dev mode (EMBEDDED_PG env var set by
+        // build.sbt's Compile / envVars).  The shutdown hook stops it when the
+        // JVM exits.  Uses memgres by default; set EMBEDDED_DB=zonky for the
+        // real PostgreSQL binary.
         if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
-          log.info("Starting embedded PostgreSQL on port 15432")
-          val pg = EmbeddedPg.startForDev(
-            EmbeddedPostgres.builder().setPort(15432)
-          )
+          log.info("Starting embedded database on port 15432")
+          val pg: EmbeddedDb = EmbeddedPg.startForDev(15432)
           Runtime.getRuntime.addShutdownHook(Thread(() => pg.close()))
 
         val ds = Database.dataSource(

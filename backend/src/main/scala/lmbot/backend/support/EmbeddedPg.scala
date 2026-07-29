@@ -1,55 +1,54 @@
 package lmbot.backend.support
 
-import java.sql.{DriverManager, SQLException}
-
-import scala.sys.process.*
+import java.sql.{Connection, DriverManager, SQLException}
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 
-private[support] enum BootstrapObject(val duplicateSqlState: String):
-  case Role extends BootstrapObject("42710")
-  case Database extends BootstrapObject("42P04")
-
-  def isAlreadyExists(error: SQLException): Boolean =
-    error.getSQLState == duplicateSqlState
-
-/** Embedded PostgreSQL starter with support for NixOS via `patchelf`.
+/** Factory for embedded PostgreSQL-compatible databases.
   *
-  * On most platforms the downloaded PG binaries work out of the box. On NixOS
-  * without `nix-ld` they fail with a dynamic-linker error. If `patchelf` is
-  * available we fix the interpreter and retry once.
+  * The default backend is [[MemgresBackend]] — an in-memory engine with no
+  * native binary, no Docker, millisecond startup. Set `EMBEDDED_DB=zonky` to
+  * fall back to the real PostgreSQL binary (zonky embedded-postgres).
   *
-  * The proper NixOS fix is `programs.nix-ld.enable = true` in your
-  * configuration.nix — no patching needed after that.
+  * Both backends are bootstrapped identically when `startForDev` is used: a
+  * `lmbot` role and database are created so the application can connect with
+  * its default credentials.
   */
 object EmbeddedPg:
 
-  /** Start embedded PostgreSQL on the given builder. Connects as the postgres
-    * superuser and bootstraps the application role and database (idempotent),
-    * so callers can immediately connect as `lmbot`/`lmbot` to the `lmbot`
-    * database.
-    *
-    * This is the variant to use in dev mode (sbt startDev). Tests that want a
-    * plain cluster with only the default superuser should call `start`.
+  private enum Backend:
+    case Memgres, Zonky
+
+  private def resolveBackend: Backend =
+    sys.env.get("EMBEDDED_DB") match
+      case Some("zonky") => Backend.Zonky
+      case _             => Backend.Memgres
+
+  /** Start the embedded database (dev mode). Bootstraps the `lmbot` role and
+    * `lmbot` database so callers can connect with the application defaults
+    * (`lmbot` / `lmbot` on database `lmbot`).
     */
-  def startForDev(builder: EmbeddedPostgres.Builder): EmbeddedPostgres =
-    val pg = start(builder)
-    bootstrap(pg)
-    pg
+  def startForDev(port: Int): EmbeddedDb =
+    val db = start(port)
+    bootstrap(db)
+    db
 
-  def start(builder: EmbeddedPostgres.Builder): EmbeddedPostgres =
-    try builder.start()
-    catch
-      case e: IllegalStateException
-          if e.getMessage != null && e.getMessage.contains("initdb") =>
-        patchAndRetry(builder)
+  /** Start the embedded database without bootstrapping. The returned database
+    * has only the default superuser and default database.
+    */
+  def start(port: Int): EmbeddedDb =
+    resolveBackend match
+      case Backend.Memgres => MemgresBackend.start(port)
+      case Backend.Zonky   => ZonkyBackend.start(port)
 
-  private def bootstrap(pg: EmbeddedPostgres): Unit =
-    val conn = DriverManager.getConnection(
-      pg.getJdbcUrl("postgres", "postgres"),
-      "postgres",
-      "postgres"
-    )
+  // ---------------------------------------------------------------------------
+  // Bootstrap – idempotent role/database creation
+  // ---------------------------------------------------------------------------
+
+  private def bootstrap(db: EmbeddedDb): Unit =
+    bootstrap(getSuperConnection(db))
+
+  private def bootstrap(conn: Connection): Unit =
     try
       try
         conn
@@ -58,27 +57,31 @@ object EmbeddedPg:
             "CREATE ROLE lmbot WITH LOGIN PASSWORD 'lmbot'"
           )
       catch
-        case error: SQLException
-            if BootstrapObject.Role.isAlreadyExists(error) =>
-          ()
-      try
-        conn
-          .createStatement()
-          .execute(
-            "CREATE DATABASE lmbot OWNER lmbot"
-          )
+        case e: SQLException if e.getSQLState == "42710" =>
+          () // duplicate object
+      try conn.createStatement().execute("CREATE DATABASE lmbot OWNER lmbot")
       catch
-        case error: SQLException
-            if BootstrapObject.Database.isAlreadyExists(error) =>
-          ()
+        case e: SQLException if e.getSQLState == "42P04" =>
+          () // duplicate database
     finally conn.close()
 
-  private def patchAndRetry(
+  private def getSuperConnection(db: EmbeddedDb): Connection =
+    DriverManager.getConnection(db.jdbcUrl, db.username, db.password)
+
+  // ---------------------------------------------------------------------------
+  // Zonky-specific: patchelf support for NixOS
+  // ---------------------------------------------------------------------------
+
+  /** Retry after fixing the dynamic linker on NixOS (zonky only). */
+  private[support] def patchAndRetry(
       builder: EmbeddedPostgres.Builder
   ): EmbeddedPostgres =
+    import scala.sys.process.*
+
     val patchelf = try
       Seq("/bin/sh", "-c", "command -v patchelf 2>/dev/null").!!.trim
     catch case _: Exception => ""
+
     if patchelf.nonEmpty then
       applyPatchelf(patchelf)
       builder.start()
@@ -88,6 +91,8 @@ object EmbeddedPg:
       )
 
   private def applyPatchelf(patchelf: String): Unit =
+    import scala.sys.process.*
+
     try
       val ld = Seq(
         "/bin/sh",
