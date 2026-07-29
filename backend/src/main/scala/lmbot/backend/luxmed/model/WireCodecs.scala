@@ -208,7 +208,7 @@ object WireCodecs:
               in.isNextToken(',')
             do ()
             builder.result()
-        else null.asInstanceOf[List[ServiceVariant]]
+        else in.readNullOrTokenError(List.empty[ServiceVariant], '[')
 
       def encodeValue(x: List[ServiceVariant], out: JsonWriter): Unit =
         out.writeArrayStart()
