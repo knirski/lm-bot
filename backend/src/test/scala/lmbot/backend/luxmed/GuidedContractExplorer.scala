@@ -67,15 +67,21 @@ object GuidedContractExplorer:
       )
       sys.exit(1)
 
-    // Check spike counter
-    if Files.exists(spikeCounter) then
-      val count = Files.readString(spikeCounter).trim.toInt
-      if count >= 2 then
-        System.err.println(
-          "ERROR: Contract exploration already performed twice. " +
-            "Reset the counter at ~/.lm-bot/spike/contract-exploration-count to re-run."
-        )
-        sys.exit(1)
+    // Check spike counter — read with absent-file default, reject at limit,
+    // then persist the incremented count before the first live request
+    val currentCount =
+      if Files.exists(spikeCounter) then
+        try Files.readString(spikeCounter).trim.toInt
+        catch case _: NumberFormatException => 0
+      else 0
+    if currentCount >= 2 then
+      System.err.println(
+        "ERROR: Contract exploration already performed twice. " +
+          "Reset the counter at ~/.lm-bot/spike/contract-exploration-count to re-run."
+      )
+      sys.exit(1)
+    Files.createDirectories(spikeCounter.getParent)
+    Files.writeString(spikeCounter, (currentCount + 1).toString)
 
     println("=" * 70)
     println("  LUXMED GUIDED CONTRACT EXPLORER")
