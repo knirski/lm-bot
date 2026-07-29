@@ -1,7 +1,15 @@
 package lmbot.backend.support
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import java.sql.{DriverManager, SQLException}
 import scala.sys.process.*
+
+private[support] enum BootstrapObject(val duplicateSqlState: String):
+  case Role extends BootstrapObject("42710")
+  case Database extends BootstrapObject("42P04")
+
+  def isAlreadyExists(error: SQLException): Boolean =
+    error.getSQLState == duplicateSqlState
 
 /** Embedded PostgreSQL starter with support for NixOS via `patchelf`.
   *
@@ -35,25 +43,32 @@ object EmbeddedPg:
         patchAndRetry(builder)
 
   private def bootstrap(pg: EmbeddedPostgres): Unit =
-    val conn = java.sql.DriverManager.getConnection(
+    val conn = DriverManager.getConnection(
       pg.getJdbcUrl("postgres", "postgres"),
       "postgres",
       "postgres"
     )
     try
-      conn
-        .createStatement()
-        .execute(
-          "CREATE ROLE lmbot WITH LOGIN PASSWORD 'lmbot'"
-        )
-    catch case _: java.sql.SQLException => ()
-    try
-      conn
-        .createStatement()
-        .execute(
-          "CREATE DATABASE lmbot OWNER lmbot"
-        )
-    catch case _: java.sql.SQLException => ()
+      try
+        conn
+          .createStatement()
+          .execute(
+            "CREATE ROLE lmbot WITH LOGIN PASSWORD 'lmbot'"
+          )
+      catch
+        case error: SQLException
+            if BootstrapObject.Role.isAlreadyExists(error) =>
+          ()
+      try
+        conn
+          .createStatement()
+          .execute(
+            "CREATE DATABASE lmbot OWNER lmbot"
+          )
+      catch
+        case error: SQLException
+            if BootstrapObject.Database.isAlreadyExists(error) =>
+          ()
     finally conn.close()
 
   private def patchAndRetry(

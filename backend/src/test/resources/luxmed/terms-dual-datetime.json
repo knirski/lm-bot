@@ -1,0 +1,41 @@
+{
+  "correlationId":"00000000-0000-0000-0000-000000000000",
+  "termsForService":{
+    "additionalData":{"isPreparationRequired":false,"preparationItems":[]},
+    "termsForDays":[{
+      "day":"2026-08-03T00:00:00",
+      "terms":[
+        {
+          "clinic":"LX Warszawa",
+          "clinicId":10,
+          "clinicGroupId":11,
+          "dateTimeFrom":"2026-08-03T09:00:00",
+          "dateTimeTo":"2026-08-03T09:15:00",
+          "doctor":{"academicTitle":"lek.","firstName":"Anna","genderId":2,"id":20,"lastName":"Nowak"},
+          "impedimentText":"",
+          "isAdditional":false,
+          "isImpediment":false,
+          "isTelemedicine":false,
+          "roomId":30,
+          "scheduleId":40,
+          "serviceId":50
+        },
+        {
+          "clinic":"LX Warszawa",
+          "clinicId":10,
+          "clinicGroupId":11,
+          "dateTimeFrom":"2026-08-03T10:00:00+02:00",
+          "dateTimeTo":"2026-08-03T10:15:00+02:00",
+          "doctor":{"academicTitle":"lek.","firstName":"Jan","genderId":1,"id":21,"lastName":"Kowalski"},
+          "impedimentText":null,
+          "isAdditional":false,
+          "isImpediment":false,
+          "isTelemedicine":false,
+          "roomId":31,
+          "scheduleId":41,
+          "serviceId":50
+        }
+      ]
+    }]
+  }
+}

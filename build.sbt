@@ -141,7 +141,7 @@ lazy val backend = project
       "ch.qos.logback" % "logback-classic" % Vlogback,
       "io.zonky.test" % "embedded-postgres" % VembeddedPg,
       "org.scalameta" %% "munit" % Vmunit % Test,
-      "com.softwaremill.sttp.client3" %% "core" % Vsttp % Test
+      "com.softwaremill.sttp.client3" %% "core" % Vsttp
     ),
     // Each test suite manages its own embedded PostgreSQL on a random port
     // (fully isolated).  Suites run serially because they share the embedded-postgres

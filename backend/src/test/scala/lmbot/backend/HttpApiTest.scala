@@ -6,18 +6,19 @@ import lmbot.backend.db.{SessionRepo, UserRepo}
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, Server}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.domain.Role
+import com.sun.net.httpserver.HttpServer
 import sttp.client3.*
 import sttp.model.{StatusCode, Uri}
 
 import java.time.{Duration, OffsetDateTime}
+import scala.compiletime.uninitialized
 
 /** Drives the real server over real HTTP against real Postgres. */
 class HttpApiTest extends PostgresSuite:
 
   private val ttl = Duration.ofDays(7)
-  private var server: com.sun.net.httpserver.HttpServer =
-    scala.compiletime.uninitialized
-  private var baseUri: Uri = scala.compiletime.uninitialized
+  private var server: HttpServer = uninitialized
+  private var baseUri: Uri = uninitialized
   private val http = HttpClientSyncBackend()
 
   override def beforeEach(context: BeforeEach): Unit =

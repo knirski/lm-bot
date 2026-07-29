@@ -16,6 +16,7 @@ case class Config(
     httpPort: Int,
     cookieSecure: Boolean,
     sessionTtl: Duration,
+    luxmedAppVersion: String,
     adminUsername: Option[String],
     adminPassword: Option[Secret]
 )
@@ -57,6 +58,14 @@ object Config:
     val secure = bool("COOKIE_SECURE", true)
     val ttlDays = int("SESSION_TTL_DAYS", 7)
 
+    val luxmedAppVersion =
+      env.get("LUXMED_APP_VERSION") match
+        case None                          => "4.44.0"
+        case Some(value) if value.nonEmpty => value
+        case Some(_)                       =>
+          errors += "LUXMED_APP_VERSION must not be empty"
+          "4.44.0"
+
     val built = errors.result()
     if built.nonEmpty then Left(built)
     else
@@ -69,6 +78,7 @@ object Config:
           httpPort = port,
           cookieSecure = secure,
           sessionTtl = Duration.ofDays(ttlDays.toLong),
+          luxmedAppVersion = luxmedAppVersion,
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
             env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply)

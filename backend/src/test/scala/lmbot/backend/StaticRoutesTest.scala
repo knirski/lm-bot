@@ -1,15 +1,16 @@
 package lmbot.backend
 
+import com.sun.net.httpserver.HttpServer
 import lmbot.backend.http.{Server, StaticRoutes}
 import sttp.client3.*
 import sttp.model.StatusCode
 import sttp.model.Uri
+import scala.compiletime.uninitialized
 
 class StaticRoutesTest extends munit.FunSuite:
 
-  private var server: com.sun.net.httpserver.HttpServer =
-    scala.compiletime.uninitialized
-  private var baseUri: Uri = scala.compiletime.uninitialized
+  private var server: HttpServer = uninitialized
+  private var baseUri: Uri = uninitialized
   private val http = HttpClientSyncBackend()
 
   override def beforeAll(): Unit =

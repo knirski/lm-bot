@@ -1,15 +1,16 @@
 package lmbot.frontend
 
+import lmbot.frontend.api.ApiClient
 import lmbot.shared.api.ApiError
 import lmbot.shared.domain.{Role, UserView}
+import sttp.model.Uri
 
 /** `update` is pure, so this whole suite runs with no DOM and no runtime. */
 class UpdateTest extends munit.FunSuite:
 
   // ApiClient's backend is lazy, so this never touches fetch: these tests
   // exercise `update` alone and no effect is ever run.
-  private val api =
-    lmbot.frontend.api.ApiClient(sttp.model.Uri.unsafeParse("http://localhost"))
+  private val api = ApiClient(Uri.unsafeParse("http://localhost"))
   private val update = Update(api)
 
   private val alice =

@@ -56,6 +56,23 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.adminPassword, Some(Secret("hunter2")))
       case Left(errs) => fail(s"expected success, got $errs")
 
+  test("Luxmed app version defaults to the measured refresh-compatible floor"):
+    val Right(config) = Config.fromEnv(minimal): @unchecked
+    assertEquals(config.luxmedAppVersion, "4.44.0")
+
+  test("Luxmed app version is configurable without changing the client"):
+    val Right(config) =
+      Config.fromEnv(
+        minimal.updated("LUXMED_APP_VERSION", "4.45.1")
+      ): @unchecked
+    assertEquals(config.luxmedAppVersion, "4.45.1")
+
+  test("an empty Luxmed app version is rejected"):
+    val result = Config.fromEnv(minimal.updated("LUXMED_APP_VERSION", ""))
+    assert(
+      result.left.exists(_.contains("LUXMED_APP_VERSION must not be empty"))
+    )
+
   test("secrets are wrapped so their value is reachable but not rendered"):
     val Right(c) = Config.fromEnv(minimal): @unchecked
     assertEquals(c.dbPassword.value, "secret")
