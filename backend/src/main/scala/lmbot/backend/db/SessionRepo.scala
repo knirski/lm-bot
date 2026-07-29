@@ -23,8 +23,10 @@ class SessionRepo(xa: Transactor):
     ()
 
   def deleteExpired(now: OffsetDateTime): Int = transact(xa):
-    // Uses to_timestamp to avoid memgres's broken < comparison with
-    // OffsetDateTime parameters.  epoch-second comparison sidesteps the
+    // Use to_timestamp to avoid memgres's broken < comparison with
+    // OffsetDateTime parameters.  Millisecond precision via Double avoids
+    // truncating sub-second expiry differences while sidestepping the
     // timestamptz wire-format issue entirely.
-    sql"delete from sessions where expires_at < to_timestamp(${now.toEpochSecond})".update
+    val epochSeconds = now.toInstant.toEpochMilli.toDouble / 1000.0
+    sql"delete from sessions where expires_at < to_timestamp($epochSeconds)".update
       .run()
