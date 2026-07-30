@@ -28,9 +28,20 @@ abstract class PostgresSuite extends munit.FunSuite:
 
   override def beforeEach(context: BeforeEach): Unit =
     val pg = EmbeddedPg.startForTest(port = 0) // OS-assigned port
-    val ds = Database.dataSource(pg.jdbcUrl, pg.username, pg.password)
-    Database.migrate(ds)
-    currentDb.set(TestDb(pg, ds, Database.transactor(ds)))
+    val ds =
+      try Database.dataSource(pg.jdbcUrl, pg.username, pg.password)
+      catch
+        case t: Throwable =>
+          pg.close()
+          throw t
+    try
+      Database.migrate(ds)
+      currentDb.set(TestDb(pg, ds, Database.transactor(ds)))
+    catch
+      case t: Throwable =>
+        try ds.close()
+        finally pg.close()
+        throw t
     ()
 
   override def afterEach(context: AfterEach): Unit =
