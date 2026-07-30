@@ -20,6 +20,7 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.cookieSecure, true)
         assertEquals(c.sessionTtl.toDays, 7L)
         assertEquals(c.adminUsername, None)
+        assertEquals(c.masterKey.bytes.length, 32)
       case Left(errs) => fail(s"expected success, got $errs")
 
   test("missing required variables are all reported at once"):
@@ -29,6 +30,10 @@ class ConfigTest extends munit.FunSuite:
         assert(errors.exists(_.contains("DATABASE_URL")))
         assert(errors.exists(_.contains("DATABASE_USER")))
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
+        assert(
+          errors.exists(_.contains("LMBOT_MASTER_KEY")),
+          s"missing LMBOT_MASTER_KEY error: $errors"
+        )
         assert(errors.exists(_.contains("LMBOT_MASTER_KEY")))
 
   test("port and secure-cookie flag are overridable"):

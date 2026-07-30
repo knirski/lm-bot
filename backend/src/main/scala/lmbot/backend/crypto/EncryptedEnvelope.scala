@@ -20,7 +20,7 @@ final case class EncryptedEnvelope(
     val enc = Base64.getUrlEncoder.withoutPadding()
     s"v1.${enc.encodeToString(nonce)}.${enc.encodeToString(ciphertextAndTag)}"
 
-  override def toString: String = s"EncryptedEnvelope(${render.take(50)}...)"
+  override def toString: String = "EncryptedEnvelope(***)"
 
 object EncryptedEnvelope:
 
@@ -53,5 +53,5 @@ object EncryptedEnvelope:
   ): Either[CryptoError.DecodeFailed, Array[Byte]] =
     try Right(Base64.getUrlDecoder.decode(part))
     catch
-      case e: IllegalArgumentException =>
-        Left(CryptoError.DecodeFailed(s"invalid base64url: ${e.getMessage}"))
+      case _: IllegalArgumentException =>
+        Left(CryptoError.DecodeFailed("invalid base64url"))
