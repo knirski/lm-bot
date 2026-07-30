@@ -1,7 +1,7 @@
 create sequence luxmed_account_id_seq;
 
 create table luxmed_accounts (
-    id                    bigint primary key,
+    id                    bigint primary key default nextval('luxmed_account_id_seq'),
     owner_user_id         bigint not null references users(id) on delete cascade,
     label                 text not null,
     luxmed_username       text not null,
@@ -22,7 +22,7 @@ create index idx_luxmed_accounts_owner_user_id on luxmed_accounts (owner_user_id
 create sequence monitor_id_seq;
 
 create table monitors (
-    id                    bigint primary key,
+    id                    bigint primary key default nextval('monitor_id_seq'),
     luxmed_account_id     bigint not null references luxmed_accounts(id) on delete cascade,
     name                  text not null,
     city_id               bigint not null,
