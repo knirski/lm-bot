@@ -1,6 +1,6 @@
 package lmbot.backend.account
 
-import java.time.OffsetDateTime
+import java.time.{OffsetDateTime, ZoneId}
 import java.util.UUID
 
 import gears.async.Async
@@ -26,7 +26,8 @@ final class AccountService(
     clients: AccountClientFactory,
     crypto: AesGcm,
     uuidGenerator: () => UUID = () => UUID.randomUUID(),
-    now: () => OffsetDateTime = () => OffsetDateTime.now()
+    now: () => OffsetDateTime = () =>
+      OffsetDateTime.now(ZoneId.of("Europe/Warsaw"))
 ):
   def link(ownerId: Long, request: LinkAccountRequest)(using
       Async
