@@ -64,8 +64,14 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
           jwtToken = "JWT_TOKEN_1",
           expiresIn = 599
         )
-        .foreach: (status, headers, body) =>
-          mock.enqueue(MockResponse(status, headers.groupMap(_._1)(_._2), body))
+        .foreach: response =>
+          mock.enqueue(
+            MockResponse(
+              response.status,
+              response.headers.groupMap(_._1)(_._2),
+              response.body
+            )
+          )
 
       val authResult = runAsync:
         client.authenticate()
@@ -82,8 +88,14 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
           jwtToken = "JWT_TOKEN_2",
           sessionCookie = "ASP.NET_SessionId=sess2"
         )
-        .foreach: (status, headers, body) =>
-          mock.enqueue(MockResponse(status, headers.groupMap(_._1)(_._2), body))
+        .foreach: response =>
+          mock.enqueue(
+            MockResponse(
+              response.status,
+              response.headers.groupMap(_._1)(_._2),
+              response.body
+            )
+          )
 
       fake.advance(java.time.Duration.ofSeconds(301))
       val refreshResult = runAsync:

@@ -31,5 +31,6 @@ abstract class PostgresSuite extends munit.FunSuite:
 
   override def beforeEach(context: BeforeEach): Unit =
     transact(xa):
-      sql"truncate table sessions, users restart identity cascade".update.run()
+      sql"truncate table monitors, luxmed_accounts, sessions, users restart identity cascade".update
+        .run()
     ()
