@@ -30,11 +30,11 @@ class ConfigTest extends munit.FunSuite:
         assert(errors.exists(_.contains("DATABASE_URL")))
         assert(errors.exists(_.contains("DATABASE_USER")))
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
-        assert(
-          errors.exists(_.contains("LMBOT_MASTER_KEY")),
+        assertEquals(
+          errors.count(_.contains("LMBOT_MASTER_KEY")),
+          1,
           s"missing LMBOT_MASTER_KEY error: $errors"
         )
-        assert(errors.exists(_.contains("LMBOT_MASTER_KEY")))
 
   test("port and secure-cookie flag are overridable"):
     val env = minimal ++ Map(

@@ -75,14 +75,14 @@ object Config:
       case Left(msg) => errors += s"LUXMED_APP_VERSION: $msg"
       case _         => ()
 
-    // Parse and validate master key
+    // Validate master key at the configuration boundary.
     val masterKeyRaw = required("LMBOT_MASTER_KEY")
     val parsedMasterKey =
-      if masterKeyRaw.nonEmpty then MasterKey.fromBase64(masterKeyRaw)
-      else Left("LMBOT_MASTER_KEY is required")
-    parsedMasterKey match
-      case Left(msg) => errors += msg
-      case _         => ()
+      if masterKeyRaw.nonEmpty then
+        MasterKey.fromBase64(masterKeyRaw) match
+          case Left(msg)  => errors += msg; None
+          case Right(key) => Some(key)
+      else None
 
     val built = errors.result()
     if built.nonEmpty then Left(built)
@@ -101,6 +101,6 @@ object Config:
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
             env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply),
-          masterKey = parsedMasterKey.toOption.get
+          masterKey = parsedMasterKey.get
         )
       )
