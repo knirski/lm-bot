@@ -18,7 +18,8 @@ case class Config(
     sessionTtl: Duration,
     luxmedAppVersion: AppVersion,
     adminUsername: Option[String],
-    adminPassword: Option[Secret]
+    adminPassword: Option[Secret],
+    masterKey: MasterKey
 )
 
 object Config:
@@ -74,6 +75,15 @@ object Config:
       case Left(msg) => errors += s"LUXMED_APP_VERSION: $msg"
       case _         => ()
 
+    // Parse and validate master key
+    val masterKeyRaw = required("LMBOT_MASTER_KEY")
+    val parsedMasterKey =
+      if masterKeyRaw.nonEmpty then MasterKey.fromBase64(masterKeyRaw)
+      else Left("LMBOT_MASTER_KEY is required")
+    parsedMasterKey match
+      case Left(msg) => errors += msg
+      case _         => ()
+
     val built = errors.result()
     if built.nonEmpty then Left(built)
     else
@@ -90,6 +100,7 @@ object Config:
             AppVersion.fromString(luxmedAppVersion).toOption.get,
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
-            env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply)
+            env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply),
+          masterKey = parsedMasterKey.toOption.get
         )
       )

@@ -54,6 +54,7 @@ Override the database for external PG by setting `DATABASE_URL` in the shell:
 | `DATABASE_USER` / `PASSWORD` | `lmbot` / `lmbot` | `build.sbt` (overridable) |
 | `COOKIE_SECURE` | `false` (plain-HTTP safe) | `build.sbt` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` | `build.sbt` |
+| `LMBOT_MASTER_KEY` | dev-only fixed key | `build.sbt` | run `openssl rand -base64 32` for production |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` | `build.sbt` |
 
 Override any variable from the shell — the forked JVM inherits it:
@@ -102,6 +103,7 @@ suite passed". `testFull` runs the full suite unconditionally.
 | `HTTP_PORT` | no | `8080` | bind port |
 | `COOKIE_SECURE` | no | `true` | set `false` only for plain-HTTP local dev |
 | `SESSION_TTL_DAYS` | no | `7` | session lifetime |
+| `LMBOT_MASTER_KEY` | yes | — | standard Base64-encoded 32-byte AES key; run `openssl rand -base64 32` to generate |
 | `ADMIN_USERNAME` | no | — | read **only** when the `users` table is empty |
 | `ADMIN_PASSWORD` | no | — | as above |
 

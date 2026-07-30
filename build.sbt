@@ -172,7 +172,12 @@ lazy val backend = project
       "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
       "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
       "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
-      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7")
+      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
+      // Dev-only 32-byte key — run `openssl rand -base64 32` for production
+      "LMBOT_MASTER_KEY" -> sys.env.getOrElse(
+        "LMBOT_MASTER_KEY",
+        "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
+      )
     ),
 
     // Watch frontend and shared sources too, so `~backend/run` restarts on

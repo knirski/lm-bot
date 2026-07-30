@@ -7,7 +7,8 @@ class ConfigTest extends munit.FunSuite:
   private val minimal = Map(
     "DATABASE_URL" -> "jdbc:postgresql://localhost:5432/lmbot",
     "DATABASE_USER" -> "lmbot",
-    "DATABASE_PASSWORD" -> "secret"
+    "DATABASE_PASSWORD" -> "secret",
+    "LMBOT_MASTER_KEY" -> "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
   )
 
   test("a minimal environment yields a config with sensible defaults"):
@@ -28,6 +29,7 @@ class ConfigTest extends munit.FunSuite:
         assert(errors.exists(_.contains("DATABASE_URL")))
         assert(errors.exists(_.contains("DATABASE_USER")))
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
+        assert(errors.exists(_.contains("LMBOT_MASTER_KEY")))
 
   test("port and secure-cookie flag are overridable"):
     val env = minimal ++ Map(
@@ -100,3 +102,17 @@ class ConfigTest extends munit.FunSuite:
       minimal.updated("LUXMED_APP_VERSION", "not-a-version")
     )
     assert(result.left.exists(_.exists(_.contains("AppVersion"))))
+
+  test("master key must decode to exactly 32 bytes"):
+    val good = Config.fromEnv(minimal)
+    assert(good.isRight, s"expected success, got $good")
+
+    val tooShort = Config.fromEnv(
+      minimal.updated("LMBOT_MASTER_KEY", "c2hvcnQ=")
+    )
+    assert(tooShort.isLeft, "too-short key must be rejected")
+
+    val invalidB64 = Config.fromEnv(
+      minimal.updated("LMBOT_MASTER_KEY", "!!!not-valid-base64!!!")
+    )
+    assert(invalidB64.isLeft, "invalid base64 must be rejected")
