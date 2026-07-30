@@ -10,21 +10,37 @@ import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.support.{
   FakeTime,
   GearsTest,
-  MockLuxmedServer,
-  RecordedRequest
+  LuxmedResponseScripts,
+  StubLuxmedBackend
 }
+import sttp.client3.Request
 import sttp.model.Uri
 
 class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
 
   private val testUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
 
-  private def header(
-      request: RecordedRequest,
+  private val testConfig = LuxmedConfig(
+    oldApi = Uri.unsafeParse("http://localhost:1/PatientPortalMobileAPI/api"),
+    newApi = Uri.unsafeParse("http://localhost:1/PatientPortal"),
+    appVersion = AppVersion.unsafeFromString("4.44.0"),
+    deviceUuid = testUuid
+  )
+
+  private def requestPath(request: Request[?, ?]): String =
+    "/" + request.uri.path.mkString("/")
+
+  private def requestQuery(request: Request[?, ?]): String =
+    request.uri.paramsMap.toList
+      .map { case (k, v) => s"$k=$v" }
+      .sorted
+      .mkString("&")
+
+  private def requestHeader(
+      request: Request[?, ?],
       name: String
   ): Option[String] =
-    request.headers.collectFirst:
-      case (key, values) if key.equalsIgnoreCase(name) => values.head
+    request.headers.find(_.name.equalsIgnoreCase(name)).map(_.value)
 
   private def fixture(name: String): String =
     val path = s"/luxmed/$name"
@@ -34,50 +50,45 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
     finally is.close()
 
   private def withClient[T](
-      body: (LuxmedClient, MockLuxmedServer, FakeTime) => T
+      body: (LuxmedClient, StubLuxmedBackend, FakeTime) => T
   ): T =
-    val mock = MockLuxmedServer()
-    try
-      val config = LuxmedConfig(
-        oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
-        newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = AppVersion.unsafeFromString("4.44.0"),
-        deviceUuid = testUuid
-      )
-      val transport = LuxmedTransport(config)
-      val credentials = Credentials("user@example.com", Secret("password123"))
-      val fake = FakeTime()
-      val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
-      val client = LuxmedClient(
-        transport,
-        credentials,
-        gate,
-        InMemorySessionStore(),
-        now = () => fake.now()
-      )
-      body(client, mock, fake)
-    finally mock.close()
+    val stub = StubLuxmedBackend()
+    val transport = LuxmedTransport.withBackend(testConfig, stub.backend)
+    val credentials = Credentials("user@example.com", Secret("password123"))
+    val fake = FakeTime()
+    val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
+    val client = LuxmedClient(
+      transport,
+      credentials,
+      gate,
+      InMemorySessionStore(),
+      now = () => fake.now()
+    )
+    body(client, stub, fake)
 
-  /** Authenticate and return the client + mock for further operations. */
+  /** Authenticate and return the client + stub for further operations. */
   private def withAuthenticatedClient[T](
-      body: (LuxmedClient, MockLuxmedServer, FakeTime) => T
+      body: (LuxmedClient, StubLuxmedBackend, FakeTime) => T
   ): T =
-    withClient: (client, mock, fake) =>
-      mock.enqueueRealisticAuthFlow(
-        accessToken = "ACCESS_1",
-        refreshToken = "REFRESH_1",
-        jwtToken = "JWT_TOKEN_1",
-        expiresIn = 599
-      )
+    withClient: (client, stub, fake) =>
+      LuxmedResponseScripts
+        .realisticAuthFlow(
+          accessToken = "ACCESS_1",
+          refreshToken = "REFRESH_1",
+          jwtToken = "JWT_TOKEN_1",
+          expiresIn = 599
+        )
+        .foreach: (status, headers, body) =>
+          stub.enqueue(status, headers, body)
       runAsync:
         client.authenticate()
-      body(client, mock, fake)
+      body(client, stub, fake)
 
   // -- Dictionary tests --
 
   test("cities hits the correct path and uses JWT auth"):
-    withAuthenticatedClient: (client, mock, _) =>
-      mock.enqueue(
+    withAuthenticatedClient: (client, stub, _) =>
+      stub.enqueue(
         status = 200,
         body = fixture("cities.json")
       )
@@ -85,17 +96,17 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         client.cities()
       assert(result.isRight, s"expected success, got $result")
       assertEquals(
-        mock.requests.last.path,
+        requestPath(stub.requests.last),
         "/PatientPortal/NewPortal/Dictionary/cities"
       )
       assertEquals(
-        header(mock.requests.last, "Authorization-Token"),
+        requestHeader(stub.requests.last, "Authorization-Token"),
         Some("Bearer JWT_TOKEN_1")
       )
 
   test("serviceVariants hits the correct path"):
-    withAuthenticatedClient: (client, mock, _) =>
-      mock.enqueue(
+    withAuthenticatedClient: (client, stub, _) =>
+      stub.enqueue(
         status = 200,
         body = fixture("service-variants.json")
       )
@@ -103,13 +114,13 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         client.serviceVariants()
       assert(result.isRight, s"expected success, got $result")
       assertEquals(
-        mock.requests.last.path,
+        requestPath(stub.requests.last),
         "/PatientPortal/NewPortal/Dictionary/serviceVariantsGroups"
       )
 
   test("facilitiesAndDoctors passes cityId and serviceVariantId"):
-    withAuthenticatedClient: (client, mock, _) =>
-      mock.enqueue(
+    withAuthenticatedClient: (client, stub, _) =>
+      stub.enqueue(
         status = 200,
         body = fixture("facilities-and-doctors.json")
       )
@@ -119,17 +130,17 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
           serviceVariantId = ServiceVariantId(4502)
         )
       assert(result.isRight, s"expected success, got $result")
-      val req = mock.requests.last
       assertEquals(
-        req.path,
+        requestPath(stub.requests.last),
         "/PatientPortal/NewPortal/Dictionary/facilitiesAndDoctors"
       )
-      assertEquals(req.rawQuery, Some("cityId=70&serviceVariantId=4502"))
+      val query = requestQuery(stub.requests.last)
+      assertEquals(query, "cityId=70&serviceVariantId=4502")
 
   // -- Terms search tests --
 
   test("full terms search query contains expected parameters"):
-    withAuthenticatedClient: (client, mock, _) =>
+    withAuthenticatedClient: (client, stub, _) =>
       val query = TermsQuery(
         cityId = CityId(70),
         serviceVariantId = ServiceVariantId(4502),
@@ -139,7 +150,7 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         facilityIds = Some(FacilityId(78)),
         doctorIds = Some(DoctorId(111111))
       )
-      mock.enqueue(
+      stub.enqueue(
         status = 200,
         body = fixture("terms-dual-datetime.json")
       )
@@ -147,34 +158,35 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         client.searchTerms(query)
       assert(result.isRight, s"expected success, got $result")
       assertEquals(
-        mock.requests.last.path,
+        requestPath(stub.requests.last),
         "/PatientPortal/NewPortal/terms/index"
       )
-      val rawQuery = mock.requests.last.rawQuery.getOrElse("")
-      // Check each required parameter is present
-      assert(rawQuery.contains("searchPlace.id=70"))
-      assert(rawQuery.contains("searchPlace.type=0"))
-      assert(rawQuery.contains("serviceVariantId=4502"))
-      assert(rawQuery.contains("languageId=10"))
-      assert(rawQuery.contains("searchDateFrom=2026-08-03"))
-      assert(rawQuery.contains("searchDateTo=2026-08-10"))
-      assert(rawQuery.contains("searchDatePreset=14"))
-      assert(
-        rawQuery.contains(
-          "processId=00000000-0000-0000-0000-000000000123"
-        )
+      val params = stub.requests.last.uri.paramsMap
+      assertEquals(params.get("searchPlace.id"), Some("70"))
+      assertEquals(params.get("searchPlace.type"), Some("0"))
+      assertEquals(params.get("serviceVariantId"), Some("4502"))
+      assertEquals(params.get("languageId"), Some("10"))
+      assertEquals(params.get("searchDateFrom"), Some("2026-08-03"))
+      assertEquals(params.get("searchDateTo"), Some("2026-08-10"))
+      assertEquals(params.get("searchDatePreset"), Some("14"))
+      assertEquals(
+        params.get("processId"),
+        Some("00000000-0000-0000-0000-000000000123")
       )
-      assert(rawQuery.contains("serviceVariantSource=0"))
-      assert(rawQuery.contains("facilitiesIds=78"))
-      assert(rawQuery.contains("doctorsIds=111111"))
-      assert(rawQuery.contains("nextSearch=false"))
-      assert(rawQuery.contains("searchByMedicalSpecialist=false"))
-      assert(rawQuery.contains("delocalized=false"))
+      assertEquals(params.get("serviceVariantSource"), Some("0"))
+      assertEquals(params.get("facilitiesIds"), Some("78"))
+      assertEquals(params.get("doctorsIds"), Some("111111"))
+      assertEquals(params.get("nextSearch"), Some("false"))
+      assertEquals(
+        params.get("searchByMedicalSpecialist"),
+        Some("false")
+      )
+      assertEquals(params.get("delocalized"), Some("false"))
 
   test(
     "optional facility and doctor parameters are omitted when absent"
   ):
-    withAuthenticatedClient: (client, mock, _) =>
+    withAuthenticatedClient: (client, stub, _) =>
       val query = TermsQuery(
         cityId = CityId(70),
         serviceVariantId = ServiceVariantId(4502),
@@ -184,13 +196,13 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         facilityIds = None,
         doctorIds = None
       )
-      mock.enqueue(
+      stub.enqueue(
         status = 200,
         body = fixture("terms-dual-datetime.json")
       )
       val result = runAsync:
         client.searchTerms(query)
       assert(result.isRight, s"expected success, got $result")
-      val rawQuery = mock.requests.last.rawQuery.getOrElse("")
-      assert(!rawQuery.contains("facilitiesIds"))
-      assert(!rawQuery.contains("doctorsIds"))
+      val queryParams = stub.requests.last.uri.paramsMap
+      assert(!queryParams.contains("facilitiesIds"))
+      assert(!queryParams.contains("doctorsIds"))

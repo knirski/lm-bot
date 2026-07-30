@@ -34,17 +34,40 @@ final case class WireFingerprint(
     bodyShape: Option[JsonShape]
 )
 
-final class LuxmedTransport(
-    config: LuxmedConfig,
-    observer: WireObserver = WireObserver.Noop
-):
+object LuxmedTransport:
 
-  private val backend = HttpClientSyncBackend.usingClient(
-    HttpClient
-      .newBuilder()
-      .connectTimeout(Duration.ofSeconds(15))
-      .build()
-  )
+  private val defaultBackend: SttpBackend[Identity, Any] =
+    HttpClientSyncBackend.usingClient(
+      HttpClient
+        .newBuilder()
+        .connectTimeout(Duration.ofSeconds(15))
+        .build()
+    )
+
+  /** Production factory: creates a transport with a real JDK HTTP client. */
+  def production(
+      config: LuxmedConfig,
+      observer: WireObserver = WireObserver.Noop
+  ): LuxmedTransport =
+    new LuxmedTransport(config, defaultBackend, observer)
+
+  /** Test seam: creates a transport with an injected sttp backend.
+    *
+    * Package-visible so tests can inject a stub backend, while production code
+    * uses the [[production]] factory.
+    */
+  private[luxmed] def withBackend(
+      config: LuxmedConfig,
+      backend: SttpBackend[Identity, Any],
+      observer: WireObserver = WireObserver.Noop
+  ): LuxmedTransport =
+    new LuxmedTransport(config, backend, observer)
+
+final class LuxmedTransport private (
+    config: LuxmedConfig,
+    private val backend: SttpBackend[Identity, Any],
+    observer: WireObserver
+):
 
   private val commonHeaders = Map(
     "Accept" -> "application/json, text/plain, */*",

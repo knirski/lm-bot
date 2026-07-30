@@ -6,7 +6,7 @@
 **Upstream shapes:** [dyrkin/luxmed-bot](https://github.com/dyrkin/luxmed-bot) (not lmassist)
 
 **changed-files:** Backend client, transport, models, codecs, mocks, fixtures, tests, docs
-**verification-run:** `sbt backend/testFull` (139/139), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate, `git diff --check`
+**verification-run:** `sbt backend/testFull` (152/152), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate, `git diff --check`
 **skipped-checks:** none
 **branch:** `feat/luxmed-client-plan3-complete`
 **pr:** https://github.com/knirski/lm-bot/pull/20
@@ -45,19 +45,24 @@
 | Test | Scope |
 |---|---|
 | `WireCodecTest.scala` | 15 tests: all fixture round-trips, datetime normalization, `Secret` redaction, ServiceVariant recursion, cookie jar semantics |
-| `ErrorClassificationTest.scala` | 8 tests: HTTP status → `LuxmedError` classification matrix |
+| `ErrorClassificationTest.scala` | 20 tests: error classification via sttp stub (17) + real-HTTP redirect/cookie/connection tests (3) |
 | `AccountGateTest.scala` | 6 tests: serialization, rate limiting, timeout |
-| `LuxmedClientAuthTest.scala` | 12 tests: full auth flow, refresh, retry on session expiry, retry on auth failure, re-authentication after expiry |
+| `LuxmedClientAuthTest.scala` | 19 tests: full auth flow, refresh, retry on session expiry, retry on auth failure, re-authentication after expiry, concurrency |
 | `SessionStoreTest.scala` | 7 tests: CAS contract, concurrent update rejection |
-| `DictionaryAndTermsTest.scala` | 7 tests: cities, serviceVariants, facilitiesAndDoctors, terms search with params |
-| `ReservationPrimitivesTest.scala` | 3 tests: XSRF token, lock, confirm, release |
-| `MockConformanceTest.scala` | 1 test: full 10-step flow against mock with fingerprint verification |
+| `DictionaryAndTermsTest.scala` | 7 tests: cities, serviceVariants, facilitiesAndDoctors, terms search with params (via sttp stub) |
+| `ReservationPrimitivesTest.scala` | 4 tests: XSRF token, lock, confirm, release (via sttp stub) |
+| `MockConformanceTest.scala` | 1 test: full 10-step flow against real loopback server with fingerprint verification |
+| `StubLuxmedBackendTest.scala` | 4 tests: production factory, `withBackend` injection, stub FIFO/capture behaviour |
+| `WireContractTest.scala` | 6 tests: real wire invariants (redirect count, `Set-Cookie`, empty body, form body, connection failure, cookie `=` preservation) |
 
 ### Support (`backend/src/test/scala/lmbot/backend/luxmed/support/`)
 
 | File | Purpose |
 |---|---|
-| `MockLuxmedServer.scala` | Deterministic mock using JDK `HttpServer`; enqueue responses, inspect recorded requests |
+| `RealHttpLuxmedServer.scala` | Renamed/reduced JDK `HttpServer` loopback for wire-boundary tests; no Luxmed-specific methods |
+| `MockLuxmedServer.scala` | (Deprecated alias for `RealHttpLuxmedServer`) |
+| `StubLuxmedBackend.scala` | FIFO-queue sttp stub backend for client-policy tests; enqueue responses, capture requests |
+| `LuxmedResponseScripts.scala` | Backend-independent realistic auth response components (literal strings, never production codecs) |
 | `FakeTime.scala` | Controllable clock for testing time-sensitive operations |
 | `GearsTest.scala` | `runAsync` helper for testing Gears `Async` blocks in munit |
 
@@ -71,24 +76,26 @@ All checks pass in the flake devShell:
 
 | Check | Outcome |
 |---|---|
-| `sbt backend/testFull` | **Passed:** 139 tests, 0 failed, 0 errors |
+| `sbt backend/testFull` | **Passed:** 152 tests, 0 failed, 0 errors |
 | `sbt scalafmtCheckAll` | Passed |
 | `sbt frontend/fastLinkJS` | Passed |
 | `nix flake check` | All checks passed |
 | Async-vocabulary gate | Clean — no `scala.concurrent` outside `/bridge/` |
 | `git diff --check` | Clean |
 
-### Test count breakdown (Luxmed client suites only — full `sbt backend/testFull` totals 139)
+### Test count breakdown (Luxmed client suites only — full `sbt backend/testFull` totals 152)
 
-```
-AccountGateTest:        6 passed
-ErrorClassificationTest: 8 passed
-LuxmedClientAuthTest:   12 passed
-SessionStoreTest:        7 passed
-WireCodecTest:          15 passed
-DictionaryAndTermsTest:  7 passed
-ReservationPrimitivesTest: 3 passed
-MockConformanceTest:     1 passed
+```text
+AccountGateTest:           6 passed
+ErrorClassificationTest:  20 passed
+LuxmedClientAuthTest:     19 passed
+SessionStoreTest:          7 passed
+WireCodecTest:            15 passed
+DictionaryAndTermsTest:    7 passed
+ReservationPrimitivesTest: 4 passed
+MockConformanceTest:       1 passed
+StubLuxmedBackendTest:     4 passed
+WireContractTest:          6 passed
 
 Additional suites (non-Luxmed):
 AdminBootstrapTest:     4 passed
@@ -103,7 +110,7 @@ PostgresSuite:         12 passed
 BridgeTest:             3 passed
 UpdateTest:             4 passed
 ---
-Total:                139 passed
+Total:                152 passed
 ```
 
 ## Security Review
@@ -148,4 +155,5 @@ Dyrkin/luxmed-bot commit
 
 ## Plan 3 Status
 
-✅ **Complete** — all 10 tasks delivered, all 139 tests pass.
+✅ **Complete** — all 10 tasks delivered, all 152 tests pass.
+||||||| 6f942fa

@@ -6,7 +6,7 @@
 **PR:** `feat/luxmed-client-plan3-complete`
 
 **changed-files:** Backend client, transport, models, codecs, mocks, fixtures, tests, docs
-**verification-run:** `sbt backend/testFull` (139/139), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate
+**verification-run:** `sbt backend/testFull` (152/152), `sbt frontend/fastLinkJS`, `sbt scalafmtCheckAll`, `nix flake check`, async-vocabulary gate
 **skipped-checks:** none
 **branch:** `feat/luxmed-client-plan3-complete`
 **pr:** https://github.com/knirski/lm-bot/pull/20
@@ -23,7 +23,7 @@ A complete Luxmed API client in `backend/src/main/scala/lmbot/backend/luxmed/` t
 - **Searches appointment terms** with full query parameter set
 - **Acquires XSRF tokens** and performs reservation primitives: lock, confirm, release
 - Handles **error classification** (session expiry, auth failure, rate limiting, version rejection, transient errors, challenges)
-- All tested against a **deterministic mock** with 13 literal JSON fixtures
+- All tested with a **hybrid architecture**: client-policy suites use an injected sttp stub (`StubLuxmedBackend`), wire-boundary invariants use a real loopback server (`RealHttpLuxmedServer`), and auth response scripts (`LuxmedResponseScripts`) are backend-independent
 
 ## Key architectural decisions
 
@@ -63,7 +63,7 @@ Returns 200 with empty body. `releaseTerm` returns `Either[LuxmedError, Unit]` a
 
 ## Verification state
 
-- **139 tests pass**, 0 failed
+- **152 tests pass**, 0 failed
 - `sbt frontend/fastLinkJS` — passes (frontend still links)
 - `nix flake check` — all checks pass
 - Async-vocabulary gate — clean (no `scala.concurrent` outside bridge)
@@ -77,3 +77,4 @@ Returns 200 with empty body. `releaseTerm` returns `Either[LuxmedError, Unit]` a
 4. **`LuxmedError` taxonomy** — it's closed but may need extension for Plan 4's account statuses.
 5. **Cookie `Set-Cookie` decoding** — `TransportResponse.toString` redacts secrets but doesn't decode cookie values. sttp's `unsafeCookies` method can be used if needed.
 6. **`GlobalLang=pl` cookie** must be added during bootstrap (done in `bootstrapNewPortal`). Reminder for any new bootstrap-like flows.
+||||||| 6f942fa

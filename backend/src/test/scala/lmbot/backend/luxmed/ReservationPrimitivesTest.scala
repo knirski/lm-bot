@@ -10,15 +10,22 @@ import lmbot.backend.luxmed.model.*
 import lmbot.backend.luxmed.support.{
   FakeTime,
   GearsTest,
-  MockLuxmedServer,
-  MockResponse,
-  RecordedRequest
+  LuxmedResponseScripts,
+  StubLuxmedBackend
 }
+import sttp.client3.Request
 import sttp.model.Uri
 
 class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
 
   private val testUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
+
+  private val testConfig = LuxmedConfig(
+    oldApi = Uri.unsafeParse("http://localhost:1/PatientPortalMobileAPI/api"),
+    newApi = Uri.unsafeParse("http://localhost:1/PatientPortal"),
+    appVersion = AppVersion.unsafeFromString("4.44.0"),
+    deviceUuid = testUuid
+  )
 
   private def fixture(name: String): String =
     val path = s"/luxmed/$name"
@@ -27,61 +34,65 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
     try Source.fromInputStream(is)(using Codec.UTF8).mkString
     finally is.close()
 
-  private def header(
-      request: RecordedRequest,
+  private def requestPath(request: Request[?, ?]): String =
+    "/" + request.uri.path.mkString("/")
+
+  private def requestQuery(request: Request[?, ?]): Option[String] =
+    val params = request.uri.paramsMap
+    if params.isEmpty then None
+    else
+      Some(
+        params.toList
+          .flatMap { case (k, v) => s"$k=$v" :: Nil }
+          .sorted
+          .mkString("&")
+      )
+
+  private def requestHeader(
+      request: Request[?, ?],
       name: String
   ): Option[String] =
-    request.headers.collectFirst:
-      case (key, values) if key.equalsIgnoreCase(name) => values.head
+    request.headers.find(_.name.equalsIgnoreCase(name)).map(_.value)
 
   private def withAuthenticatedClient[T](
-      body: (LuxmedClient, MockLuxmedServer, FakeTime) => T
+      body: (LuxmedClient, StubLuxmedBackend, FakeTime) => T
   ): T =
-    val mock = MockLuxmedServer()
-    try
-      val config = LuxmedConfig(
-        oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
-        newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = AppVersion.unsafeFromString("4.44.0"),
-        deviceUuid = testUuid
-      )
-      val transport = LuxmedTransport(config)
-      val credentials = Credentials("user@example.com", Secret("password123"))
-      val fake = FakeTime()
-      val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
-      val client = LuxmedClient(
-        transport,
-        credentials,
-        gate,
-        InMemorySessionStore(),
-        now = () => fake.now()
-      )
-      mock.enqueueRealisticAuthFlow(
+    val stub = StubLuxmedBackend()
+    val transport = LuxmedTransport.withBackend(testConfig, stub.backend)
+    val credentials = Credentials("user@example.com", Secret("password123"))
+    val fake = FakeTime()
+    val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
+    val client = LuxmedClient(
+      transport,
+      credentials,
+      gate,
+      InMemorySessionStore(),
+      now = () => fake.now()
+    )
+    LuxmedResponseScripts
+      .realisticAuthFlow(
         accessToken = "ACCESS_1",
         refreshToken = "REFRESH_1",
         jwtToken = "JWT_TOKEN_1",
         expiresIn = 599
       )
-      runAsync:
-        client.authenticate()
-      body(client, mock, fake)
-    finally mock.close()
+      .foreach: (status, headers, body) =>
+        stub.enqueue(status, headers, body)
+    runAsync:
+      client.authenticate()
+    body(client, stub, fake)
 
   // -- XSRF token tests --
 
   test("getXsrfToken returns a forgery token and merges cookies"):
-    withAuthenticatedClient: (client, mock, _) =>
-      mock.enqueue(
-        MockResponse(
-          status = 200,
-          body = fixture("forgery-token.json"),
-          headers = Map(
-            "Set-Cookie" -> List(
-              "XSRF-TOKEN=abc123",
-              "ASP.NET_SessionId=new_sess"
-            )
-          )
-        )
+    withAuthenticatedClient: (client, stub, _) =>
+      stub.enqueue(
+        status = 200,
+        headers = List(
+          "Set-Cookie" -> "XSRF-TOKEN=abc123",
+          "Set-Cookie" -> "ASP.NET_SessionId=new_sess"
+        ),
+        body = fixture("forgery-token.json")
       )
       val result = runAsync:
         client.getXsrfToken()
@@ -97,18 +108,18 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
         Some("new_sess")
       )
       assertEquals(
-        mock.requests.last.path,
+        requestPath(stub.requests.last),
         "/PatientPortal/security/getforgerytoken"
       )
       assertEquals(
-        header(mock.requests.last, "Authorization-Token"),
+        requestHeader(stub.requests.last, "Authorization-Token"),
         Some("Bearer JWT_TOKEN_1")
       )
 
   // -- Lock term tests --
 
   test("lockTerm sends JSON body with XSRF protection"):
-    withAuthenticatedClient: (client, mock, _) =>
+    withAuthenticatedClient: (client, stub, _) =>
       val xsrfToken = XsrfToken(Secret("XSRF_1"))
       val xsrfCookies = CookieJar("XSRF-TOKEN" -> Secret("xsrf_cookie"))
       val lockRequest = LockTermRequest(
@@ -126,33 +137,34 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
         timeFrom = "09:00",
         timeTo = "09:15"
       )
-      mock.enqueue(
+      stub.enqueue(
         status = 200,
         body = fixture("lock-success.json")
       )
       val result = runAsync:
         client.lockTerm(lockRequest, xsrfToken, xsrfCookies)
       assert(result.isRight, s"expected success, got $result")
-      val req = mock.requests.last
+      val req = stub.requests.last
       assertEquals(
-        req.path,
+        requestPath(req),
         "/PatientPortal/NewPortal/reservation/lockterm"
       )
       assertEquals(
-        header(req, "Authorization-Token"),
+        requestHeader(req, "Authorization-Token"),
         Some("Bearer JWT_TOKEN_1")
       )
-      assertEquals(header(req, "xsrf-token"), Some("XSRF_1"))
+      assertEquals(requestHeader(req, "xsrf-token"), Some("XSRF_1"))
+      val body = stub.bodyString(req)
       assert(
-        req.body.contains("\"serviceVariantId\":50"),
-        s"body should contain serviceVariantId: ${req.body}"
+        body.contains("\"serviceVariantId\":50"),
+        s"body should contain serviceVariantId: $body"
       )
       assert(
-        req.body.contains("\"scheduleId\":40"),
-        s"body should contain scheduleId: ${req.body}"
+        body.contains("\"scheduleId\":40"),
+        s"body should contain scheduleId: $body"
       )
       assert(
-        !req.body.contains("temporary_reservation_id"),
+        !body.contains("temporary_reservation_id"),
         "body must not contain snake_case keys"
       )
       val response = result.toOption.get
@@ -161,7 +173,7 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
   // -- Confirm tests --
 
   test("confirm sends JSON body with XSRF protection"):
-    withAuthenticatedClient: (client, mock, _) =>
+    withAuthenticatedClient: (client, stub, _) =>
       val xsrfToken = XsrfToken(Secret("XSRF_1"))
       val xsrfCookies = CookieJar("XSRF-TOKEN" -> Secret("xsrf_cookie"))
       val confirmRequest = ConfirmRequest(
@@ -187,30 +199,30 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
           valuationType = 1L
         )
       )
-      mock.enqueue(
+      stub.enqueue(
         status = 200,
         body = fixture("confirm-success.json")
       )
       val result = runAsync:
         client.confirm(confirmRequest, xsrfToken, xsrfCookies)
       assert(result.isRight, s"expected success, got $result")
-      val req = mock.requests.last
+      val req = stub.requests.last
       assertEquals(
-        req.path,
+        requestPath(req),
         "/PatientPortal/NewPortal/reservation/confirm"
       )
-      assertEquals(header(req, "xsrf-token"), Some("XSRF_1"))
+      assertEquals(requestHeader(req, "xsrf-token"), Some("XSRF_1"))
       val response = result.toOption.get
       assertEquals(response.value.reservationId.value, 2222222L)
 
   // -- Release term tests --
 
   test("releaseTerm sends empty JSON body with reservationId as query param"):
-    withAuthenticatedClient: (client, mock, _) =>
+    withAuthenticatedClient: (client, stub, _) =>
       val xsrfToken = XsrfToken(Secret("XSRF_1"))
       val xsrfCookies = CookieJar("XSRF-TOKEN" -> Secret("xsrf_cookie"))
       // Release endpoint returns 200 with empty body
-      mock.enqueue(
+      stub.enqueue(
         status = 200,
         body = ""
       )
@@ -221,11 +233,11 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
           xsrfCookies
         )
       assert(result.isRight, s"expected success, got $result")
-      val req = mock.requests.last
+      val req = stub.requests.last
       assertEquals(
-        req.path,
+        requestPath(req),
         "/PatientPortal/NewPortal/reservation/releaseterm"
       )
-      assertEquals(req.rawQuery, Some("reservationId=222222"))
-      assertEquals(req.body, "{}")
-      assertEquals(header(req, "xsrf-token"), Some("XSRF_1"))
+      assertEquals(requestQuery(req), Some("reservationId=222222"))
+      assertEquals(stub.bodyString(req), "{}")
+      assertEquals(requestHeader(req, "xsrf-token"), Some("XSRF_1"))
