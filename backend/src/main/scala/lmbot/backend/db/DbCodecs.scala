@@ -1,8 +1,8 @@
 package lmbot.backend.db
 
 import java.lang.reflect.Array as ReflectArray
-import java.sql.{PreparedStatement, ResultSet, SQLException}
 import java.sql.Types
+import java.sql.{PreparedStatement, ResultSet, SQLException}
 
 import scala.IArray
 import scala.collection.mutable.ListBuffer
