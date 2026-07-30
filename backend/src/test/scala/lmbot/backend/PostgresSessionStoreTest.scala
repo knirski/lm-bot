@@ -51,12 +51,12 @@ class PostgresSessionStoreTest extends PostgresSuite:
 
   private def session(refresh: String): LuxmedSession =
     LuxmedSession(
-      Secret("access-$refresh"),
+      Secret(s"access-$refresh"),
       TokenType.Bearer,
       Secret(refresh),
       Instant.parse("2026-08-01T10:00:00Z"),
-      Secret("jwt-$refresh"),
-      CookieJar("SESSION" -> Secret("cookie-$refresh"))
+      Secret(s"jwt-$refresh"),
+      CookieJar("SESSION" -> Secret(s"cookie-$refresh"))
     )
 
   private def store(ownerId: Long, accountId: Long): PostgresSessionStore =
