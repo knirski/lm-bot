@@ -162,7 +162,9 @@ class PostgresSessionStoreTest extends PostgresSuite:
     val current = session("refresh-secret")
     assertEquals(store(ownerId, accountId).replace(None, current), Right(()))
     val encrypted =
-      AccountRepo(xa).findOwned(accountId, ownerId).flatMap(_.encryptedSession)
+      AccountRepo(xa)
+        .findOwned(AccountId(accountId), ownerId)
+        .flatMap(_.encryptedSession)
     assert(encrypted.isDefined)
     assert(!encrypted.get.contains("refresh-secret"))
     assert(!encrypted.get.contains("access-refresh-secret"))

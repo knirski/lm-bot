@@ -28,7 +28,7 @@ import lmbot.backend.luxmed.support.{
 import lmbot.backend.luxmed.{LuxmedConfig, PostgresSessionStore, SessionCodec}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.api.ApiError
-import lmbot.shared.domain.{AccountId, AccountStatus, Role}
+import lmbot.shared.domain.{AccountId, AccountStatus, MonitorId, Role}
 import sttp.model.Uri
 
 class AccountServiceTest extends PostgresSuite with GearsTest:
@@ -202,7 +202,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
         fixedOffset
       )
     )
-    assert(MonitorRepo(xa).findOwned(monitorId, ownerId).isDefined)
+    assert(MonitorRepo(xa).findOwned(MonitorId(monitorId), ownerId).isDefined)
     monitorId
 
   test("link rejects blank and oversized labels/usernames before Luxmed"):
@@ -485,11 +485,19 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       accounts.delete(secondOwner, AccountId(accountId)),
       Left(ApiError.NotFound)
     )
-    assert(MonitorRepo(xa).findOwned(monitorId, firstOwner).isDefined)
+    assert(
+      MonitorRepo(xa).findOwned(MonitorId(monitorId), firstOwner).isDefined
+    )
 
     assertEquals(accounts.delete(firstOwner, AccountId(accountId)), Right(()))
-    assertEquals(AccountRepo(xa).findOwned(accountId, firstOwner), None)
-    assertEquals(MonitorRepo(xa).findOwned(monitorId, firstOwner), None)
+    assertEquals(
+      AccountRepo(xa).findOwned(AccountId(accountId), firstOwner),
+      None
+    )
+    assertEquals(
+      MonitorRepo(xa).findOwned(MonitorId(monitorId), firstOwner),
+      None
+    )
 
   test("forStored decrypts credentials and device UUID for a scoped client"):
     withServer: server =>

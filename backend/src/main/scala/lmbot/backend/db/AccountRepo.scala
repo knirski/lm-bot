@@ -27,10 +27,10 @@ class AccountRepo(xa: Transactor):
       .run()
       .head
 
-  def findOwned(id: Long, ownerUserId: Long): Option[LuxmedAccountRow] =
+  def findOwned(id: AccountId, ownerUserId: Long): Option[LuxmedAccountRow] =
     connect(xa):
       sql"""select a.* from luxmed_accounts a
-            where a.id = $id and a.owner_user_id = $ownerUserId"""
+            where a.id = ${id.value} and a.owner_user_id = $ownerUserId"""
         .query[LuxmedAccountRow]
         .run()
         .headOption
@@ -42,20 +42,20 @@ class AccountRepo(xa: Transactor):
       .query[LuxmedAccountRow]
       .run()
 
-  def deleteOwned(id: Long, ownerUserId: Long): Boolean = transact(xa):
+  def deleteOwned(id: AccountId, ownerUserId: Long): Boolean = transact(xa):
     sql"""delete from luxmed_accounts a
-          where a.id = $id and a.owner_user_id = $ownerUserId""".update
+          where a.id = ${id.value} and a.owner_user_id = $ownerUserId""".update
       .run() > 0
 
   def updateSessionCas(
-      id: Long,
+      id: AccountId,
       encryptedSession: Option[String],
       ownerUserId: Long,
       expectedStatus: String
   ): Option[LuxmedAccountRow] = transact(xa):
     sql"""update luxmed_accounts a
           set encrypted_session = $encryptedSession, updated_at = now()
-          where a.id = $id
+          where a.id = ${id.value}
             and a.owner_user_id = $ownerUserId
             and a.status = $expectedStatus
           returning a.*"""

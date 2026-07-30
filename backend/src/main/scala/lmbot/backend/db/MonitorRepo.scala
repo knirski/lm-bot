@@ -1,6 +1,7 @@
 package lmbot.backend.db
 
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
+import lmbot.shared.domain.{AccountId, MonitorId}
 
 class MonitorRepo(xa: Transactor):
 
@@ -30,13 +31,14 @@ class MonitorRepo(xa: Transactor):
       .run()
       .head
 
-  def findOwned(id: Long, ownerUserId: Long): Option[MonitorRow] = connect(xa):
-    sql"""select m.* from monitors m
+  def findOwned(id: MonitorId, ownerUserId: Long): Option[MonitorRow] =
+    connect(xa):
+      sql"""select m.* from monitors m
           join luxmed_accounts a on m.luxmed_account_id = a.id
-          where m.id = $id and a.owner_user_id = $ownerUserId"""
-      .query[MonitorRow]
-      .run()
-      .headOption
+          where m.id = ${id.value} and a.owner_user_id = $ownerUserId"""
+        .query[MonitorRow]
+        .run()
+        .headOption
 
   def listOwned(ownerUserId: Long): Seq[MonitorRow] = connect(xa):
     sql"""select m.* from monitors m
@@ -68,7 +70,7 @@ class MonitorRepo(xa: Transactor):
                 state = ${row.state},
                 updated_at = now()
             from luxmed_accounts a
-            where m.id = ${row.id}
+      where m.id = ${row.id}
               and m.luxmed_account_id = a.id
               and a.owner_user_id = $ownerUserId
             returning m.*"""
@@ -77,8 +79,8 @@ class MonitorRepo(xa: Transactor):
         .headOption
 
   def transitionOwned(
-      id: Long,
-      luxmedAccountId: Long,
+      id: MonitorId,
+      luxmedAccountId: AccountId,
       ownerUserId: Long,
       expectedStates: List[String],
       newState: String
@@ -86,8 +88,8 @@ class MonitorRepo(xa: Transactor):
     sql"""update monitors m
           set state = $newState, updated_at = now()
           from luxmed_accounts a
-          where m.id = $id
-            and m.luxmed_account_id = $luxmedAccountId
+          where m.id = ${id.value}
+            and m.luxmed_account_id = ${luxmedAccountId.value}
             and m.luxmed_account_id = a.id
             and a.owner_user_id = $ownerUserId
             and m.state = any($expectedStates)
@@ -96,10 +98,10 @@ class MonitorRepo(xa: Transactor):
       .run()
       .headOption
 
-  def deleteOwned(id: Long, ownerUserId: Long): Boolean = transact(xa):
+  def deleteOwned(id: MonitorId, ownerUserId: Long): Boolean = transact(xa):
     sql"""delete from monitors m
           using luxmed_accounts a
           where m.luxmed_account_id = a.id
-            and m.id = $id
+            and m.id = ${id.value}
             and a.owner_user_id = $ownerUserId""".update
       .run() > 0

@@ -124,7 +124,7 @@ final class AccountService(
         Left(ApiError.Unexpected("The Luxmed accounts could not be loaded."))
 
   def delete(ownerId: Long, accountId: AccountId): Either[ApiError, Unit] =
-    if accounts.deleteOwned(accountId.value, ownerId) then Right(())
+    if accounts.deleteOwned(accountId, ownerId) then Right(())
     else Left(ApiError.NotFound)
 
   private def validate(

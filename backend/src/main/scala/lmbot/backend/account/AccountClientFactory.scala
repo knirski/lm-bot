@@ -63,7 +63,7 @@ final class AccountClientFactory private (
       accountId: AccountId
   ): Either[ApiError, LuxmedClient] =
     accounts
-      .findOwned(accountId.value, ownerId)
+      .findOwned(accountId, ownerId)
       .toRight(ApiError.NotFound)
       .flatMap: row =>
         for

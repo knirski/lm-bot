@@ -11,7 +11,7 @@ import lmbot.backend.db.{
   UserRepo
 }
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{AccountId, MonitorId, Role}
 
 class MonitorRepoTest extends PostgresSuite:
 
@@ -86,7 +86,7 @@ class MonitorRepoTest extends PostgresSuite:
     val row = aMonitor(accountId, monitorId)
 
     repo.insert(row)
-    val found = repo.findOwned(monitorId, ownerId)
+    val found = repo.findOwned(MonitorId(monitorId), ownerId)
     assertEquals(found.map(_.name), Some("Test Monitor"))
     assertEquals(found.map(_.state), Some("active"))
 
@@ -98,7 +98,7 @@ class MonitorRepoTest extends PostgresSuite:
     val row = aMonitor(accountId, monitorId)
 
     repo.insert(row)
-    val found = repo.findOwned(monitorId, ownerId).get
+    val found = repo.findOwned(MonitorId(monitorId), ownerId).get
     assertEquals(found.facilityIds, List(10L, 20L))
     assertEquals(found.facilityNames, List("Facility A", "Facility B"))
     assertEquals(found.doctorIds, List(30L, 40L))
@@ -123,7 +123,7 @@ class MonitorRepoTest extends PostgresSuite:
     val mid = repo.reserveId()
     repo.insert(aMonitor(acc1, mid))
 
-    assertEquals(repo.findOwned(mid, o2), None)
+    assertEquals(repo.findOwned(MonitorId(mid), o2), None)
     assertEquals(repo.listOwned(o2).size, 0)
 
   test("updateOwned modifies fields and returns updated row"):
@@ -158,8 +158,8 @@ class MonitorRepoTest extends PostgresSuite:
     repo.insert(aMonitor(accountId, mid, "active"))
 
     val result = repo.transitionOwned(
-      mid,
-      accountId,
+      MonitorId(mid),
+      AccountId(accountId),
       ownerId,
       List("active", "paused"),
       "completed"
@@ -174,8 +174,8 @@ class MonitorRepoTest extends PostgresSuite:
     repo.insert(aMonitor(accountId, mid, "failed"))
 
     val result = repo.transitionOwned(
-      mid,
-      accountId,
+      MonitorId(mid),
+      AccountId(accountId),
       ownerId,
       List("active", "paused"),
       "completed"
@@ -191,7 +191,13 @@ class MonitorRepoTest extends PostgresSuite:
     repo.insert(aMonitor(acc1, mid, "active"))
 
     val result =
-      repo.transitionOwned(mid, acc1, o2, List("active"), "completed")
+      repo.transitionOwned(
+        MonitorId(mid),
+        AccountId(acc1),
+        o2,
+        List("active"),
+        "completed"
+      )
     assertEquals(result, None)
 
   test("deleteOwned removes the row and returns true"):
@@ -201,8 +207,8 @@ class MonitorRepoTest extends PostgresSuite:
     val mid = repo.reserveId()
     repo.insert(aMonitor(accountId, mid))
 
-    assert(repo.deleteOwned(mid, ownerId))
-    assertEquals(repo.findOwned(mid, ownerId), None)
+    assert(repo.deleteOwned(MonitorId(mid), ownerId))
+    assertEquals(repo.findOwned(MonitorId(mid), ownerId), None)
 
   test("deleteOwned returns false when not owned"):
     val repo = MonitorRepo(xa)
@@ -212,8 +218,8 @@ class MonitorRepoTest extends PostgresSuite:
     val mid = repo.reserveId()
     repo.insert(aMonitor(acc1, mid))
 
-    assert(!repo.deleteOwned(mid, o2))
-    assert(repo.findOwned(mid, o1).isDefined)
+    assert(!repo.deleteOwned(MonitorId(mid), o2))
+    assert(repo.findOwned(MonitorId(mid), o1).isDefined)
 
   test("deleting an account cascades to its monitors"):
     val accountRepo = AccountRepo(xa)
@@ -223,6 +229,6 @@ class MonitorRepoTest extends PostgresSuite:
     val mid = monRepo.reserveId()
     monRepo.insert(aMonitor(accountId, mid))
 
-    accountRepo.deleteOwned(accountId, ownerId)
+    accountRepo.deleteOwned(AccountId(accountId), ownerId)
 
-    assertEquals(monRepo.findOwned(mid, ownerId), None)
+    assertEquals(monRepo.findOwned(MonitorId(mid), ownerId), None)

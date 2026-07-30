@@ -4,7 +4,7 @@ import java.time.OffsetDateTime
 
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{AccountId, Role}
 
 class AccountRepoTest extends PostgresSuite:
 
@@ -43,7 +43,7 @@ class AccountRepoTest extends PostgresSuite:
     )
 
     repo.insert(row)
-    val found = repo.findOwned(accountId.value, ownerId)
+    val found = repo.findOwned(accountId, ownerId)
     assertEquals(found.map(_.label), Some("My Luxmed"))
     assertEquals(found.map(_.status), Some("active"))
 
@@ -109,7 +109,7 @@ class AccountRepoTest extends PostgresSuite:
       )
     )
 
-    assertEquals(repo.findOwned(id.value, o2), None)
+    assertEquals(repo.findOwned(id, o2), None)
     assertEquals(repo.listOwned(o2).size, 0)
 
   test("deleteOwned removes the row and returns true"):
@@ -133,13 +133,13 @@ class AccountRepoTest extends PostgresSuite:
       )
     )
 
-    assert(repo.deleteOwned(id.value, ownerId))
-    assertEquals(repo.findOwned(id.value, ownerId), None)
+    assert(repo.deleteOwned(id, ownerId))
+    assertEquals(repo.findOwned(id, ownerId), None)
 
   test("deleteOwned returns false for non-existent ID"):
     val repo = AccountRepo(xa)
     val ownerId = anOwner()
-    assert(!repo.deleteOwned(999L, ownerId))
+    assert(!repo.deleteOwned(AccountId(999L), ownerId))
 
   test("deleteOwned returns false when not owned by caller"):
     val repo = AccountRepo(xa)
@@ -163,8 +163,8 @@ class AccountRepoTest extends PostgresSuite:
       )
     )
 
-    assert(!repo.deleteOwned(id.value, o2))
-    assert(repo.findOwned(id.value, o1).isDefined)
+    assert(!repo.deleteOwned(id, o2))
+    assert(repo.findOwned(id, o1).isDefined)
 
   test("unique label per owner is enforced"):
     val repo = AccountRepo(xa)
