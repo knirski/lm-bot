@@ -5,7 +5,12 @@ import java.util.UUID
 
 import gears.async.Async
 import lmbot.backend.config.Secret
-import lmbot.backend.crypto.{AesGcm, EncryptionContext, EncryptionPurpose}
+import lmbot.backend.crypto.{
+  AesGcm,
+  EncryptedEnvelope,
+  EncryptionContext,
+  EncryptionPurpose
+}
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow}
 import lmbot.backend.luxmed.{LuxmedError, SessionCodec}
 import lmbot.shared.api.ApiError
@@ -49,7 +54,12 @@ final class AccountService(
               id.value,
               ownerId,
               normalized.label,
-              normalized.username,
+              encrypt(
+                normalized.username,
+                ownerId,
+                id,
+                EncryptionPurpose.Username
+              ),
               encrypt(
                 normalized.password,
                 ownerId,
@@ -76,7 +86,7 @@ final class AccountService(
               timestamp,
               timestamp
             )
-            try Right(toView(accounts.insert(row)))
+            try toView(accounts.insert(row))
             catch
               case _: Exception =>
                 Left(
@@ -84,7 +94,18 @@ final class AccountService(
                 )
 
   def list(ownerId: Long): Either[ApiError, List[AccountView]] =
-    try Right(accounts.listOwned(ownerId).toList.map(toView))
+    try
+      accounts
+        .listOwned(ownerId)
+        .toList
+        .foldRight(
+          Right(Nil): Either[ApiError, List[AccountView]]
+        ) { (account, result) =>
+          for
+            views <- result
+            view <- toView(account)
+          yield view :: views
+        }
     catch
       case _: Exception =>
         Left(ApiError.Unexpected("The Luxmed accounts could not be loaded."))
@@ -118,21 +139,49 @@ final class AccountService(
   ): String =
     crypto.encrypt(value, EncryptionContext(ownerId, accountId, purpose)).render
 
-  private def toView(row: LuxmedAccountRow): AccountView =
+  private def toView(row: LuxmedAccountRow): Either[ApiError, AccountView] =
     val status = row.status match
       case "active"      => AccountStatus.Active
       case "auth_failed" => AccountStatus.AuthFailed
       case "disabled"    => AccountStatus.Disabled
       case other         =>
         throw IllegalArgumentException(s"unsupported account status: $other")
-    AccountView(
+    decrypt(
+      row.encryptedUsername,
+      row.ownerUserId,
       AccountId(row.id),
-      row.label,
-      row.luxmedUsername,
-      status,
-      row.statusReason,
-      row.lastSuccessfulLogin.map(_.toInstant)
+      EncryptionPurpose.Username
+    ).map(username =>
+      AccountView(
+        AccountId(row.id),
+        row.label,
+        username.value,
+        status,
+        row.statusReason,
+        row.lastSuccessfulLogin.map(_.toInstant)
+      )
     )
+
+  private def decrypt(
+      value: String,
+      ownerId: Long,
+      accountId: AccountId,
+      purpose: EncryptionPurpose
+  ): Either[ApiError, Secret] =
+    for
+      envelope <- EncryptedEnvelope
+        .parse(value)
+        .left
+        .map(_ =>
+          ApiError.Unexpected("The Luxmed account could not be loaded.")
+        )
+      secret <- crypto
+        .decrypt(envelope, EncryptionContext(ownerId, accountId, purpose))
+        .left
+        .map(_ =>
+          ApiError.Unexpected("The Luxmed account could not be loaded.")
+        )
+    yield secret
 
   private def linkError(error: LuxmedError): ApiError = error match
     case LuxmedError.AuthFailed =>

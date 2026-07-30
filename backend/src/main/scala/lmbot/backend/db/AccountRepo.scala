@@ -12,12 +12,12 @@ class AccountRepo(xa: Transactor):
 
   def insert(row: LuxmedAccountRow): LuxmedAccountRow = transact(xa):
     sql"""insert into luxmed_accounts
-          (id, owner_user_id, label, luxmed_username,
+          (id, owner_user_id, label, encrypted_username,
            encrypted_password, encrypted_device_uuid, encrypted_session,
            status, status_reason, last_successful_login,
            created_at, updated_at)
           values (${row.id}, ${row.ownerUserId}, ${row.label},
-                  ${row.luxmedUsername}, ${row.encryptedPassword},
+                  ${row.encryptedUsername}, ${row.encryptedPassword},
                   ${row.encryptedDeviceUuid}, ${row.encryptedSession},
                   ${row.status}, ${row.statusReason},
                   ${row.lastSuccessfulLogin},

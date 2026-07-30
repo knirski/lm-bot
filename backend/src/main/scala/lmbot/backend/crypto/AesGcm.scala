@@ -14,6 +14,7 @@ import lmbot.shared.domain.AccountId
   * encrypted for one purpose from being used in another.
   */
 enum EncryptionPurpose(val wireName: String):
+  case Username extends EncryptionPurpose("username")
   case Password extends EncryptionPurpose("password")
   case DeviceId extends EncryptionPurpose("device-id")
   case Session extends EncryptionPurpose("session")

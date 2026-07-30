@@ -42,7 +42,7 @@ case class LuxmedAccountRow(
     @Id id: Long,
     ownerUserId: Long,
     label: String,
-    luxmedUsername: String,
+    encryptedUsername: String,
     encryptedPassword: String,
     encryptedDeviceUuid: String,
     encryptedSession: Option[String],

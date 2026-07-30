@@ -31,7 +31,7 @@ class MonitorRepoTest extends PostgresSuite:
         id = accountId.value,
         ownerUserId = ownerId,
         label = "Test Account",
-        luxmedUsername = "user@example.com",
+        encryptedUsername = "user@example.com",
         encryptedPassword = "enc-pass",
         encryptedDeviceUuid = "enc-device",
         encryptedSession = None,

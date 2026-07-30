@@ -4,7 +4,7 @@ create table luxmed_accounts (
     id                    bigint primary key default nextval('luxmed_account_id_seq'),
     owner_user_id         bigint not null references users(id) on delete cascade,
     label                 text not null,
-    luxmed_username       text not null,
+    encrypted_username    text not null,
     encrypted_password    text not null,
     encrypted_device_uuid text not null,
     encrypted_session     text,

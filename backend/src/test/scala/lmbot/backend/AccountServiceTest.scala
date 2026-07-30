@@ -142,7 +142,12 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
         id.value,
         ownerId,
         label,
-        username,
+        crypto
+          .encrypt(
+            username,
+            EncryptionContext(ownerId, id, EncryptionPurpose.Username)
+          )
+          .render,
         s"encrypted-password-$label",
         s"encrypted-device-$label",
         None,
@@ -371,7 +376,9 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       assertEquals(accountRows(missingOwner), Nil)
       assertEquals(passwordGrantCount(server), 1)
 
-  test("linked account stores password device UUID and session encrypted"):
+  test(
+    "linked account stores username password device UUID and session encrypted"
+  ):
     withServer: server =>
       val ownerId = owner()
       enqueueAuth(server)
@@ -382,15 +389,21 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       assert(linked.isRight, s"expected link success, got $linked")
 
       val row = accountRows(ownerId).head
+      assert(row.encryptedUsername.startsWith("v1."))
       assert(row.encryptedPassword.startsWith("v1."))
       assert(row.encryptedDeviceUuid.startsWith("v1."))
       assert(row.encryptedSession.exists(_.startsWith("v1.")))
+      assert(!row.encryptedUsername.contains("user@example.com"))
       assert(!row.encryptedPassword.contains("password-secret"))
       assert(!row.encryptedDeviceUuid.contains(fixedDeviceUuid.toString))
       assert(!row.encryptedSession.get.contains("RT1"))
       assert(!row.encryptedSession.get.contains("AT1"))
       assert(!row.encryptedSession.get.contains("JWT_TOKEN_1"))
 
+      assertEquals(
+        decrypt(row, row.encryptedUsername, EncryptionPurpose.Username).value,
+        "user@example.com"
+      )
       assertEquals(
         decrypt(row, row.encryptedPassword, EncryptionPurpose.Password).value,
         "password-secret"

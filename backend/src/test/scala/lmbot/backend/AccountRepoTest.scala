@@ -31,7 +31,7 @@ class AccountRepoTest extends PostgresSuite:
       id = accountId.value,
       ownerUserId = ownerId,
       label = "My Luxmed",
-      luxmedUsername = "user@example.com",
+      encryptedUsername = "user@example.com",
       encryptedPassword = "enc-pass-1",
       encryptedDeviceUuid = "enc-device-1",
       encryptedSession = None,

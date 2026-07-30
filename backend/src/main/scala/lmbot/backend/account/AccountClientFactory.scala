@@ -67,6 +67,12 @@ final class AccountClientFactory private (
       .toRight(ApiError.NotFound)
       .flatMap: row =>
         for
+          username <- decrypt(
+            row.encryptedUsername,
+            ownerId,
+            accountId,
+            EncryptionPurpose.Username
+          )
           password <- decrypt(
             row.encryptedPassword,
             ownerId,
@@ -82,7 +88,7 @@ final class AccountClientFactory private (
           uuid <- parseUuid(device.value)
         yield client(
           baseConfig.copy(deviceUuid = uuid),
-          Credentials(row.luxmedUsername, password),
+          Credentials(username.value, password),
           PostgresSessionStore(xa, ownerId, accountId, crypto)
         )
 
