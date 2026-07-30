@@ -33,7 +33,9 @@ final case class LuxmedConfig(
 object LuxmedConfig:
   def production(appVersion: AppVersion, deviceUuid: UUID): LuxmedConfig =
     LuxmedConfig(
-      Uri.unsafeParse("https://api.luxmed.pl/PatientPortalMobileAPI/api"),
+      Uri.unsafeParse(
+        "https://portalpacjenta.luxmed.pl/PatientPortalMobileAPI/api"
+      ),
       Uri.unsafeParse("https://portalpacjenta.luxmed.pl/PatientPortal"),
       appVersion,
       deviceUuid
