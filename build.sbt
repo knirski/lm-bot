@@ -171,7 +171,8 @@ lazy val backend = project
       "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
       "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
       "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
-      // Dev-only 32-byte key — run `openssl rand -base64 32` for production
+      // This fallback is scoped to the local startDev JVM only. Production
+      // deployments must inject LMBOT_MASTER_KEY explicitly.
       "LMBOT_MASTER_KEY" -> sys.env.getOrElse(
         "LMBOT_MASTER_KEY",
         "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
