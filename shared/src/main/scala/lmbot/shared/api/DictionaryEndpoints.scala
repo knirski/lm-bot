@@ -7,7 +7,6 @@ import lmbot.shared.domain.{
   DictionaryService,
   FacilitiesDoctorsResponse
 }
-import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.json.jsoniter.*
 
@@ -16,22 +15,9 @@ import sttp.tapir.json.jsoniter.*
   */
 object DictionaryEndpoints:
 
-  private val errorOut: EndpointOutput[ApiError] =
-    statusCode
-      .and(jsonBody[ErrorBody])
-      .map[ApiError] { case (sc, body) =>
-        ApiError.fromWire(sc.code, body.code, body.message)
-      } { e =>
-        (StatusCode(e.status), ErrorBody(e.code, e.message))
-      }
-
-  private val sessionCookieName: String = "lmbot_session"
-
-  private val securedDictionaryBase =
-    endpoint
-      .in("api" / "accounts" / path[AccountId]("accountId") / "dictionaries")
-      .errorOut(errorOut)
-      .securityIn(cookie[Option[String]](sessionCookieName))
+  private val securedDictionaryBase = SecuredEndpoints.base(
+    "api" / "accounts" / path[AccountId]("accountId") / "dictionaries"
+  )
 
   val cities: Endpoint[Option[String], AccountId, ApiError, List[
     DictionaryCity

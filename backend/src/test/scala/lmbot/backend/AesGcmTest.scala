@@ -116,8 +116,7 @@ class AesGcmTest extends munit.FunSuite:
     assertEquals(parts(0), "v1")
     // Base64URL of 12 known nonce bytes
     assertEquals(parts(1), "QkNERUZHSElKS0xN")
-    // Ciphertext-and-tag is non-empty valid base64url
-    assert(parts(2).nonEmpty, "ciphertext part should not be empty")
+    assertEquals(parts(2), "2V8I8VfEDCui2Yu7Dc29hJisg0sg")
     // The plaintext never appears in the rendered envelope
     assert(!rendered.contains("hello"))
 

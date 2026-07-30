@@ -46,7 +46,9 @@ create table monitors (
     constraint facility_arrays_same_cardinality
         check (cardinality(facility_ids) = cardinality(facility_names)),
     constraint doctor_arrays_same_cardinality
-        check (cardinality(doctor_ids) = cardinality(doctor_names))
+        check (cardinality(doctor_ids) = cardinality(doctor_names)),
+    constraint monitor_date_range_valid check (date_from <= date_to),
+    constraint monitor_time_range_valid check (time_from < time_to)
 );
 
 create index idx_monitors_luxmed_account_id on monitors (luxmed_account_id);

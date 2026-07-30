@@ -2,7 +2,6 @@ package lmbot.shared.api
 
 import lmbot.shared.api.Codecs.given
 import lmbot.shared.domain.{MonitorDraft, MonitorId, MonitorView}
-import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.json.jsoniter.*
 
@@ -11,22 +10,7 @@ import sttp.tapir.json.jsoniter.*
   */
 object MonitorEndpoints:
 
-  private val errorOut: EndpointOutput[ApiError] =
-    statusCode
-      .and(jsonBody[ErrorBody])
-      .map[ApiError] { case (sc, body) =>
-        ApiError.fromWire(sc.code, body.code, body.message)
-      } { e =>
-        (StatusCode(e.status), ErrorBody(e.code, e.message))
-      }
-
-  private val sessionCookieName: String = "lmbot_session"
-
-  private val securedBase =
-    endpoint
-      .in("api" / "monitors")
-      .errorOut(errorOut)
-      .securityIn(cookie[Option[String]](sessionCookieName))
+  private val securedBase = SecuredEndpoints.base("api" / "monitors")
 
   val create
       : Endpoint[Option[String], MonitorDraft, ApiError, MonitorView, Any] =
@@ -38,11 +22,9 @@ object MonitorEndpoints:
     securedBase.get
       .out(jsonBody[List[MonitorView]])
 
-  private val securedIdBase =
-    endpoint
-      .in("api" / "monitors" / path[MonitorId]("monitorId"))
-      .errorOut(errorOut)
-      .securityIn(cookie[Option[String]](sessionCookieName))
+  private val securedIdBase = SecuredEndpoints.base(
+    "api" / "monitors" / path[MonitorId]("monitorId")
+  )
 
   val get: Endpoint[Option[String], MonitorId, ApiError, MonitorView, Any] =
     securedIdBase.get

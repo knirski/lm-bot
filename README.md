@@ -54,7 +54,7 @@ Override the database for external PG by setting `DATABASE_URL` in the shell:
 | `DATABASE_USER` / `PASSWORD` | `lmbot` / `lmbot` | `build.sbt` (overridable) |
 | `COOKIE_SECURE` | `false` (plain-HTTP safe) | `build.sbt` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin` | `build.sbt` |
-| `LMBOT_MASTER_KEY` | dev-only fixed key | `build.sbt` | run `openssl rand -base64 32` for production |
+| `LMBOT_MASTER_KEY` | dev-only fixed key | `build.sbt` (run `openssl rand -base64 32` for production) |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8080` | `build.sbt` |
 
 Override any variable from the shell — the forked JVM inherits it:

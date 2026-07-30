@@ -6,7 +6,7 @@ import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
 import lmbot.backend.config.{MasterKey, Secret}
 import lmbot.backend.crypto.AesGcm
-import lmbot.backend.db.{AccountRepo, LuxmedAccountRow}
+import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.luxmed.model.{LuxmedSession, TokenType}
 import lmbot.backend.luxmed.{CookieJar, PostgresSessionStore, SessionStoreError}
 import lmbot.backend.support.PostgresSuite
@@ -23,8 +23,7 @@ class PostgresSessionStoreTest extends PostgresSuite:
 
   private def owner(): Long =
     nextUser += 1
-    lmbot.backend.db
-      .UserRepo(xa)
+    UserRepo(xa)
       .insert(s"session-owner$nextUser", "Session owner", "hash", Role.Admin)
       .id
 

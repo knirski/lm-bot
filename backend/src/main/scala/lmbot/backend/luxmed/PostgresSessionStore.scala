@@ -13,6 +13,7 @@ import lmbot.backend.crypto.{
 }
 import lmbot.backend.luxmed.model.LuxmedSession
 import lmbot.shared.domain.AccountId
+import org.slf4j.LoggerFactory
 
 /** Encrypted, owner-scoped PostgreSQL session store with refresh-token CAS. */
 final class PostgresSessionStore(
@@ -22,6 +23,7 @@ final class PostgresSessionStore(
     crypto: AesGcm
 ) extends SessionStore:
 
+  private val log = LoggerFactory.getLogger(getClass)
   private val rawAccountId = accountId.value
   private val context =
     EncryptionContext(ownerId, accountId, EncryptionPurpose.Session)
@@ -71,7 +73,10 @@ final class PostgresSessionStore(
           .flatten match
           case None        => Right(None)
           case Some(value) => decodeStored(value).map(Some(_))
-    catch case _: Exception => unavailable
+    catch
+      case error: Exception =>
+        log.warn("Failed to load persisted LuxMed session", error)
+        unavailable
 
   def replace(
       expectedRefreshToken: Option[Secret],
@@ -107,7 +112,10 @@ final class PostgresSessionStore(
                       and encrypted_session is null""".update.run()
           if changed == 1 then Right(())
           else Left(SessionStoreError.ConcurrentModification)
-    catch case _: Exception => unavailable
+    catch
+      case error: Exception =>
+        log.warn("Failed to replace persisted LuxMed session", error)
+        unavailable
 
   def clear(): Either[SessionStoreError, Unit] =
     try
@@ -118,4 +126,7 @@ final class PostgresSessionStore(
           .run()
         if changed == 1 then Right(())
         else Left(SessionStoreError.Unavailable("session persistence failed"))
-    catch case _: Exception => unavailable
+    catch
+      case error: Exception =>
+        log.warn("Failed to clear persisted LuxMed session", error)
+        unavailable
