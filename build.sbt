@@ -145,11 +145,9 @@ lazy val backend = project
       "org.scalameta" %% "munit" % Vmunit % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp
     ),
-    // Each test suite manages its own embedded database on a random port
-    // (fully isolated).  Suites run serially because the zonky backend shares
-    // a binary cache at /tmp/embedded-pg/; memgres has no shared state but
-    // serial execution is harmless and keeps switching between backends safe.
-    Test / parallelExecution := false,
+    // Each database test case manages its own embedded database on a random
+    // port, so suites can run concurrently without shared test state.
+    Test / parallelExecution := true,
 
     // Virtual threads want a real JVM 25+.
     javacOptions ++= Seq("-source", "25", "-target", "25"),

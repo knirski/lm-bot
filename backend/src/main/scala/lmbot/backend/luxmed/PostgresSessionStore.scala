@@ -78,11 +78,10 @@ final class PostgresSessionStore(
       updatedSession: LuxmedSession
   ): Either[SessionStoreError, Unit] =
     try
-      transact(xa):
+      connect(xa):
         val stored =
           sql"""select encrypted_session from luxmed_accounts
-                where id = $rawAccountId and owner_user_id = $ownerId
-                for update"""
+                where id = $rawAccountId and owner_user_id = $ownerId"""
             .query[Option[String]]
             .run()
             .headOption
@@ -95,12 +94,19 @@ final class PostgresSessionStore(
         else
           val encrypted =
             crypto.encrypt(SessionCodec.encode(updatedSession), context).render
-          val changed = sql"""update luxmed_accounts
-                set encrypted_session = $encrypted, updated_at = now()
-                where id = $rawAccountId and owner_user_id = $ownerId""".update
-            .run()
+          val changed = stored match
+            case Some(previous) =>
+              sql"""update luxmed_accounts
+                    set encrypted_session = $encrypted, updated_at = now()
+                    where id = $rawAccountId and owner_user_id = $ownerId
+                      and encrypted_session = $previous""".update.run()
+            case None =>
+              sql"""update luxmed_accounts
+                    set encrypted_session = $encrypted, updated_at = now()
+                    where id = $rawAccountId and owner_user_id = $ownerId
+                      and encrypted_session is null""".update.run()
           if changed == 1 then Right(())
-          else Left(SessionStoreError.Unavailable("session persistence failed"))
+          else Left(SessionStoreError.ConcurrentModification)
     catch case _: Exception => unavailable
 
   def clear(): Either[SessionStoreError, Unit] =

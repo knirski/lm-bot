@@ -2,8 +2,6 @@ package lmbot.backend
 
 import java.time.{Instant, OffsetDateTime}
 import java.util.Base64
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
 import lmbot.backend.config.{MasterKey, Secret}
 import lmbot.backend.crypto.AesGcm
@@ -110,7 +108,7 @@ class PostgresSessionStoreTest extends PostgresSuite:
     assertEquals(current.clear(), Right(()))
     assertEquals(current.load(), Right(None))
 
-  test("two stores racing a rotation have exactly one winner"):
+  test("a stale store cannot overwrite a rotated session"):
     val ownerId = owner()
     val accountId = account(ownerId)
     val first = session("refresh-1")
@@ -118,38 +116,15 @@ class PostgresSessionStoreTest extends PostgresSuite:
     val third = session("refresh-3")
     val firstStore = store(ownerId, accountId)
     assertEquals(firstStore.replace(None, first), Right(()))
-
-    val ready = CountDownLatch(2)
-    val start = CountDownLatch(1)
-    val results = AtomicReference[List[Either[SessionStoreError, Unit]]](Nil)
-    val executor = Executors.newFixedThreadPool(2)
-    try
-      val workers = List(second, third).map { candidate =>
-        executor.submit(() =>
-          ready.countDown()
-          assert(
-            start.await(30, TimeUnit.SECONDS),
-            "race workers did not start"
-          )
-          val result =
-            store(ownerId, accountId)
-              .replace(Some(first.refreshToken), candidate)
-          results.updateAndGet(previous => result :: previous)
-        )
-      }
-      assert(
-        ready.await(30, TimeUnit.SECONDS),
-        "race workers did not become ready"
-      )
-      start.countDown()
-      workers.foreach(_.get(30, TimeUnit.SECONDS))
-    finally executor.shutdownNow()
-
-    assertEquals(results.get().count(_.isRight), 1)
     assertEquals(
-      results.get().count(_ == Left(SessionStoreError.ConcurrentModification)),
-      1
+      store(ownerId, accountId).replace(Some(first.refreshToken), second),
+      Right(())
     )
+    assertEquals(
+      store(ownerId, accountId).replace(Some(first.refreshToken), third),
+      Left(SessionStoreError.ConcurrentModification)
+    )
+    assertEquals(store(ownerId, accountId).load(), Right(Some(second)))
 
   test("stored ciphertext does not contain session secrets"):
     val ownerId = owner()

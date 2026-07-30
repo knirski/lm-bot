@@ -41,6 +41,16 @@ object EmbeddedPg:
       case Backend.Memgres => MemgresBackend.start(port)
       case Backend.Zonky   => ZonkyBackend.start(port)
 
+  /** Start the backend used by database tests.
+    *
+    * Memgres is the default for fast tests. Set `EMBEDDED_DB=zonky` to run
+    * compatibility checks against real PostgreSQL.
+    */
+  def startForTest(port: Int): EmbeddedDb =
+    sys.env.get("EMBEDDED_DB") match
+      case Some("zonky") => ZonkyBackend.start(port)
+      case _             => MemgresBackend.start(port)
+
   // ---------------------------------------------------------------------------
   // Bootstrap – idempotent role/database creation
   // ---------------------------------------------------------------------------

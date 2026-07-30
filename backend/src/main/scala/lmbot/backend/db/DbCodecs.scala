@@ -1,6 +1,7 @@
 package lmbot.backend.db
 
 import java.lang.reflect.Array as ReflectArray
+import java.sql.ResultSet
 import java.sql.Types
 
 import scala.IArray
@@ -14,17 +15,45 @@ import com.augustnagro.magnum.DbCodec
   * codecs fill those gaps using the PostgreSQL JDBC driver's native support.
   */
 
+private def parseArrayText(value: String): List[String] =
+  val body = value.stripPrefix("{").stripSuffix("}")
+  if body.isEmpty then Nil
+  else
+    val values = scala.collection.mutable.ListBuffer.empty[String]
+    val current = new StringBuilder
+    var quoted = false
+    var escaped = false
+    body.foreach {
+      case '\\' if quoted  => escaped = true
+      case '"' if !escaped => quoted = !quoted
+      case ',' if !quoted  =>
+        values += current.result()
+        current.clear()
+      case char =>
+        current.append(if escaped then char else char)
+        escaped = false
+    }
+    values += current.result()
+    values.toList
+
+private def readArrayText(rs: ResultSet, pos: Int): List[String] =
+  try
+    val arr = rs.getArray(pos)
+    if arr == null then Nil
+    else
+      val raw = arr.getArray
+      (0 until ReflectArray.getLength(raw)).toList.map { index =>
+        ReflectArray.get(raw, index).toString
+      }
+  catch
+    case _: java.sql.SQLException =>
+      Option(rs.getString(pos)).map(parseArrayText).getOrElse(Nil)
+
 given longListCodec: DbCodec[List[Long]] with
   def queryRepr: String = "?"
   def cols: IArray[Int] = IArray(Types.ARRAY)
   def readSingle(rs: java.sql.ResultSet, pos: Int): List[Long] =
-    val arr = rs.getArray(pos)
-    if arr == null then List.empty
-    else
-      val raw = arr.getArray
-      (0 until ReflectArray.getLength(raw)).toList.map { index =>
-        ReflectArray.get(raw, index).asInstanceOf[java.lang.Number].longValue
-      }
+    readArrayText(rs, pos).map(_.toLong)
   def writeSingle(
       value: List[Long],
       ps: java.sql.PreparedStatement,
@@ -38,13 +67,7 @@ given stringListCodec: DbCodec[List[String]] with
   def queryRepr: String = "?"
   def cols: IArray[Int] = IArray(Types.ARRAY)
   def readSingle(rs: java.sql.ResultSet, pos: Int): List[String] =
-    val arr = rs.getArray(pos)
-    if arr == null then List.empty
-    else
-      val raw = arr.getArray
-      (0 until ReflectArray.getLength(raw)).toList.map { index =>
-        ReflectArray.get(raw, index).asInstanceOf[String]
-      }
+    readArrayText(rs, pos)
   def writeSingle(
       value: List[String],
       ps: java.sql.PreparedStatement,
