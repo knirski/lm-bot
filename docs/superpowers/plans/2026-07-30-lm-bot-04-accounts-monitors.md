@@ -684,6 +684,7 @@ git commit -m "feat: link and manage Luxmed accounts"
 
 - Create: `backend/src/main/scala/lmbot/backend/http/AccountRoutes.scala`
 - Create: `backend/src/main/scala/lmbot/backend/http/DictionaryRoutes.scala`
+- Create: `backend/src/main/scala/lmbot/backend/account/DictionaryService.scala`
 - Create: `backend/src/test/scala/lmbot/backend/AccountHttpApiTest.scala`
 - Create: `backend/src/test/scala/lmbot/backend/DictionaryServiceTest.scala`
 - Modify: `backend/src/main/scala/lmbot/backend/account/AccountService.scala`
