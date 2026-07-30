@@ -132,8 +132,13 @@ class CodecRoundTripTest extends munit.FunSuite:
       statusReason = Some("bad password"),
       lastSuccessfulLogin = None
     )
+    val withReasonJson = writeToString(withReason)
     assertEquals(
-      readFromString[AccountView](writeToString(withReason)),
+      withReasonJson,
+      """{"id":1,"label":"home","username":"user@example.com","status":"auth_failed","statusReason":"bad password"}"""
+    )
+    assertEquals(
+      readFromString[AccountView](withReasonJson),
       withReason
     )
 
@@ -145,8 +150,13 @@ class CodecRoundTripTest extends munit.FunSuite:
       statusReason = None,
       lastSuccessfulLogin = Some(Instant.parse("2026-07-01T00:00:00Z"))
     )
+    val withLoginJson = writeToString(withLogin)
     assertEquals(
-      readFromString[AccountView](writeToString(withLogin)),
+      withLoginJson,
+      """{"id":2,"label":"work","username":"admin","status":"active","lastSuccessfulLogin":"2026-07-01T00:00:00Z"}"""
+    )
+    assertEquals(
+      readFromString[AccountView](withLoginJson),
       withLogin
     )
 
@@ -167,7 +177,9 @@ class CodecRoundTripTest extends munit.FunSuite:
 
   test("NamedId round-trips"):
     val original = NamedId(3L, "Warsaw")
-    assertEquals(readFromString[NamedId](writeToString(original)), original)
+    val json = writeToString(original)
+    assertEquals(json, """{"id":3,"name":"Warsaw"}""")
+    assertEquals(readFromString[NamedId](json), original)
 
   test("MonitorDraft with empty facilities round-trips"):
     val draft = MonitorDraft(
@@ -184,7 +196,12 @@ class CodecRoundTripTest extends munit.FunSuite:
       daysOfWeek = List(DayOfWeek.MONDAY),
       autoBook = false
     )
-    assertEquals(readFromString[MonitorDraft](writeToString(draft)), draft)
+    val json = writeToString(draft)
+    assertEquals(
+      json,
+      """{"accountId":1,"name":"Test","city":{"id":1,"name":"City"},"service":{"id":2,"name":"Service"},"facilities":[],"doctors":[],"dateFrom":"2026-08-01","dateTo":"2026-08-31","timeFrom":"08:00","timeTo":"16:00","daysOfWeek":["Monday"],"autoBook":false,"intervalMinutes":10}"""
+    )
+    assertEquals(readFromString[MonitorDraft](json), draft)
 
   test("MonitorView round-trips"):
     val now = Instant.parse("2026-07-30T12:00:00Z")
@@ -207,23 +224,43 @@ class CodecRoundTripTest extends munit.FunSuite:
       createdAt = now,
       updatedAt = now
     )
-    assertEquals(readFromString[MonitorView](writeToString(view)), view)
+    val json = writeToString(view)
+    assertEquals(
+      json,
+      """{"id":1,"accountId":7,"name":"Dermatologist","state":"active","city":{"id":3,"name":"Warsaw"},"service":{"id":42,"name":"Dermatology"},"facilities":[{"id":9,"name":"Puławska"}],"doctors":[],"dateFrom":"2026-08-01","dateTo":"2026-08-31","timeFrom":"08:00","timeTo":"16:00","daysOfWeek":["Monday","Wednesday"],"autoBook":false,"intervalMinutes":10,"createdAt":"2026-07-30T12:00:00Z","updatedAt":"2026-07-30T12:00:00Z"}"""
+    )
+    assertEquals(readFromString[MonitorView](json), view)
 
   test("LinkAccountRequest round-trips"):
     val original = LinkAccountRequest("home", "user@example.com", "p4ss")
+    val json = writeToString(original)
     assertEquals(
-      readFromString[LinkAccountRequest](writeToString(original)),
+      json,
+      """{"label":"home","username":"user@example.com","password":"p4ss"}"""
+    )
+    assertEquals(
+      readFromString[LinkAccountRequest](json),
       original
     )
 
   test("Dictionary types round-trip"):
     val city = DictionaryCity(1L, "Warsaw")
+    assertEquals(writeToString(city), """{"id":1,"name":"Warsaw"}""")
     assertEquals(readFromString[DictionaryCity](writeToString(city)), city)
     val svc = DictionaryService(42L, "Dermatology")
+    assertEquals(
+      writeToString(svc),
+      """{"id":42,"name":"Dermatology"}"""
+    )
     assertEquals(readFromString[DictionaryService](writeToString(svc)), svc)
     val fac = DictionaryFacility(9L, "Puławska")
+    assertEquals(writeToString(fac), """{"id":9,"name":"Puławska"}""")
     assertEquals(readFromString[DictionaryFacility](writeToString(fac)), fac)
     val doc = DictionaryDoctor(101L, "Dr. House")
+    assertEquals(
+      writeToString(doc),
+      """{"id":101,"name":"Dr. House"}"""
+    )
     assertEquals(readFromString[DictionaryDoctor](writeToString(doc)), doc)
 
   test("FacilitiesDoctorsResponse round-trips"):
@@ -231,8 +268,13 @@ class CodecRoundTripTest extends munit.FunSuite:
       facilities = List(DictionaryFacility(9L, "Puławska")),
       doctors = List(DictionaryDoctor(101L, "Dr. House"))
     )
+    val json = writeToString(resp)
     assertEquals(
-      readFromString[FacilitiesDoctorsResponse](writeToString(resp)),
+      json,
+      """{"facilities":[{"id":9,"name":"Puławska"}],"doctors":[{"id":101,"name":"Dr. House"}]}"""
+    )
+    assertEquals(
+      readFromString[FacilitiesDoctorsResponse](json),
       resp
     )
 
