@@ -2,7 +2,7 @@
 
 **Spec:** [`docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md`](../specs/2026-07-27-lm-bot-prd-design.md) (as amended 2026-07-27)
 
-The spec describes a complete application. At the TDD granularity this project uses, it does not fit one plan, so it is split into six sequential plans. Each produces working, testable software on its own and is written out in full only when it is reached — later plans are deliberately left as scope statements, because the real ergonomics of Gears, Magnum, and Scala.js/Wasm will be known by then and would otherwise invalidate speculative detail.
+The spec describes a complete application. At the TDD granularity this project uses, it does not fit one plan, so it is split into seven sequential plans. Each produces working, testable software on its own and is written out in full only when it is reached — later plans are deliberately left as scope statements, because the real ergonomics of Gears, Magnum, and Scala.js/Wasm will be known by then and would otherwise invalidate speculative detail.
 
 | # | Plan | Deliverable | Status |
 |---|---|---|---|
