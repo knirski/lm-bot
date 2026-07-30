@@ -1,8 +1,8 @@
 package lmbot.backend.db
 
 import java.lang.reflect.Array as ReflectArray
+import java.sql.{PreparedStatement, ResultSet, SQLException}
 import java.sql.Types
-import java.sql.{ResultSet, SQLException}
 
 import scala.IArray
 import scala.collection.mutable.ListBuffer
@@ -67,7 +67,7 @@ private def arrayCodec[A](
       readArrayText(rs, pos).map(decode)
     def writeSingle(
         value: List[A],
-        ps: java.sql.PreparedStatement,
+        ps: PreparedStatement,
         pos: Int
     ): Unit =
       val conn = ps.getConnection
