@@ -228,6 +228,63 @@ It is not a Luxmed wire identifier and must not be added to
 `lmbot.backend.luxmed.model.OpaqueIds`, whose types and codecs represent
 identifiers received from or sent to Luxmed.
 
+**Plan 4 delivery boundary.** Plan 4 is one end-to-end milestone, split into
+independently reviewable tasks rather than separate plans. It delivers linked
+Luxmed accounts and stored monitor definitions through persistence, services,
+the shared HTTP contract, and the browser UI. It does not start monitor loops,
+write `monitor_events`, send notifications, or book appointments; those remain
+Plans 5 and 6.
+
+- Browser-facing account and monitor models live in `shared`; Luxmed wire DTOs
+  remain backend-internal. Dictionary responses are mapped to purpose-built
+  shared DTOs rather than exposing `lmbot.backend.luxmed.model`.
+- Luxmed credentials, the stable device UUID, and the complete persisted
+  session use a versioned AES-256-GCM envelope. The master key comes from
+  `LMBOT_MASTER_KEY`, encoded as Base64 and decoding to exactly 32 bytes.
+  Every encryption uses a fresh 96-bit nonce from `SecureRandom`; the envelope
+  stores its format version, nonce, and ciphertext including the GCM tag.
+  Authenticated additional data binds each value to its record identity and
+  purpose (`password`, `device-id`, or `session`) so encrypted columns cannot
+  be swapped between records or purposes. Unsupported envelope versions,
+  invalid keys, and authentication failures are typed boundary errors and
+  never fall back to plaintext.
+- The PostgreSQL `SessionStore` is scoped to one account. Its
+  `replace(expectedRefreshToken, updatedSession)` decrypts and compares the
+  current refresh token and writes the newly encrypted session in one database
+  transaction. A mismatch writes nothing and returns
+  `ConcurrentModification`. Restart coverage must prove load, proactive
+  refresh, and survival of the rotated token without another password grant.
+- Linking performs at most one live password grant. It verifies credentials
+  and obtains the initial session before the account becomes visible as
+  `active`; persistence of the account, encrypted credentials, stable device
+  UUID, and initial encrypted session is atomic. A failed live login creates no
+  account. Expected credential rejection, an unexpected challenge-shaped
+  response, and a suspected fair-use lockout remain distinct user-safe failure
+  values; no secret or raw Luxmed payload crosses the browser API.
+- Account status transitions and ownership policy live in the account service,
+  not routes or views. Every list/read/update/delete operation is scoped to the
+  authenticated owner. Deleting an account cascades to its monitors after an
+  explicit browser confirmation.
+- Monitor criteria use explicit relational columns for scalar values and
+  PostgreSQL arrays for optional facility and doctor selections. IDs are stored
+  together with denormalized display names so saved monitors remain readable
+  if a later dictionary response changes. The service validates ownership of
+  the selected account, a non-empty date range, start not after end, a valid
+  time window, at least one day of week, and an interval of at least five
+  minutes; omitted intervals become ten minutes. All date and time values have
+  `Europe/Warsaw` semantics.
+- The dictionaries proxy calls the linked account's `LuxmedClient` and exposes
+  only the data needed by the wizard. The guided browser flow is city, then
+  service/variant, then optional facilities and doctors, then schedule and
+  behavior. Editing reuses the same form model. Plan 4 lists monitors with
+  state and persisted configuration; last-check summaries and event detail
+  remain empty/not available until Plan 5 creates monitor events.
+- The frontend retains the Elm-on-Gears boundary: state transitions and
+  validation decisions live in `update`, API calls are effects, and Laminar
+  views only project state and dispatch messages. Account management, monitor
+  list, create, and edit are real-browser acceptance-tested because successful
+  linking and linking alone are not evidence that the UI advances correctly.
+
 The implementation is **direct-style functional Scala with Gears**. Suspended
 operations have ordinary synchronous-looking signatures with `(using Async)`;
 Gears fibers, structured scopes, and `Semaphore` are the only concurrency
