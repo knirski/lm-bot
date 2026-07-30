@@ -59,8 +59,12 @@ class PostgresSessionStoreTest extends PostgresSuite:
       CookieJar("SESSION" -> Secret(s"cookie-$refresh"))
     )
 
-  private def store(ownerId: Long, accountId: Long): PostgresSessionStore =
-    PostgresSessionStore(xa, ownerId, AccountId(accountId), crypto)
+  private def store(
+      ownerId: Long,
+      accountId: Long,
+      afterRead: () => Unit = () => ()
+  ): PostgresSessionStore =
+    PostgresSessionStore(xa, ownerId, AccountId(accountId), crypto, afterRead)
 
   test("load returns None before the first session"):
     val ownerId = owner()
@@ -135,24 +139,32 @@ class PostgresSessionStoreTest extends PostgresSuite:
     val initialStore = store(ownerId, accountId)
     assertEquals(initialStore.replace(None, first), Right(()))
 
-    val ready = new CountDownLatch(1)
+    val arrived = new CountDownLatch(2)
+    val release = new CountDownLatch(1)
+    val barrier = () =>
+      arrived.countDown()
+      assert(arrived.await(10, TimeUnit.SECONDS))
+      assert(release.await(10, TimeUnit.SECONDS))
+
     val executor = Executors.newFixedThreadPool(2)
     try
       val attempts = List(second, third).map: updated =>
-        executor.submit(() =>
-          ready.await(10, TimeUnit.SECONDS)
-          store(ownerId, accountId).replace(Some(first.refreshToken), updated)
+        updated -> executor.submit(() =>
+          store(ownerId, accountId, barrier)
+            .replace(Some(first.refreshToken), updated)
         )
-      ready.countDown()
-      val results = attempts.map(_.get(10, TimeUnit.SECONDS)).toList
-      assertEquals(results.count(_ == Right(())), 1)
+      assert(arrived.await(10, TimeUnit.SECONDS))
+      release.countDown()
+      val results = attempts.map: (updated, future) =>
+        updated -> future.get(10, TimeUnit.SECONDS)
+      assertEquals(results.count(_._2 == Right(())), 1)
       assertEquals(
-        results.count(_ == Left(SessionStoreError.ConcurrentModification)),
+        results.count(_._2 == Left(SessionStoreError.ConcurrentModification)),
         1
       )
       val winner = results.collectFirst:
-        case Right(()) if results.head == Right(()) => second
-        case Right(())                              => third
+        case (updated, Right(())) => updated
+      assert(winner.isDefined)
       assertEquals(store(ownerId, accountId).load(), Right(winner))
     finally executor.shutdownNow()
 

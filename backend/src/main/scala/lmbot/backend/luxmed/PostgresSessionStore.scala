@@ -20,7 +20,9 @@ final class PostgresSessionStore(
     xa: Transactor,
     ownerId: Long,
     accountId: AccountId,
-    crypto: AesGcm
+    crypto: AesGcm,
+    // Test hook used to coordinate concurrent CAS attempts after the row read.
+    afterRead: () => Unit = () => ()
 ) extends SessionStore:
 
   private val log = LoggerFactory.getLogger(getClass)
@@ -91,6 +93,7 @@ final class PostgresSessionStore(
             .run()
             .headOption
             .flatten
+        afterRead()
         val current = stored.flatMap(value => decodeStored(value).toOption)
         if stored.exists(value => decodeStored(value).isLeft) then
           Left(SessionStoreError.Unavailable("session persistence failed"))
