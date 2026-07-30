@@ -44,6 +44,15 @@ class CodecRoundTripTest extends munit.FunSuite:
     assert(!json.contains("\"type\""), s"role leaked a discriminator: $json")
 
   test(
+    "LinkAccountRequest does not serialise its password into the log-friendly toString"
+  ):
+    val req = LinkAccountRequest("home", "user@example.com", "s3cret")
+    assert(
+      !req.toString.contains("s3cret"),
+      s"password leaked in toString: ${req.toString}"
+    )
+
+  test(
     "a login request does not serialise its password into the log-friendly toString"
   ):
     // The wire format must carry the password; the *rendering* must not.

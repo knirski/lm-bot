@@ -95,7 +95,13 @@ object Codecs:
 
   given JsonValueCodec[DayOfWeek] with
     def decodeValue(in: JsonReader, default: DayOfWeek): DayOfWeek =
-      DayOfWeek.valueOf(in.readString(null).toUpperCase)
+      val raw = in.readString(null)
+      if raw == null then in.enumValueError("null DayOfWeek")
+      else
+        try DayOfWeek.valueOf(raw.toUpperCase)
+        catch
+          case _: IllegalArgumentException =>
+            in.enumValueError(s"unexpected DayOfWeek: $raw")
 
     def encodeValue(x: DayOfWeek, out: JsonWriter): Unit =
       out.writeVal(dayOfWeekDisplayName(x))
@@ -163,7 +169,7 @@ object Codecs:
     Schema.schemaForString.map { s =>
       try Some(DayOfWeek.valueOf(s.toUpperCase))
       catch case _: IllegalArgumentException => None
-    }(_.toString)
+    }(dayOfWeekDisplayName(_))
   // LocalDate and LocalTime have built-in Tapir schemas
 
   given Schema[MonitorDraft] = Schema.derived

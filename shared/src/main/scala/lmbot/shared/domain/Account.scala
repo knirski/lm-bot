@@ -23,4 +23,6 @@ final case class LinkAccountRequest(
     label: String,
     username: String,
     password: String
-)
+):
+  override def toString: String =
+    s"LinkAccountRequest($label, $username, ***)"
