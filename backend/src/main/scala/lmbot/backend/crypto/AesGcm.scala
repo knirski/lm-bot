@@ -86,5 +86,5 @@ final case class AesGcm(key: MasterKey, random: SecureRandom = SecureRandom()):
       val plaintext = cipher.doFinal(envelope.ciphertextAndTag)
       Right(Secret(String(plaintext, StandardCharsets.UTF_8)))
     catch
-      case _: javax.crypto.AEADBadTagException =>
+      case _: java.security.GeneralSecurityException =>
         Left(CryptoError.AuthenticationFailed)
