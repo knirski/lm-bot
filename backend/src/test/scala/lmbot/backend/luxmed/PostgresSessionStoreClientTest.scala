@@ -1,10 +1,11 @@
 package lmbot.backend.luxmed
 
-import java.time.Duration
-import java.time.OffsetDateTime
-import java.util.UUID
+import java.time.{Duration, OffsetDateTime}
+import java.util.{Base64, UUID}
 
+import lmbot.backend.config.MasterKey
 import lmbot.backend.config.{AppVersion, Secret}
+import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.luxmed.model.Credentials
 import lmbot.backend.luxmed.support.{
@@ -61,11 +62,9 @@ class PostgresSessionStoreClientTest extends PostgresSuite with GearsTest:
   test("a new client refreshes a persisted session without a password grant"):
     val (owner, accountId) = account()
     val fake = FakeTime()
-    val crypto = lmbot.backend.crypto.AesGcm(
-      lmbot.backend.config.MasterKey
-        .fromBase64(
-          java.util.Base64.getEncoder.encodeToString(Array.fill[Byte](32)(7))
-        )
+    val crypto = AesGcm(
+      MasterKey
+        .fromBase64(Base64.getEncoder.encodeToString(Array.fill[Byte](32)(7)))
         .toOption
         .get
     )
