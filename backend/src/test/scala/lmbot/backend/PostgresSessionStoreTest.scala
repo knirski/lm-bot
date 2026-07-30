@@ -2,6 +2,7 @@ package lmbot.backend
 
 import java.time.{Instant, OffsetDateTime}
 import java.util.Base64
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
 import lmbot.backend.config.{MasterKey, Secret}
 import lmbot.backend.crypto.AesGcm
@@ -125,6 +126,36 @@ class PostgresSessionStoreTest extends PostgresSuite:
       Left(SessionStoreError.ConcurrentModification)
     )
     assertEquals(store(ownerId, accountId).load(), Right(Some(second)))
+
+  test("concurrent replacements allow exactly one CAS winner"):
+    val ownerId = owner()
+    val accountId = account(ownerId)
+    val first = session("refresh-1")
+    val second = session("refresh-2")
+    val third = session("refresh-3")
+    val initialStore = store(ownerId, accountId)
+    assertEquals(initialStore.replace(None, first), Right(()))
+
+    val ready = new CountDownLatch(1)
+    val executor = Executors.newFixedThreadPool(2)
+    try
+      val attempts = List(second, third).map: updated =>
+        executor.submit(() =>
+          ready.await(10, TimeUnit.SECONDS)
+          store(ownerId, accountId).replace(Some(first.refreshToken), updated)
+        )
+      ready.countDown()
+      val results = attempts.map(_.get(10, TimeUnit.SECONDS)).toList
+      assertEquals(results.count(_ == Right(())), 1)
+      assertEquals(
+        results.count(_ == Left(SessionStoreError.ConcurrentModification)),
+        1
+      )
+      val winner = results.collectFirst:
+        case Right(()) if results.head == Right(()) => second
+        case Right(())                              => third
+      assertEquals(store(ownerId, accountId).load(), Right(winner))
+    finally executor.shutdownNow()
 
   test("stored ciphertext does not contain session secrets"):
     val ownerId = owner()
