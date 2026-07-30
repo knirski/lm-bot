@@ -62,35 +62,39 @@ final class AccountClientFactory private (
       ownerId: Long,
       accountId: AccountId
   ): Either[ApiError, LuxmedClient] =
-    accounts
-      .findOwned(accountId, ownerId)
-      .toRight(ApiError.NotFound)
-      .flatMap: row =>
-        for
-          username <- decrypt(
-            row.encryptedUsername,
-            ownerId,
-            accountId,
-            EncryptionPurpose.Username
+    try
+      accounts
+        .findOwned(accountId, ownerId)
+        .toRight(ApiError.NotFound)
+        .flatMap: row =>
+          for
+            username <- decrypt(
+              row.encryptedUsername,
+              ownerId,
+              accountId,
+              EncryptionPurpose.Username
+            )
+            password <- decrypt(
+              row.encryptedPassword,
+              ownerId,
+              accountId,
+              EncryptionPurpose.Password
+            )
+            device <- decrypt(
+              row.encryptedDeviceUuid,
+              ownerId,
+              accountId,
+              EncryptionPurpose.DeviceId
+            )
+            uuid <- parseUuid(device.value)
+          yield client(
+            baseConfig.copy(deviceUuid = uuid),
+            Credentials(username.value, password),
+            PostgresSessionStore(xa, ownerId, accountId, crypto)
           )
-          password <- decrypt(
-            row.encryptedPassword,
-            ownerId,
-            accountId,
-            EncryptionPurpose.Password
-          )
-          device <- decrypt(
-            row.encryptedDeviceUuid,
-            ownerId,
-            accountId,
-            EncryptionPurpose.DeviceId
-          )
-          uuid <- parseUuid(device.value)
-        yield client(
-          baseConfig.copy(deviceUuid = uuid),
-          Credentials(username.value, password),
-          PostgresSessionStore(xa, ownerId, accountId, crypto)
-        )
+    catch
+      case _: Exception =>
+        Left(ApiError.Unexpected("The Luxmed account could not be loaded."))
 
   private def decrypt(
       value: String,

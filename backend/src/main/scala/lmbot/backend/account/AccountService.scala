@@ -34,72 +34,82 @@ final class AccountService(
       Async
   ): Either[ApiError, AccountView] =
     validate(request).flatMap: normalized =>
-      val id = accounts.reserveId()
-      val deviceUuid = uuidGenerator()
-      clients
-        .forLink(
-          normalized.username,
-          Secret(normalized.password),
-          deviceUuid
-        )
-        .authenticate() match
-        case Left(error)    => Left(linkError(error))
-        case Right(session) =>
-          if accounts.listOwned(ownerId).exists(_.label == normalized.label)
-          then
-            Left(
-              ApiError.Conflict("An account with this label already exists.")
-            )
-          else
-            val timestamp = now()
-            val row = LuxmedAccountRow(
-              id.value,
-              ownerId,
-              normalized.label,
-              encrypt(
-                normalized.username,
+      try
+        val id = accounts.reserveId()
+        val deviceUuid = uuidGenerator()
+        clients
+          .forLink(
+            normalized.username,
+            Secret(normalized.password),
+            deviceUuid
+          )
+          .authenticate() match
+          case Left(error)    => Left(linkError(error))
+          case Right(session) =>
+            if accounts.listOwned(ownerId).exists(_.label == normalized.label)
+            then
+              Left(
+                ApiError.Conflict("An account with this label already exists.")
+              )
+            else
+              val timestamp = now()
+              val row = LuxmedAccountRow(
+                id.value,
                 ownerId,
-                id,
-                EncryptionPurpose.Username
-              ),
-              encrypt(
-                normalized.password,
-                ownerId,
-                id,
-                EncryptionPurpose.Password
-              ),
-              encrypt(
-                deviceUuid.toString,
-                ownerId,
-                id,
-                EncryptionPurpose.DeviceId
-              ),
-              Some(
+                normalized.label,
                 encrypt(
-                  SessionCodec.encode(session),
+                  normalized.username,
                   ownerId,
                   id,
-                  EncryptionPurpose.Session
-                )
-              ),
-              "active",
-              None,
-              Some(timestamp),
-              timestamp,
-              timestamp
-            )
-            try toView(accounts.insert(row))
-            catch
-              case error: Exception if hasSqlState(error, "23505") =>
-                Left(
-                  ApiError.Conflict(
-                    "An account with this label already exists."
+                  EncryptionPurpose.Username
+                ),
+                encrypt(
+                  normalized.password,
+                  ownerId,
+                  id,
+                  EncryptionPurpose.Password
+                ),
+                encrypt(
+                  deviceUuid.toString,
+                  ownerId,
+                  id,
+                  EncryptionPurpose.DeviceId
+                ),
+                Some(
+                  encrypt(
+                    SessionCodec.encode(session),
+                    ownerId,
+                    id,
+                    EncryptionPurpose.Session
                   )
-                )
-              case _: Exception =>
-                Left(
-                  ApiError.Unexpected("The Luxmed account could not be linked.")
-                )
+                ),
+                "active",
+                None,
+                Some(timestamp),
+                timestamp,
+                timestamp
+              )
+              try toView(accounts.insert(row))
+              catch
+                case error: Exception if hasSqlState(error, "23505") =>
+                  Left(
+                    ApiError.Conflict(
+                      "An account with this label already exists."
+                    )
+                  )
+                case _: Exception =>
+                  Left(
+                    ApiError.Unexpected(
+                      "The Luxmed account could not be linked."
+                    )
+                  )
+      catch
+        case error: Exception if hasSqlState(error, "23505") =>
+          Left(
+            ApiError.Conflict("An account with this label already exists.")
+          )
+        case _: Exception =>
+          Left(ApiError.Unexpected("The Luxmed account could not be linked."))
 
   private def hasSqlState(error: Throwable, state: String): Boolean =
     error match
