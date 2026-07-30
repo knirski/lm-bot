@@ -217,7 +217,7 @@ final case class MonitorDraft(
     dateTo: LocalDate,
     timeFrom: LocalTime,
     timeTo: LocalTime,
-    daysOfWeek: Set[DayOfWeek],
+    daysOfWeek: List[DayOfWeek],
     autoBook: Boolean,
     intervalMinutes: Int = 10
 )
