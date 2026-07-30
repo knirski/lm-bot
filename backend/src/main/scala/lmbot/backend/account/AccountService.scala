@@ -1,5 +1,6 @@
 package lmbot.backend.account
 
+import java.sql.SQLException
 import java.time.{OffsetDateTime, ZoneId}
 import java.util.UUID
 
@@ -89,10 +90,21 @@ final class AccountService(
             )
             try toView(accounts.insert(row))
             catch
+              case error: Exception if hasSqlState(error, "23505") =>
+                Left(
+                  ApiError.Conflict(
+                    "An account with this label already exists."
+                  )
+                )
               case _: Exception =>
                 Left(
                   ApiError.Unexpected("The Luxmed account could not be linked.")
                 )
+
+  private def hasSqlState(error: Throwable, state: String): Boolean =
+    error match
+      case sql: SQLException if sql.getSQLState == state => true
+      case _ => Option(error.getCause).exists(hasSqlState(_, state))
 
   def list(ownerId: Long): Either[ApiError, List[AccountView]] =
     try
