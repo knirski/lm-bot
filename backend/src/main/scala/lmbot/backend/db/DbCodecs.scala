@@ -24,13 +24,16 @@ private def parseArrayText(value: String): List[String] =
     var quoted = false
     var escaped = false
     body.foreach {
-      case '\\' if quoted  => escaped = true
+      case '\\' if quoted && !escaped => escaped = true
+      case '\\' if quoted && escaped  =>
+        current.append('\\')
+        escaped = false
       case '"' if !escaped => quoted = !quoted
       case ',' if !quoted  =>
         values += current.result()
         current.clear()
       case char =>
-        current.append(if escaped then char else char)
+        current.append(if escaped && char == '\\' then '\\' else char)
         escaped = false
     }
     values += current.result()
