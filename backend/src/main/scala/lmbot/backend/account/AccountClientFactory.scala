@@ -5,12 +5,7 @@ import java.util.UUID
 
 import com.augustnagro.magnum.Transactor
 import lmbot.backend.config.Secret
-import lmbot.backend.crypto.{
-  AesGcm,
-  EncryptedEnvelope,
-  EncryptionContext,
-  EncryptionPurpose
-}
+import lmbot.backend.crypto.{AesGcm, EncryptionPurpose}
 import lmbot.backend.db.AccountRepo
 import lmbot.backend.luxmed.model.Credentials
 import lmbot.backend.luxmed.{
@@ -68,19 +63,22 @@ final class AccountClientFactory private (
         .toRight(ApiError.NotFound)
         .flatMap: row =>
           for
-            username <- decrypt(
+            username <- StoredSecret.decrypt(
+              crypto,
               row.encryptedUsername,
               ownerId,
               accountId,
               EncryptionPurpose.Username
             )
-            password <- decrypt(
+            password <- StoredSecret.decrypt(
+              crypto,
               row.encryptedPassword,
               ownerId,
               accountId,
               EncryptionPurpose.Password
             )
-            device <- decrypt(
+            device <- StoredSecret.decrypt(
+              crypto,
               row.encryptedDeviceUuid,
               ownerId,
               accountId,
@@ -95,27 +93,6 @@ final class AccountClientFactory private (
     catch
       case _: Exception =>
         Left(ApiError.Unexpected("The Luxmed account could not be loaded."))
-
-  private def decrypt(
-      value: String,
-      ownerId: Long,
-      accountId: AccountId,
-      purpose: EncryptionPurpose
-  ): Either[ApiError, Secret] =
-    for
-      envelope <- EncryptedEnvelope
-        .parse(value)
-        .left
-        .map(_ =>
-          ApiError.Unexpected("The Luxmed account could not be loaded.")
-        )
-      secret <- crypto
-        .decrypt(envelope, EncryptionContext(ownerId, accountId, purpose))
-        .left
-        .map(_ =>
-          ApiError.Unexpected("The Luxmed account could not be loaded.")
-        )
-    yield secret
 
   private def parseUuid(value: String): Either[ApiError, UUID] =
     try Right(UUID.fromString(value))

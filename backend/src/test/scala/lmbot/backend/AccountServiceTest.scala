@@ -28,7 +28,13 @@ import lmbot.backend.luxmed.support.{
 import lmbot.backend.luxmed.{LuxmedConfig, PostgresSessionStore, SessionCodec}
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.api.ApiError
-import lmbot.shared.domain.{AccountId, AccountStatus, MonitorId, Role}
+import lmbot.shared.domain.{
+  AccountId,
+  AccountStatus,
+  LinkAccountRequest,
+  MonitorId,
+  Role
+}
 import sttp.model.Uri
 
 class AccountServiceTest extends PostgresSuite with GearsTest:
@@ -78,7 +84,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       clients = factory,
       crypto = crypto,
       uuidGenerator = () => fixedDeviceUuid,
-      now = () => fixedOffset
+      now = () => fixedInstant
     )
     (service, factory)
 
@@ -119,8 +125,8 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       label: String = "Main",
       username: String = "user@example.com",
       password: String = "password123"
-  ): lmbot.shared.domain.LinkAccountRequest =
-    lmbot.shared.domain.LinkAccountRequest(label, username, password)
+  ): LinkAccountRequest =
+    LinkAccountRequest(label, username, password)
 
   private def passwordGrantCount(server: RealHttpLuxmedServer): Int =
     server.requests.count(_.body.contains("grant_type=password"))
@@ -228,11 +234,10 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       assertEquals(server.requests, Nil)
       assertEquals(accountRows(ownerId), Nil)
 
-  test("duplicate label returns conflict after one password grant and no row"):
+  test("duplicate label returns conflict without contacting Luxmed"):
     withServer: server =>
       val ownerId = owner()
       insertAccount(ownerId, "Main")
-      enqueueAuth(server)
       val (accounts, _) = service(config(server))
 
       val result = runAsync:
@@ -243,7 +248,8 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
         Left(ApiError.Conflict("An account with this label already exists."))
       )
       assertEquals(accountRows(ownerId).map(_.label).toList, List("Main"))
-      assertEquals(passwordGrantCount(server), 1)
+      assertEquals(passwordGrantCount(server), 0)
+      assertEquals(server.requests, Nil)
 
   test("successful link authenticates once and returns a secret-free view"):
     withServer: server =>

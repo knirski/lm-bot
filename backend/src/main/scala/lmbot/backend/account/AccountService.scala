@@ -1,19 +1,16 @@
 package lmbot.backend.account
 
 import java.sql.SQLException
-import java.time.{OffsetDateTime, ZoneId}
+import java.time.{Instant, ZoneOffset}
 import java.util.UUID
 
 import gears.async.Async
-import lmbot.backend.config.Secret
-import lmbot.backend.crypto.{
-  AesGcm,
-  EncryptedEnvelope,
-  EncryptionContext,
-  EncryptionPurpose
-}
+import lmbot.backend.crypto.{AesGcm, EncryptionContext, EncryptionPurpose}
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow}
 import lmbot.backend.luxmed.{LuxmedError, SessionCodec}
+import lmbot.backend.support.attempt
+import lmbot.backend.support.result
+import lmbot.backend.support.result.?
 import lmbot.shared.api.ApiError
 import lmbot.shared.domain.{
   AccountId,
@@ -27,89 +24,75 @@ final class AccountService(
     clients: AccountClientFactory,
     crypto: AesGcm,
     uuidGenerator: () => UUID = () => UUID.randomUUID(),
-    now: () => OffsetDateTime = () =>
-      OffsetDateTime.now(ZoneId.of("Europe/Warsaw"))
+    now: () => Instant = () => Instant.now()
 ):
+  private val duplicateLabel = "An account with this label already exists."
+  private val linkFailed = "The Luxmed account could not be linked."
+  private val accountsLoadFailed = "The Luxmed accounts could not be loaded."
+  private val accountLoadFailed = "The Luxmed account could not be loaded."
+  private val accountDeleteFailed = "The Luxmed account could not be deleted."
+
+  private val dbFailure: Throwable => ApiError =
+    _ => ApiError.Unexpected(linkFailed)
+
+  private def persistFailure(error: Throwable): ApiError =
+    if hasSqlState(error, "23505") then ApiError.Conflict(duplicateLabel)
+    else ApiError.Unexpected(linkFailed)
+
+  /** Performs at most one Luxmed password grant per call: the duplicate-label
+    * check runs before authentication, so a request that cannot succeed never
+    * spends a real login (Luxmed can lock an account after repeated attempts).
+    */
   def link(ownerId: Long, request: LinkAccountRequest)(using
       Async
   ): Either[ApiError, AccountView] =
-    validate(request).flatMap: normalized =>
-      try
-        val id = accounts.reserveId()
-        val deviceUuid = uuidGenerator()
-        clients
-          .forLink(
-            normalized.username,
-            Secret(normalized.password),
-            deviceUuid
+    result:
+      val normalized = NormalizedLink.from(request).?
+      val existing = attempt(dbFailure)(accounts.listOwned(ownerId)).?
+      Either
+        .cond(
+          !existing.exists(_.label == normalized.label),
+          (),
+          ApiError.Conflict(duplicateLabel)
+        )
+        .?
+      val id = attempt(dbFailure)(accounts.reserveId()).?
+      val deviceUuid = uuidGenerator()
+      val session = clients
+        .forLink(normalized.username, normalized.password, deviceUuid)
+        .authenticate()
+        .left
+        .map(linkError)
+        .?
+      val timestamp = now().atOffset(ZoneOffset.UTC)
+      val row = LuxmedAccountRow(
+        id.value,
+        ownerId,
+        normalized.label,
+        encrypt(normalized.username, ownerId, id, EncryptionPurpose.Username),
+        encrypt(
+          normalized.password.value,
+          ownerId,
+          id,
+          EncryptionPurpose.Password
+        ),
+        encrypt(deviceUuid.toString, ownerId, id, EncryptionPurpose.DeviceId),
+        Some(
+          encrypt(
+            SessionCodec.encode(session),
+            ownerId,
+            id,
+            EncryptionPurpose.Session
           )
-          .authenticate() match
-          case Left(error)    => Left(linkError(error))
-          case Right(session) =>
-            if accounts.listOwned(ownerId).exists(_.label == normalized.label)
-            then
-              Left(
-                ApiError.Conflict("An account with this label already exists.")
-              )
-            else
-              val timestamp = now()
-              val row = LuxmedAccountRow(
-                id.value,
-                ownerId,
-                normalized.label,
-                encrypt(
-                  normalized.username,
-                  ownerId,
-                  id,
-                  EncryptionPurpose.Username
-                ),
-                encrypt(
-                  normalized.password,
-                  ownerId,
-                  id,
-                  EncryptionPurpose.Password
-                ),
-                encrypt(
-                  deviceUuid.toString,
-                  ownerId,
-                  id,
-                  EncryptionPurpose.DeviceId
-                ),
-                Some(
-                  encrypt(
-                    SessionCodec.encode(session),
-                    ownerId,
-                    id,
-                    EncryptionPurpose.Session
-                  )
-                ),
-                "active",
-                None,
-                Some(timestamp),
-                timestamp,
-                timestamp
-              )
-              try toView(accounts.insert(row))
-              catch
-                case error: Exception if hasSqlState(error, "23505") =>
-                  Left(
-                    ApiError.Conflict(
-                      "An account with this label already exists."
-                    )
-                  )
-                case _: Exception =>
-                  Left(
-                    ApiError.Unexpected(
-                      "The Luxmed account could not be linked."
-                    )
-                  )
-      catch
-        case error: Exception if hasSqlState(error, "23505") =>
-          Left(
-            ApiError.Conflict("An account with this label already exists.")
-          )
-        case _: Exception =>
-          Left(ApiError.Unexpected("The Luxmed account could not be linked."))
+        ),
+        AccountStatus.Active.wireName,
+        None,
+        Some(timestamp),
+        timestamp,
+        timestamp
+      )
+      val stored = attempt(persistFailure)(accounts.insert(row)).?
+      toView(stored).?
 
   private def hasSqlState(error: Throwable, state: String): Boolean =
     error match
@@ -117,42 +100,17 @@ final class AccountService(
       case _ => Option(error.getCause).exists(hasSqlState(_, state))
 
   def list(ownerId: Long): Either[ApiError, List[AccountView]] =
-    try
-      accounts
-        .listOwned(ownerId)
-        .toList
-        .foldRight(
-          Right(Nil): Either[ApiError, List[AccountView]]
-        ) { (account, result) =>
-          for
-            views <- result
-            view <- toView(account)
-          yield view :: views
-        }
-    catch
-      case _: Exception =>
-        Left(ApiError.Unexpected("The Luxmed accounts could not be loaded."))
+    result:
+      val rows =
+        attempt(_ => ApiError.Unexpected(accountsLoadFailed))(
+          accounts.listOwned(ownerId)
+        ).?
+      rows.toList.map(row => toView(row).?)
 
   def delete(ownerId: Long, accountId: AccountId): Either[ApiError, Unit] =
-    if accounts.deleteOwned(accountId, ownerId) then Right(())
-    else Left(ApiError.NotFound)
-
-  private def validate(
-      request: LinkAccountRequest
-  ): Either[ApiError, LinkAccountRequest] =
-    val label = request.label.trim
-    val username = request.username.trim
-    if label.isEmpty then
-      Left(ApiError.Validation("Account label is required."))
-    else if label.length > 80 then
-      Left(ApiError.Validation("Account label must be at most 80 characters."))
-    else if username.isEmpty then
-      Left(ApiError.Validation("Luxmed username is required."))
-    else if username.length > 254 then
-      Left(
-        ApiError.Validation("Luxmed username must be at most 254 characters.")
-      )
-    else Right(LinkAccountRequest(label, username, request.password))
+    attempt.either(_ => ApiError.Unexpected(accountDeleteFailed)):
+      if accounts.deleteOwned(accountId, ownerId) then Right(())
+      else Left(ApiError.NotFound)
 
   private def encrypt(
       value: String,
@@ -163,18 +121,21 @@ final class AccountService(
     crypto.encrypt(value, EncryptionContext(ownerId, accountId, purpose)).render
 
   private def toView(row: LuxmedAccountRow): Either[ApiError, AccountView] =
-    val status = row.status match
-      case "active"      => AccountStatus.Active
-      case "auth_failed" => AccountStatus.AuthFailed
-      case "disabled"    => AccountStatus.Disabled
-      case other         =>
-        throw IllegalArgumentException(s"unsupported account status: $other")
-    decrypt(
-      row.encryptedUsername,
-      row.ownerUserId,
-      AccountId(row.id),
-      EncryptionPurpose.Username
-    ).map(username =>
+    result:
+      val status = AccountStatus
+        .fromWire(row.status)
+        .left
+        .map(_ => ApiError.Unexpected(accountLoadFailed))
+        .?
+      val username = StoredSecret
+        .decrypt(
+          crypto,
+          row.encryptedUsername,
+          row.ownerUserId,
+          AccountId(row.id),
+          EncryptionPurpose.Username
+        )
+        .?
       AccountView(
         AccountId(row.id),
         row.label,
@@ -183,28 +144,6 @@ final class AccountService(
         row.statusReason,
         row.lastSuccessfulLogin.map(_.toInstant)
       )
-    )
-
-  private def decrypt(
-      value: String,
-      ownerId: Long,
-      accountId: AccountId,
-      purpose: EncryptionPurpose
-  ): Either[ApiError, Secret] =
-    for
-      envelope <- EncryptedEnvelope
-        .parse(value)
-        .left
-        .map(_ =>
-          ApiError.Unexpected("The Luxmed account could not be loaded.")
-        )
-      secret <- crypto
-        .decrypt(envelope, EncryptionContext(ownerId, accountId, purpose))
-        .left
-        .map(_ =>
-          ApiError.Unexpected("The Luxmed account could not be loaded.")
-        )
-    yield secret
 
   private def linkError(error: LuxmedError): ApiError = error match
     case LuxmedError.AuthFailed =>
@@ -217,4 +156,4 @@ final class AccountService(
       ApiError.Conflict(AccountStatusReason.VersionRejected.value)
     case _: LuxmedError.NetworkFailure | _: LuxmedError.Transient =>
       ApiError.Unexpected("Luxmed is temporarily unavailable.")
-    case _ => ApiError.Unexpected("The Luxmed account could not be linked.")
+    case _ => ApiError.Unexpected(linkFailed)

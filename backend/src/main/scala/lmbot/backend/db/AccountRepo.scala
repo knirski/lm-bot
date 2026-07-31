@@ -46,19 +46,3 @@ class AccountRepo(xa: Transactor):
     sql"""delete from luxmed_accounts a
           where a.id = ${id.value} and a.owner_user_id = $ownerUserId""".update
       .run() > 0
-
-  def updateSessionCas(
-      id: AccountId,
-      encryptedSession: Option[String],
-      ownerUserId: Long,
-      expectedStatus: String
-  ): Option[LuxmedAccountRow] = transact(xa):
-    sql"""update luxmed_accounts a
-          set encrypted_session = $encryptedSession, updated_at = now()
-          where a.id = ${id.value}
-            and a.owner_user_id = $ownerUserId
-            and a.status = $expectedStatus
-          returning a.*"""
-      .query[LuxmedAccountRow]
-      .run()
-      .headOption
