@@ -11,7 +11,7 @@ import lmbot.backend.db.{
   UserRepo
 }
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{AccountId, MonitorId, Role}
+import lmbot.shared.domain.{AccountId, MonitorId, MonitorState, Role}
 
 class MonitorRepoTest extends PostgresSuite:
 
@@ -161,8 +161,8 @@ class MonitorRepoTest extends PostgresSuite:
       MonitorId(mid),
       AccountId(accountId),
       ownerId,
-      List("active", "paused"),
-      "completed"
+      List(MonitorState.Active, MonitorState.Paused),
+      MonitorState.Completed
     )
     assertEquals(result.map(_.state), Some("completed"))
 
@@ -177,8 +177,8 @@ class MonitorRepoTest extends PostgresSuite:
       MonitorId(mid),
       AccountId(accountId),
       ownerId,
-      List("active", "paused"),
-      "completed"
+      List(MonitorState.Active, MonitorState.Paused),
+      MonitorState.Completed
     )
     assertEquals(result, None)
 
@@ -195,8 +195,8 @@ class MonitorRepoTest extends PostgresSuite:
         MonitorId(mid),
         AccountId(acc1),
         o2,
-        List("active"),
-        "completed"
+        List(MonitorState.Active),
+        MonitorState.Completed
       )
     assertEquals(result, None)
 

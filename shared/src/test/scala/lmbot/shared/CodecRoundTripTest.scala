@@ -6,8 +6,16 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import lmbot.shared.api.*
 import lmbot.shared.api.Codecs.given
 import lmbot.shared.domain.*
+import sttp.tapir.{Schema, Validator}
 
 class CodecRoundTripTest extends munit.FunSuite:
+
+  private def advertisedValues[A](schema: Schema[A]): List[String] =
+    schema.validator match
+      case Validator.Enumeration(possibleValues, Some(encode), _) =>
+        possibleValues.flatMap(encode(_)).map(_.toString)
+      case other =>
+        fail(s"expected an enumeration validator, got $other")
 
   test("LoginRequest round-trips"):
     val original = LoginRequest("krzysiek", "correct horse battery staple")
@@ -85,6 +93,18 @@ class CodecRoundTripTest extends munit.FunSuite:
     assertEquals(
       readFromString[AccountStatus]("\"disabled\""),
       AccountStatus.Disabled
+    )
+
+  test("AccountStatus schema advertises exactly the values the codec writes"):
+    assertEquals(
+      advertisedValues(summon[Schema[AccountStatus]]).toSet,
+      Set("active", "auth_failed", "disabled")
+    )
+
+  test("MonitorState schema advertises exactly the values the codec writes"):
+    assertEquals(
+      advertisedValues(summon[Schema[MonitorState]]).toSet,
+      Set("active", "paused", "completed", "failed")
     )
 
   test("MonitorState serialises as lowercase strings"):

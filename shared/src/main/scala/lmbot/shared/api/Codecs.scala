@@ -53,37 +53,25 @@ object Codecs:
 
   given JsonValueCodec[AccountStatus] with
     def decodeValue(in: JsonReader, default: AccountStatus): AccountStatus =
-      in.readString(null) match
-        case "active"      => AccountStatus.Active
-        case "auth_failed" => AccountStatus.AuthFailed
-        case "disabled"    => AccountStatus.Disabled
-        case other         =>
-          in.enumValueError(s"unexpected AccountStatus: $other")
+      val raw = in.readString(null)
+      AccountStatus
+        .fromWire(raw)
+        .getOrElse(in.enumValueError(s"unexpected AccountStatus: $raw"))
 
     def encodeValue(x: AccountStatus, out: JsonWriter): Unit =
-      out.writeVal(x match
-        case AccountStatus.Active     => "active"
-        case AccountStatus.AuthFailed => "auth_failed"
-        case AccountStatus.Disabled   => "disabled")
+      out.writeVal(x.wireName)
 
     def nullValue: AccountStatus = null.asInstanceOf[AccountStatus]
 
   given JsonValueCodec[MonitorState] with
     def decodeValue(in: JsonReader, default: MonitorState): MonitorState =
-      in.readString(null) match
-        case "active"    => MonitorState.Active
-        case "paused"    => MonitorState.Paused
-        case "completed" => MonitorState.Completed
-        case "failed"    => MonitorState.Failed
-        case other       =>
-          in.enumValueError(s"unexpected MonitorState: $other")
+      val raw = in.readString(null)
+      MonitorState
+        .fromWire(raw)
+        .getOrElse(in.enumValueError(s"unexpected MonitorState: $raw"))
 
     def encodeValue(x: MonitorState, out: JsonWriter): Unit =
-      out.writeVal(x match
-        case MonitorState.Active    => "active"
-        case MonitorState.Paused    => "paused"
-        case MonitorState.Completed => "completed"
-        case MonitorState.Failed    => "failed")
+      out.writeVal(x.wireName)
 
     def nullValue: MonitorState = null.asInstanceOf[MonitorState]
 
@@ -156,9 +144,13 @@ object Codecs:
     Schema.schemaForLong.map(id => Some(MonitorId(id)))(_.value)
 
   given Schema[AccountStatus] =
-    Schema.derivedEnumeration[AccountStatus].defaultStringBased
+    Schema.derivedEnumeration[AccountStatus](
+      encode = Some((status: AccountStatus) => status.wireName)
+    )
   given Schema[MonitorState] =
-    Schema.derivedEnumeration[MonitorState].defaultStringBased
+    Schema.derivedEnumeration[MonitorState](
+      encode = Some((state: MonitorState) => state.wireName)
+    )
 
   given Schema[AccountView] = Schema.derived
   given Schema[LinkAccountRequest] = Schema.derived

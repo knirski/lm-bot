@@ -10,6 +10,17 @@ object MonitorId:
 enum MonitorState:
   case Active, Paused, Completed, Failed
 
+object MonitorState:
+  extension (state: MonitorState)
+    def wireName: String = state match
+      case Active    => "active"
+      case Paused    => "paused"
+      case Completed => "completed"
+      case Failed    => "failed"
+
+  def fromWire(value: String): Either[String, MonitorState] =
+    values.find(_.wireName == value).toRight(s"unknown monitor state: $value")
+
 final case class MonitorDraft(
     accountId: AccountId,
     name: String,

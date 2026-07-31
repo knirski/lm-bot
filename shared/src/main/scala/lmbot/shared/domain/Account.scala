@@ -10,6 +10,16 @@ object AccountId:
 enum AccountStatus:
   case Active, AuthFailed, Disabled
 
+object AccountStatus:
+  extension (status: AccountStatus)
+    def wireName: String = status match
+      case Active     => "active"
+      case AuthFailed => "auth_failed"
+      case Disabled   => "disabled"
+
+  def fromWire(value: String): Either[String, AccountStatus] =
+    values.find(_.wireName == value).toRight(s"unknown account status: $value")
+
 final case class AccountView(
     id: AccountId,
     label: String,

@@ -1,7 +1,7 @@
 package lmbot.backend.db
 
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
-import lmbot.shared.domain.{AccountId, MonitorId}
+import lmbot.shared.domain.{AccountId, MonitorId, MonitorState}
 
 class MonitorRepo(xa: Transactor):
 
@@ -82,21 +82,24 @@ class MonitorRepo(xa: Transactor):
       id: MonitorId,
       luxmedAccountId: AccountId,
       ownerUserId: Long,
-      expectedStates: List[String],
-      newState: String
-  ): Option[MonitorRow] = transact(xa):
-    sql"""update monitors m
-          set state = $newState, updated_at = now()
-          from luxmed_accounts a
-          where m.id = ${id.value}
-            and m.luxmed_account_id = ${luxmedAccountId.value}
-            and m.luxmed_account_id = a.id
-            and a.owner_user_id = $ownerUserId
-            and m.state = any($expectedStates)
-          returning m.*"""
-      .query[MonitorRow]
-      .run()
-      .headOption
+      expectedStates: List[MonitorState],
+      newState: MonitorState
+  ): Option[MonitorRow] =
+    val expectedWireNames = expectedStates.map(_.wireName)
+    val newWireName = newState.wireName
+    transact(xa):
+      sql"""update monitors m
+            set state = $newWireName, updated_at = now()
+            from luxmed_accounts a
+            where m.id = ${id.value}
+              and m.luxmed_account_id = ${luxmedAccountId.value}
+              and m.luxmed_account_id = a.id
+              and a.owner_user_id = $ownerUserId
+              and m.state = any($expectedWireNames)
+            returning m.*"""
+        .query[MonitorRow]
+        .run()
+        .headOption
 
   def deleteOwned(id: MonitorId, ownerUserId: Long): Boolean = transact(xa):
     sql"""delete from monitors m
