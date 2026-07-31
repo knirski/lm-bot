@@ -1,5 +1,6 @@
 package lmbot.backend.db
 
+import java.sql.{Date => SqlDate, Time => SqlTime}
 import java.time.OffsetDateTime
 
 import com.augustnagro.magnum.{
@@ -34,4 +35,45 @@ case class SessionRow(
     userId: Long,
     expiresAt: OffsetDateTime,
     createdAt: OffsetDateTime
+) derives DbCodec
+
+@Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
+case class LuxmedAccountRow(
+    @Id id: Long,
+    ownerUserId: Long,
+    label: String,
+    encryptedUsername: String,
+    encryptedPassword: String,
+    encryptedDeviceUuid: String,
+    encryptedSession: Option[String],
+    status: String,
+    statusReason: Option[String],
+    lastSuccessfulLogin: Option[OffsetDateTime],
+    createdAt: OffsetDateTime,
+    updatedAt: OffsetDateTime
+) derives DbCodec
+
+@Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
+case class MonitorRow(
+    @Id id: Long,
+    luxmedAccountId: Long,
+    name: String,
+    cityId: Long,
+    cityName: String,
+    serviceId: Long,
+    serviceName: String,
+    facilityIds: List[Long],
+    facilityNames: List[String],
+    doctorIds: List[Long],
+    doctorNames: List[String],
+    dateFrom: SqlDate,
+    dateTo: SqlDate,
+    timeFrom: SqlTime,
+    timeTo: SqlTime,
+    daysOfWeek: Short,
+    autoBook: Boolean,
+    intervalMinutes: Int,
+    state: String,
+    createdAt: OffsetDateTime,
+    updatedAt: OffsetDateTime
 ) derives DbCodec

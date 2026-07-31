@@ -99,6 +99,7 @@ jobs:
 
       - name: Test with coverage
         if: steps.changes.outputs.sbt == 'true'
+        timeout-minutes: 10
         run: nix develop --command sbt "coverage; testFull; coverageReport"
 
       - name: Link frontend (Wasm)

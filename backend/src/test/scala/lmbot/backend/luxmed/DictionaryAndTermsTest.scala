@@ -78,8 +78,8 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
           jwtToken = "JWT_TOKEN_1",
           expiresIn = 599
         )
-        .foreach: (status, headers, body) =>
-          stub.enqueue(status, headers, body)
+        .foreach: response =>
+          stub.enqueue(response.status, response.headers, response.body)
       runAsync:
         client.authenticate()
       body(client, stub, fake)

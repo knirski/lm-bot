@@ -97,8 +97,8 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         sessionCookie,
         expiresIn
       )
-      .foreach: (status, headers, body) =>
-        stub.enqueue(status, headers, body)
+      .foreach: response =>
+        stub.enqueue(response.status, response.headers, response.body)
 
   private def enqueueRealisticBootstrapFlow(
       stub: StubLuxmedBackend,
@@ -107,8 +107,8 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
   ): Unit =
     LuxmedResponseScripts
       .realisticBootstrapFlow(jwtToken, sessionCookie)
-      .foreach: (status, headers, body) =>
-        stub.enqueue(status, headers, body)
+      .foreach: response =>
+        stub.enqueue(response.status, response.headers, response.body)
 
   test("three-step auth flow succeeds with realistic mock responses"):
     withClient(): (client, stub, _, _) =>

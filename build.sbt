@@ -33,6 +33,7 @@ val Vlogback = "1.6.0"
 val Vmunit = "1.3.4"
 val Vmemgres = "0.2.4"
 val VembeddedPg = "2.2.2"
+val Vpureconfig = "0.17.10"
 
 /** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
   * encodes Scala.js 1.x + Scala 3, both pinned by this build.
@@ -142,14 +143,17 @@ lazy val backend = project
       "ch.qos.logback" % "logback-classic" % Vlogback,
       "com.memgres" % "memgres-core" % Vmemgres,
       "io.zonky.test" % "embedded-postgres" % VembeddedPg,
+      "com.github.pureconfig" %% "pureconfig-core" % Vpureconfig,
       "org.scalameta" %% "munit" % Vmunit % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp
     ),
-    // Each test suite manages its own embedded database on a random port
-    // (fully isolated).  Suites run serially because the zonky backend shares
-    // a binary cache at /tmp/embedded-pg/; memgres has no shared state but
-    // serial execution is harmless and keeps switching between backends safe.
-    Test / parallelExecution := false,
+    // Each database test case manages its own embedded database on a random
+    // port, so suites can run concurrently without shared test state. This is
+    // validated for memgres (the default backend). The zonky backend shares a
+    // binary cache at /tmp/embedded-pg/, so a cold cache extracting
+    // concurrently from several suites is untested; warm the cache with a
+    // single `EMBEDDED_DB=zonky` run before relying on a parallel one.
+    Test / parallelExecution := true,
 
     // Virtual threads want a real JVM 25+.
     javacOptions ++= Seq("-source", "25", "-target", "25"),
@@ -172,7 +176,13 @@ lazy val backend = project
       "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
       "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
       "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
-      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7")
+      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
+      // This fallback is scoped to the local startDev JVM only. Production
+      // deployments must inject LMBOT_MASTER_KEY explicitly.
+      "LMBOT_MASTER_KEY" -> sys.env.getOrElse(
+        "LMBOT_MASTER_KEY",
+        "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
+      )
     ),
 
     // Watch frontend and shared sources too, so `~backend/run` restarts on
