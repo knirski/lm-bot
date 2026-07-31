@@ -9,11 +9,17 @@ import scala.collection.mutable.ListBuffer
 
 import com.augustnagro.magnum.DbCodec
 
-/** Custom Magnum `DbCodec` instances for PostgreSQL array and date/time types.
+/** Custom Magnum `DbCodec` instances for `List[Long]`/`List[String]` Postgres
+  * array columns, which Magnum's auto-derivation for `PostgresDbType` does not
+  * cover.
   *
-  * Magnum's auto-derivation for `PostgresDbType` handles `OffsetDateTime` but
-  * not `LocalDate`/`LocalTime` or `List[Long]`/`List[String]` for arrays. These
-  * codecs fill those gaps using the PostgreSQL JDBC driver's native support.
+  * `readArrayText` prefers `rs.getArray`, the JDBC-native path against a real
+  * PostgreSQL connection. It falls back to `rs.getString` plus a hand-rolled
+  * parser under Memgres (the default test backend), whose driver does not
+  * implement `getArray`. `parseArrayText` implements PostgreSQL's array text
+  * output format: comma-separated, double-quoted elements with `\`-escaping,
+  * and no support for an element-level `NULL` (a `{NULL}` element decodes to
+  * the literal string `"NULL"`, which this app never writes).
   */
 
 private def parseArrayText(value: String): List[String] =
@@ -34,7 +40,7 @@ private def parseArrayText(value: String): List[String] =
         values += current.result()
         current.clear()
       case char =>
-        current.append(if escaped && char == '\\' then '\\' else char)
+        current.append(char)
         escaped = false
     }
     values += current.result()

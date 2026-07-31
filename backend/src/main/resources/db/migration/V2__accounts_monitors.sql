@@ -9,6 +9,7 @@ create table luxmed_accounts (
     encrypted_device_uuid text not null,
     encrypted_session     text,
     status                text not null
+                          -- keep in sync with lmbot.shared.domain.AccountStatus.wireName
                           check (status in ('active','auth_failed','disabled')),
     status_reason         text,
     last_successful_login timestamptz,
@@ -37,9 +38,12 @@ create table monitors (
     date_to               date not null,
     time_from             time not null,
     time_to               time not null,
-    days_of_week          smallint not null,
+    days_of_week          smallint not null
+                          -- bitmask, bit 0 = Monday .. bit 6 = Sunday; must select at least one day
+                          check (days_of_week between 1 and 127),
     auto_book             boolean not null default false,
     interval_minutes      int not null check (interval_minutes >= 5),
+    -- keep in sync with lmbot.shared.domain.MonitorState.wireName
     state                 text not null check (state in ('active','paused','completed','failed')),
     created_at            timestamptz not null default now(),
     updated_at            timestamptz not null default now(),
