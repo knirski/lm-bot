@@ -71,10 +71,10 @@ final class PostgresSessionStore(
               where id = $rawAccountId and owner_user_id = $ownerId"""
           .query[Option[String]]
           .run()
-          .headOption
-          .flatten match
-          case None        => Right(None)
-          case Some(value) => decodeStored(value).map(Some(_))
+          .headOption match
+          case None              => unavailable // no such owned account
+          case Some(None)        => Right(None) // owned, no session yet
+          case Some(Some(value)) => decodeStored(value).map(Some(_))
     catch
       case error: Exception =>
         log.warn("Failed to load persisted LuxMed session", error)
@@ -94,27 +94,29 @@ final class PostgresSessionStore(
             .headOption
             .flatten
         afterRead()
-        val current = stored.flatMap(value => decodeStored(value).toOption)
-        if stored.exists(value => decodeStored(value).isLeft) then
-          Left(SessionStoreError.Unavailable("session persistence failed"))
-        else if !refreshMatches(expectedRefreshToken, current) then
-          Left(SessionStoreError.ConcurrentModification)
-        else
-          val encrypted =
-            crypto.encrypt(SessionCodec.encode(updatedSession), context).render
-          val changed = stored match
-            case Some(previous) =>
-              sql"""update luxmed_accounts
-                    set encrypted_session = $encrypted, updated_at = now()
-                    where id = $rawAccountId and owner_user_id = $ownerId
-                      and encrypted_session = $previous""".update.run()
-            case None =>
-              sql"""update luxmed_accounts
-                    set encrypted_session = $encrypted, updated_at = now()
-                    where id = $rawAccountId and owner_user_id = $ownerId
-                      and encrypted_session is null""".update.run()
-          if changed == 1 then Right(())
-          else Left(SessionStoreError.ConcurrentModification)
+        stored.map(decodeStored) match
+          case Some(Left(error)) => Left(error)
+          case decoded           =>
+            val current = decoded.flatMap(_.toOption)
+            if !refreshMatches(expectedRefreshToken, current) then
+              Left(SessionStoreError.ConcurrentModification)
+            else
+              val encrypted = crypto
+                .encrypt(SessionCodec.encode(updatedSession), context)
+                .render
+              val changed = stored match
+                case Some(previous) =>
+                  sql"""update luxmed_accounts
+                        set encrypted_session = $encrypted, updated_at = now()
+                        where id = $rawAccountId and owner_user_id = $ownerId
+                          and encrypted_session = $previous""".update.run()
+                case None =>
+                  sql"""update luxmed_accounts
+                        set encrypted_session = $encrypted, updated_at = now()
+                        where id = $rawAccountId and owner_user_id = $ownerId
+                          and encrypted_session is null""".update.run()
+              if changed == 1 then Right(())
+              else Left(SessionStoreError.ConcurrentModification)
     catch
       case error: Exception =>
         log.warn("Failed to replace persisted LuxMed session", error)

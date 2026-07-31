@@ -4,6 +4,7 @@ import java.time.{Instant, OffsetDateTime}
 import java.util.Base64
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import com.augustnagro.magnum.{sql, transact}
 import lmbot.backend.config.{MasterKey, Secret}
 import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
@@ -65,6 +66,16 @@ class PostgresSessionStoreTest extends PostgresSuite:
       afterRead: () => Unit = () => ()
   ): PostgresSessionStore =
     PostgresSessionStore(xa, ownerId, AccountId(accountId), crypto, afterRead)
+
+  /** Writes an unparsable value directly into `encrypted_session`, bypassing
+    * the store, to simulate ciphertext that has been corrupted or bound to a
+    * different context.
+    */
+  private def corruptSession(accountId: Long, garbage: String): Unit =
+    transact(xa):
+      sql"update luxmed_accounts set encrypted_session = $garbage where id = $accountId".update
+        .run()
+      ()
 
   test("load returns None before the first session"):
     val ownerId = owner()
@@ -131,6 +142,14 @@ class PostgresSessionStoreTest extends PostgresSuite:
     assertEquals(store(ownerId, accountId).load(), Right(Some(second)))
 
   test("concurrent replacements allow exactly one CAS winner"):
+    // Memgres does not appear to serialize concurrent `UPDATE ... WHERE`
+    // statements against the same row atomically: this test was observed to
+    // fail roughly 1 run in 4 under Memgres, but passed 3/3 clean runs
+    // against real PostgreSQL (`EMBEDDED_DB=zonky`). The CAS guarantee this
+    // test pins is a property of PostgreSQL row-level locking, not of
+    // PostgresSessionStore, so it is only meaningful — and only run — against
+    // a real PostgreSQL backend.
+    assumeRealPostgres()
     val ownerId = owner()
     val accountId = account(ownerId)
     val first = session("refresh-1")
@@ -180,3 +199,48 @@ class PostgresSessionStoreTest extends PostgresSuite:
     assert(encrypted.isDefined)
     assert(!encrypted.get.contains("refresh-secret"))
     assert(!encrypted.get.contains("access-refresh-secret"))
+
+  test(
+    "a store scoped to another owner cannot read, replace, or clear the session"
+  ):
+    val firstOwner = owner()
+    val accountId = account(firstOwner)
+    val intruder = owner()
+    val current = session("refresh-1")
+    assertEquals(store(firstOwner, accountId).replace(None, current), Right(()))
+
+    // No owned row exists for `intruder` at this id — distinct from "owned,
+    // no session yet" (see the R15 fix in PostgresSessionStore.load).
+    assertEquals(
+      store(intruder, accountId).load(),
+      Left(SessionStoreError.Unavailable("session persistence failed"))
+    )
+    assertEquals(
+      store(intruder, accountId)
+        .replace(Some(Secret("refresh-1")), session("refresh-2")),
+      Left(SessionStoreError.ConcurrentModification)
+    )
+    assert(store(intruder, accountId).clear().isLeft)
+    assertEquals(store(firstOwner, accountId).load(), Right(Some(current)))
+
+  test(
+    "an undecryptable stored session reports Unavailable without leaking ciphertext"
+  ):
+    val ownerId = owner()
+    val accountId = account(ownerId)
+    corruptSession(accountId, "not a valid envelope")
+
+    // The exact-message assertion below also proves the raw ciphertext never
+    // leaks into the error: the message is a fixed literal, not derived from
+    // the corrupted value.
+    assertEquals(
+      store(ownerId, accountId).load(),
+      Left(SessionStoreError.Unavailable("session persistence failed"))
+    )
+
+    val replaced =
+      store(ownerId, accountId).replace(None, session("refresh-1"))
+    assertEquals(
+      replaced,
+      Left(SessionStoreError.Unavailable("session persistence failed"))
+    )

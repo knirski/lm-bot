@@ -22,7 +22,34 @@ class SessionCodecTest extends munit.FunSuite:
   test("pins the persisted session JSON format"):
     assertEquals(
       SessionCodec.encode(session),
-      """{"version":1,"accessToken":"access","tokenType":"bearer","refreshToken":"refresh","expiresAt":"2026-08-01T10:00:00Z","jwtToken":"jwt","cookies":{"WAF":"abc","SESSION":"def"}}"""
+      """{"version":1,"accessToken":"access","tokenType":"bearer","refreshToken":"refresh","expiresAt":"2026-08-01T10:00:00Z","jwtToken":"jwt","cookies":[{"name":"SESSION","value":"def"},{"name":"WAF","value":"abc"}]}"""
+    )
+
+  test("cookie order is deterministic past the point a Map would stop helping"):
+    val manyCookies = session.copy(
+      cookies = CookieJar(
+        "WAF" -> Secret("w"),
+        "SESSION" -> Secret("s"),
+        "XSRF" -> Secret("x"),
+        "AB_TEST" -> Secret("a"),
+        "CONSENT" -> Secret("c")
+      )
+    )
+    assertEquals(
+      SessionCodec.encode(manyCookies),
+      SessionCodec.encode(manyCookies),
+      "encoding must be stable across calls, not incidental to Map size"
+    )
+    assert(
+      SessionCodec
+        .encode(manyCookies)
+        .contains(
+          """"cookies":[{"name":"AB_TEST","value":"a"},{"name":"CONSENT","value":"c"},{"name":"SESSION","value":"s"},{"name":"WAF","value":"w"},{"name":"XSRF","value":"x"}]"""
+        )
+    )
+    assertEquals(
+      SessionCodec.decode(SessionCodec.encode(manyCookies)),
+      Right(manyCookies)
     )
 
   test("decodes every persisted session component"):

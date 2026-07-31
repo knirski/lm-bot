@@ -26,6 +26,18 @@ abstract class PostgresSuite extends munit.FunSuite:
       .map(_.transactor)
       .getOrElse(throw IllegalStateException("database is not initialized"))
 
+  /** Skip the current test unless running against real PostgreSQL
+    * (`EMBEDDED_DB=zonky`). Memgres does not reliably provide every guarantee a
+    * real PostgreSQL does — e.g. atomic row-level locking under concurrent
+    * writers — so a test that pins one of those should call this first rather
+    * than re-deriving its own `EMBEDDED_DB` check.
+    */
+  protected def assumeRealPostgres(): Unit =
+    assume(
+      EmbeddedPg.usingRealPostgres,
+      "requires a real PostgreSQL backend: re-run with EMBEDDED_DB=zonky"
+    )
+
   override def beforeEach(context: BeforeEach): Unit =
     val pg = EmbeddedPg.startForTest(port = 0) // OS-assigned port
     val ds =

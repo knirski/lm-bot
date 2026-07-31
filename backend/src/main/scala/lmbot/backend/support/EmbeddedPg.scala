@@ -24,6 +24,14 @@ object EmbeddedPg:
       case Some("zonky") => Backend.Zonky
       case _             => Backend.Memgres
 
+  /** Whether the currently selected backend (`EMBEDDED_DB=zonky`) is the real
+    * PostgreSQL binary rather than the in-memory Memgres approximation. Tests
+    * that depend on a genuine PostgreSQL guarantee Memgres does not reliably
+    * provide — e.g. atomic row-level locking under concurrent writers — should
+    * skip themselves unless this is true.
+    */
+  def usingRealPostgres: Boolean = resolveBackend == Backend.Zonky
+
   /** Start the embedded database (dev mode). Bootstraps the `lmbot` role and
     * `lmbot` database so callers can connect with the application defaults
     * (`lmbot` / `lmbot` on database `lmbot`).
