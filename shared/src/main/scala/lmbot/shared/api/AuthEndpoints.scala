@@ -2,7 +2,6 @@ package lmbot.shared.api
 
 import lmbot.shared.api.Codecs.given
 import lmbot.shared.domain.UserView
-import sttp.model.StatusCode
 import sttp.model.headers.CookieValueWithMeta
 import sttp.tapir.*
 import sttp.tapir.json.jsoniter.*
@@ -12,28 +11,16 @@ import sttp.tapir.json.jsoniter.*
   */
 object AuthEndpoints:
 
-  val sessionCookieName: String = "lmbot_session"
+  /** Re-exported from `SecuredEndpoints`, the one home for this constant. */
+  val sessionCookieName: String = SecuredEndpoints.sessionCookieName
 
-  /** One error output for every endpoint. `ApiError` knows its own status, so
-    * this maps cleanly in both directions without a `oneOf` variant list.
-    */
-  private val errorOut: EndpointOutput[ApiError] =
-    statusCode
-      .and(jsonBody[ErrorBody])
-      .map[ApiError] { case (sc, body) =>
-        ApiError.fromWire(sc.code, body.code, body.message)
-      } { e =>
-        (StatusCode(e.status), ErrorBody(e.code, e.message))
-      }
-
-  private val base = endpoint.in("api" / "auth").errorOut(errorOut)
+  private val base = SecuredEndpoints.public("api" / "auth")
 
   /** The session cookie is `HttpOnly`, so browser JS cannot read it. The client
     * therefore always passes `None` here and lets the browser attach the real
     * cookie itself; the server reads whatever actually arrived.
     */
-  private val securedBase =
-    base.securityIn(cookie[Option[String]](sessionCookieName))
+  private val securedBase = SecuredEndpoints.base("api" / "auth")
 
   /** The session cookie is declared with `setCookieOpt`, not `setCookie`.
     *
