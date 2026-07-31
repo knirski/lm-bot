@@ -7,7 +7,11 @@ and [the implementation roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadma
 
 ## Status
 
-Plan 1 of 7 complete: foundation and authentication. No Luxmed integration yet.
+Plan 4 of 7 complete: foundation and authentication, a Luxmed API client, and
+encrypted account linking with monitor CRUD. Monitors are stored but nothing
+runs them yet — the monitor engine, notifications, and auto-booking are not
+built. See [the roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md)
+for what each plan covers.
 
 ## Requirements
 
@@ -102,8 +106,9 @@ suite passed". `testFull` runs the full suite unconditionally.
 | `HTTP_HOST` | no | `0.0.0.0` | bind address |
 | `HTTP_PORT` | no | `8080` | bind port |
 | `COOKIE_SECURE` | no | `true` | set `false` only for plain-HTTP local dev |
-| `SESSION_TTL_DAYS` | no | `7` | session lifetime |
-| `LMBOT_MASTER_KEY` | yes | — | standard Base64-encoded 32-byte AES key; run `openssl rand -base64 32` to generate |
+| `SESSION_TTL_DAYS` | no | `7` | session lifetime in days; must be at least `1` |
+| `LMBOT_MASTER_KEY` | yes | — | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
+| `LUXMED_APP_VERSION` | no | `4.44.0` | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — | read **only** when the `users` table is empty |
 | `ADMIN_PASSWORD` | no | — | as above |
 
@@ -112,5 +117,6 @@ suite passed". `testFull` runs the full suite unconditionally.
 Run behind your own HTTPS reverse proxy; lm-bot does not terminate TLS.
 
 ```bash
-POSTGRES_PASSWORD=... ADMIN_USERNAME=... ADMIN_PASSWORD=... docker compose up -d
+POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
+  ADMIN_USERNAME=... ADMIN_PASSWORD=... docker compose up -d
 ```

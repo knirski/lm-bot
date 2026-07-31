@@ -27,6 +27,7 @@ services:
       # TLS is terminated by the operator's reverse proxy in front of this
       # container (spec §6), but the cookie must still be marked Secure.
       COOKIE_SECURE: "true"
+      LMBOT_MASTER_KEY: ${LMBOT_MASTER_KEY:?set LMBOT_MASTER_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     ports:
