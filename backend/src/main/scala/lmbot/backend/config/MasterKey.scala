@@ -8,7 +8,8 @@ import java.util.Base64
   * returns a diagnostic message on failure. The diagnostic never includes the
   * input value.
   */
-final case class MasterKey private[config] (bytes: Array[Byte]):
+final class MasterKey private[config] (private val raw: Array[Byte]):
+  def bytes: Array[Byte] = raw.clone()
   override def toString: String = "***"
 
 object MasterKey:

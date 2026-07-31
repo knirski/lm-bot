@@ -121,3 +121,17 @@ class ConfigTest extends munit.FunSuite:
       minimal.updated("LMBOT_MASTER_KEY", "!!!not-valid-base64!!!")
     )
     assert(invalidB64.isLeft, "invalid base64 must be rejected")
+
+  test(
+    "a secret containing HOCON substitution syntax is never reinterpreted"
+  ):
+    // DATABASE_URL/PASSWORD and LMBOT_MASTER_KEY bypass PureConfig/Typesafe
+    // Config entirely, on principle: they are free text an operator or
+    // attacker controls, not something to run through a general-purpose
+    // parsing pipeline, even one that (as this test also proves) already
+    // treats env-var-sourced values as literals rather than re-parsed HOCON.
+    val weird = "p@ss${word}!"
+    val env = minimal.updated("DATABASE_PASSWORD", weird)
+    Config.fromEnv(env) match
+      case Right(c)   => assertEquals(c.dbPassword.value, weird)
+      case Left(errs) => fail(s"expected success, got $errs")

@@ -48,7 +48,7 @@ final case class EncryptionContext(
   * @param random
   *   the source of nonces (injectable for deterministic testing)
   */
-final case class AesGcm(key: MasterKey, random: SecureRandom = SecureRandom()):
+final class AesGcm(key: MasterKey, random: SecureRandom = SecureRandom()):
 
   private val algorithm = "AES"
   private val mode = "AES/GCM/NoPadding"
@@ -89,3 +89,7 @@ final case class AesGcm(key: MasterKey, random: SecureRandom = SecureRandom()):
     catch
       case _: java.security.GeneralSecurityException =>
         Left(CryptoError.AuthenticationFailed)
+
+object AesGcm:
+  def apply(key: MasterKey, random: SecureRandom = SecureRandom()): AesGcm =
+    new AesGcm(key, random)
