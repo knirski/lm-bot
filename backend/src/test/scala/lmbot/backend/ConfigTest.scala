@@ -96,6 +96,13 @@ class ConfigTest extends munit.FunSuite:
     val result = Config.fromEnv(minimal + ("HTTP_PORT" -> "0"))
     assert(result.left.exists(_.exists(_.contains("Port"))))
 
+  test("a zero or negative session TTL is rejected"):
+    val zero = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "0"))
+    assert(zero.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
+
+    val negative = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "-1"))
+    assert(negative.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
+
   test("app version below minimum floor is rejected"):
     val result = Config.fromEnv(
       minimal.updated("LUXMED_APP_VERSION", "4.43.0")

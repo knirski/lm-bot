@@ -120,6 +120,11 @@ object Config:
     val parsedPort: Either[String, Port] = Port.fromInt(portRaw)
     parsedPort.left.foreach(errors += _)
 
+    val parsedTtlDays: Either[String, Int] =
+      if ttlDays >= 1 then Right(ttlDays)
+      else Left("SESSION_TTL_DAYS must be at least 1")
+    parsedTtlDays.left.foreach(errors += _)
+
     val parsedAppVersion: Either[String, AppVersion] =
       luxmedAppVersionRaw.flatMap(
         AppVersion.fromString(_).left.map(msg => s"LUXMED_APP_VERSION: $msg")
@@ -144,7 +149,7 @@ object Config:
           httpHost = host,
           httpPort = parsedPort.?,
           cookieSecure = secure,
-          sessionTtl = Duration.ofDays(ttlDays.toLong),
+          sessionTtl = Duration.ofDays(parsedTtlDays.?.toLong),
           luxmedAppVersion = parsedAppVersion.?,
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
