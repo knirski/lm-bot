@@ -6,12 +6,20 @@ import lmbot.shared.api.{
   AccountEndpoints,
   ApiError,
   AuthEndpoints,
-  LoginRequest
+  DictionaryEndpoints,
+  LoginRequest,
+  MonitorEndpoints
 }
 import lmbot.shared.domain.{
   AccountId,
   AccountView,
+  DictionaryCity,
+  DictionaryService,
+  FacilitiesDoctorsResponse,
   LinkAccountRequest,
+  MonitorDraft,
+  MonitorId,
+  MonitorView,
   UserView
 }
 import org.scalajs.dom
@@ -69,6 +77,60 @@ class ApiClient(baseUri: Uri):
       Some(baseUri),
       backend
     )
+  private lazy val createMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.create,
+      Some(baseUri),
+      backend
+    )
+  private lazy val listMonitorsFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.list,
+      Some(baseUri),
+      backend
+    )
+  private lazy val updateMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.update,
+      Some(baseUri),
+      backend
+    )
+  private lazy val pauseMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.pause,
+      Some(baseUri),
+      backend
+    )
+  private lazy val resumeMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.resume,
+      Some(baseUri),
+      backend
+    )
+  private lazy val deleteMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.delete,
+      Some(baseUri),
+      backend
+    )
+  private lazy val citiesFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      DictionaryEndpoints.cities,
+      Some(baseUri),
+      backend
+    )
+  private lazy val servicesFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      DictionaryEndpoints.services,
+      Some(baseUri),
+      backend
+    )
+  private lazy val facilitiesDoctorsFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      DictionaryEndpoints.facilitiesDoctors,
+      Some(baseUri),
+      backend
+    )
 
   def login(req: LoginRequest)(using Async): Either[ApiError, UserView] =
     // The cookie output is always `None` here: the browser stores the cookie but
@@ -95,6 +157,60 @@ class ApiClient(baseUri: Uri):
 
   def deleteAccount(id: AccountId)(using Async): Either[ApiError, Unit] =
     Bridge.awaitEither(deleteAccountFn(None)(id))(transportFailure)
+
+  def createMonitor(
+      draft: MonitorDraft
+  )(using Async): Either[ApiError, MonitorView] =
+    Bridge.awaitEither(createMonitorFn(None)(draft))(transportFailure)
+
+  def listMonitors()(using Async): Either[ApiError, List[MonitorView]] =
+    Bridge.awaitEither(listMonitorsFn(None)(()))(transportFailure)
+
+  def updateMonitor(
+      id: MonitorId,
+      draft: MonitorDraft
+  )(using Async): Either[ApiError, MonitorView] =
+    Bridge.awaitEither(updateMonitorFn(None)((id, draft)))(transportFailure)
+
+  /** Pause and resume answer with no body: the browser already knows which
+    * state it asked for, and the server rejects a disallowed transition with an
+    * error rather than a different state.
+    */
+  def pauseMonitor(id: MonitorId)(using Async): Either[ApiError, Unit] =
+    Bridge.awaitEither(pauseMonitorFn(None)(id))(transportFailure)
+
+  def resumeMonitor(id: MonitorId)(using Async): Either[ApiError, Unit] =
+    Bridge.awaitEither(resumeMonitorFn(None)(id))(transportFailure)
+
+  def deleteMonitor(id: MonitorId)(using Async): Either[ApiError, Unit] =
+    Bridge.awaitEither(deleteMonitorFn(None)(id))(transportFailure)
+
+  /** The dictionaries the monitor wizard offers. Each is proxied per linked
+    * account, because the choices come from that account's own Luxmed session.
+    */
+  def cities(
+      accountId: AccountId
+  )(using Async): Either[ApiError, List[DictionaryCity]] =
+    Bridge.awaitEither(citiesFn(None)(accountId))(transportFailure)
+
+  /** Account-scoped, not city-scoped: Luxmed offers the same service list
+    * regardless of the city chosen, so this takes no city.
+    */
+  def services(
+      accountId: AccountId
+  )(using Async): Either[ApiError, List[DictionaryService]] =
+    Bridge.awaitEither(servicesFn(None)(accountId))(transportFailure)
+
+  def facilitiesAndDoctors(
+      accountId: AccountId,
+      cityId: Long,
+      serviceId: Long
+  )(using Async): Either[ApiError, FacilitiesDoctorsResponse] =
+    Bridge.awaitEither(
+      facilitiesDoctorsFn(None)((accountId, cityId, serviceId))
+    )(
+      transportFailure
+    )
 
   /** A transport or decode failure becomes an error value, in the same channel
     * as a server-side error, so callers have exactly one thing to handle.

@@ -33,6 +33,9 @@ object AccountsView:
     val formSignal = rt.store.signal.map(_.linkForm).distinct
     form(
       cls := "link-account",
+      // Named so the monitors section can point a user with no linked account
+      // straight at the thing they have to do first.
+      idAttr := "link-account",
       onSubmit.preventDefault.mapTo(Msg.LinkAccountSubmitted) --> (m =>
         rt.dispatch(m)
       ),
