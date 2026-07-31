@@ -2,8 +2,18 @@ package lmbot.frontend.api
 
 import gears.async.Async
 import lmbot.frontend.bridge.Bridge
-import lmbot.shared.api.{ApiError, AuthEndpoints, LoginRequest}
-import lmbot.shared.domain.UserView
+import lmbot.shared.api.{
+  AccountEndpoints,
+  ApiError,
+  AuthEndpoints,
+  LoginRequest
+}
+import lmbot.shared.domain.{
+  AccountId,
+  AccountView,
+  LinkAccountRequest,
+  UserView
+}
 import org.scalajs.dom
 import sttp.client3.FetchBackend
 import sttp.model.Uri
@@ -41,6 +51,24 @@ class ApiClient(baseUri: Uri):
       Some(baseUri),
       backend
     )
+  private lazy val createAccountFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      AccountEndpoints.create,
+      Some(baseUri),
+      backend
+    )
+  private lazy val listAccountsFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      AccountEndpoints.list,
+      Some(baseUri),
+      backend
+    )
+  private lazy val deleteAccountFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      AccountEndpoints.delete,
+      Some(baseUri),
+      backend
+    )
 
   def login(req: LoginRequest)(using Async): Either[ApiError, UserView] =
     // The cookie output is always `None` here: the browser stores the cookie but
@@ -56,6 +84,17 @@ class ApiClient(baseUri: Uri):
 
   def logout()(using Async): Either[ApiError, Unit] =
     Bridge.awaitEither(logoutFn(None)(()))(transportFailure).map(_ => ())
+
+  def createAccount(
+      req: LinkAccountRequest
+  )(using Async): Either[ApiError, AccountView] =
+    Bridge.awaitEither(createAccountFn(None)(req))(transportFailure)
+
+  def listAccounts()(using Async): Either[ApiError, List[AccountView]] =
+    Bridge.awaitEither(listAccountsFn(None)(()))(transportFailure)
+
+  def deleteAccount(id: AccountId)(using Async): Either[ApiError, Unit] =
+    Bridge.awaitEither(deleteAccountFn(None)(id))(transportFailure)
 
   /** A transport or decode failure becomes an error value, in the same channel
     * as a server-side error, so callers have exactly one thing to handle.
