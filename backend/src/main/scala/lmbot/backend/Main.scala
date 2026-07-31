@@ -13,16 +13,24 @@ import lmbot.backend.account.{
 import lmbot.backend.auth.{AdminBootstrap, AuthService}
 import lmbot.backend.config.Config
 import lmbot.backend.crypto.AesGcm
-import lmbot.backend.db.{AccountRepo, Database, SessionRepo, UserRepo}
+import lmbot.backend.db.{
+  AccountRepo,
+  Database,
+  MonitorRepo,
+  SessionRepo,
+  UserRepo
+}
 import lmbot.backend.http.{
   AccountRoutes,
   AuthRoutes,
   DictionaryRoutes,
   HealthRoutes,
+  MonitorRoutes,
   Server,
   StaticRoutes
 }
 import lmbot.backend.luxmed.LuxmedConfig
+import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.EmbeddedDb
 import lmbot.backend.support.EmbeddedPg
 import org.slf4j.LoggerFactory
@@ -101,13 +109,16 @@ object Main:
         val accountRoutes = AccountRoutes(auth, accountService)
         val dictionaryService = DictionaryService(accountClients)
         val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
+        val monitorRepo = MonitorRepo(xa)
+        val monitorService = MonitorService(monitorRepo, accountRepo)
+        val monitorRoutes = MonitorRoutes(auth, monitorService)
 
         val server = Server.start(
           config.httpHost,
           config.httpPort.value,
           HealthRoutes.endpoints ++ routes.endpoints ++
             accountRoutes.endpoints ++ dictionaryRoutes.endpoints ++
-            StaticRoutes.endpoints
+            monitorRoutes.endpoints ++ StaticRoutes.endpoints
         )
 
         log.info(
