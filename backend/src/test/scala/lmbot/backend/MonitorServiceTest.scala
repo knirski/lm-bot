@@ -368,7 +368,7 @@ class MonitorServiceTest extends PostgresSuite:
     svc.create(ownerA, draft(accountA, name = "A monitor"))
     svc.create(ownerB, draft(accountB, name = "B monitor"))
 
-    assertEquals(svc.list(ownerA).map(_.name), List("A monitor"))
+    assertEquals(svc.list(ownerA).map(_.map(_.name)), Right(List("A monitor")))
 
   test("update changes fields but never the state"):
     val ownerId = owner()

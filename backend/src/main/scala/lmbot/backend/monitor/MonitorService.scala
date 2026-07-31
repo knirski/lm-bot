@@ -34,6 +34,7 @@ final class MonitorService(
   private val createFailed = "The monitor could not be created."
   private val updateFailed = "The monitor could not be updated."
   private val loadFailed = "The monitor could not be loaded."
+  private val listFailed = "The monitors could not be loaded."
   private val deleteFailed = "The monitor could not be deleted."
 
   /** New monitors start here; `pause`/`resume` are the only ways out. */
@@ -59,8 +60,9 @@ final class MonitorService(
       val stored = attempt(dbFailure(createFailed))(monitors.insert(row)).?
       toView(stored)
 
-  def list(ownerId: Long): List[MonitorView] =
-    monitors.listOwned(ownerId).toList.map(toView)
+  def list(ownerId: Long): Either[ApiError, List[MonitorView]] =
+    attempt(dbFailure(listFailed))(monitors.listOwned(ownerId))
+      .map(_.toList.map(toView))
 
   def get(ownerId: Long, monitorId: MonitorId): Either[ApiError, MonitorView] =
     result:
