@@ -1,7 +1,7 @@
 package lmbot.backend.db
 
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{Role, UserId}
 
 class UserRepo(xa: Transactor):
 
@@ -14,8 +14,11 @@ class UserRepo(xa: Transactor):
       .run()
       .headOption
 
-  def findById(id: Long): Option[UserRow] = connect(xa):
-    sql"select * from users where id = $id".query[UserRow].run().headOption
+  def findById(id: UserId): Option[UserRow] = connect(xa):
+    sql"select * from users where id = ${id.value}"
+      .query[UserRow]
+      .run()
+      .headOption
 
   def insert(
       username: String,
@@ -32,6 +35,6 @@ class UserRepo(xa: Transactor):
         .run()
         .head
 
-  def deleteById(id: Long): Unit = transact(xa):
-    sql"delete from users where id = $id".update.run()
+  def deleteById(id: UserId): Unit = transact(xa):
+    sql"delete from users where id = ${id.value}".update.run()
     ()

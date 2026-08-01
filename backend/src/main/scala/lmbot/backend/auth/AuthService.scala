@@ -4,10 +4,10 @@ import java.time.{Duration, OffsetDateTime}
 
 import lmbot.backend.db.{SessionRepo, UserRepo, UserRow}
 import lmbot.shared.api.ApiError
-import lmbot.shared.domain.{Role, UserView}
+import lmbot.shared.domain.{Role, UserId, UserView}
 
 case class AuthedUser(
-    id: Long,
+    id: UserId,
     username: String,
     displayName: String,
     role: Role,
@@ -73,7 +73,9 @@ class AuthService(
         (),
         expire(Tokens.hash(raw))
       )
-      row <- users.findById(session.userId).toRight(ApiError.Unauthorized)
+      row <- users
+        .findById(UserId(session.userId))
+        .toRight(ApiError.Unauthorized)
       _ <- Either.cond(!row.disabled, (), ApiError.Forbidden)
       user <- toAuthed(row)
     yield user
@@ -94,7 +96,7 @@ class AuthService(
       .toRight(ApiError.Unexpected(s"user ${row.id} has unrecognised role"))
       .map: role =>
         AuthedUser(
-          row.id,
+          UserId(row.id),
           row.username,
           row.displayName,
           role,

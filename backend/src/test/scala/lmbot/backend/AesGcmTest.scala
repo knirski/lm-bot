@@ -10,7 +10,7 @@ import lmbot.backend.crypto.{
   EncryptionContext,
   EncryptionPurpose
 }
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 
 /** Crypto tests.
   *
@@ -25,14 +25,16 @@ class AesGcmTest extends munit.FunSuite:
 
   test("encrypt/decrypt round-trips with the same context"):
     val aes = AesGcm(testKey)
-    val ctx = EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+    val ctx =
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val envelope = aes.encrypt("my-secret-password", ctx)
     val result = aes.decrypt(envelope, ctx)
     assertEquals(result.map(_.value), Right("my-secret-password"))
 
   test("two encryptions of one plaintext have different nonces and ciphertext"):
     val aes = AesGcm(testKey)
-    val ctx = EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+    val ctx =
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val e1 = aes.encrypt("same-plaintext", ctx)
     val e2 = aes.encrypt("same-plaintext", ctx)
     assert(
@@ -49,24 +51,26 @@ class AesGcmTest extends munit.FunSuite:
 
   test("changing owner, account, or purpose rejects authentication"):
     val aes = AesGcm(testKey)
-    val ctx = EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+    val ctx =
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val envelope = aes.encrypt("my-password", ctx)
 
     val wrongOwner =
-      EncryptionContext(99L, AccountId(2L), EncryptionPurpose.Password)
+      EncryptionContext(UserId(99L), AccountId(2L), EncryptionPurpose.Password)
     assert(aes.decrypt(envelope, wrongOwner).isLeft)
 
     val wrongAccount =
-      EncryptionContext(1L, AccountId(99L), EncryptionPurpose.Password)
+      EncryptionContext(UserId(1L), AccountId(99L), EncryptionPurpose.Password)
     assert(aes.decrypt(envelope, wrongAccount).isLeft)
 
     val wrongPurpose =
-      EncryptionContext(1L, AccountId(2L), EncryptionPurpose.DeviceId)
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.DeviceId)
     assert(aes.decrypt(envelope, wrongPurpose).isLeft)
 
   test("tampered ciphertext rejects authentication"):
     val aes = AesGcm(testKey)
-    val ctx = EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+    val ctx =
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val envelope = aes.encrypt("my-password", ctx)
     val tamperedCiphertext = envelope.ciphertextAndTag.clone()
     tamperedCiphertext(0) = (tamperedCiphertext(0) ^ 0x01).toByte
@@ -80,7 +84,8 @@ class AesGcmTest extends munit.FunSuite:
 
   test("envelope and errors never render plaintext or the master key"):
     val aes = AesGcm(testKey)
-    val ctx = EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+    val ctx =
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val envelope = aes.encrypt("my-password", ctx)
     val rendered = envelope.render
     assert(!rendered.contains("my-password"))
@@ -107,7 +112,7 @@ class AesGcmTest extends munit.FunSuite:
         (0 until bytes.length).foreach(i => bytes(i) = (0x42 + i).toByte)
     val aes = AesGcm(testKey, fixedRandom)
     val ctx =
-      EncryptionContext(1L, AccountId(2L), EncryptionPurpose.Password)
+      EncryptionContext(UserId(1L), AccountId(2L), EncryptionPurpose.Password)
     val envelope = aes.encrypt("hello", ctx)
     // Nonce bytes are 0x42, 0x43, …, 0x4D
     val rendered = envelope.render

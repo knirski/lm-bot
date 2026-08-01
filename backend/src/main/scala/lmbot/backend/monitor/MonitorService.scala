@@ -14,7 +14,8 @@ import lmbot.shared.domain.{
   MonitorId,
   MonitorState,
   MonitorView,
-  NamedId
+  NamedId,
+  UserId
 }
 
 /** Owns monitor validation, ownership enforcement, and state-transition policy.
@@ -41,7 +42,7 @@ final class MonitorService(
   private val activePaused = List(MonitorState.Active, MonitorState.Paused)
 
   def create(
-      ownerId: Long,
+      ownerId: UserId,
       draft: MonitorDraft
   ): Either[ApiError, MonitorView] =
     result:
@@ -60,17 +61,20 @@ final class MonitorService(
       val stored = attempt(dbFailure(createFailed))(monitors.insert(row)).?
       toView(stored)
 
-  def list(ownerId: Long): Either[ApiError, List[MonitorView]] =
+  def list(ownerId: UserId): Either[ApiError, List[MonitorView]] =
     attempt(dbFailure(listFailed))(monitors.listOwned(ownerId))
       .map(_.toList.map(toView))
 
-  def get(ownerId: Long, monitorId: MonitorId): Either[ApiError, MonitorView] =
+  def get(
+      ownerId: UserId,
+      monitorId: MonitorId
+  ): Either[ApiError, MonitorView] =
     result:
       val row = findOwnedMonitor(ownerId, monitorId, loadFailed).?
       toView(row)
 
   def update(
-      ownerId: Long,
+      ownerId: UserId,
       monitorId: MonitorId,
       draft: MonitorDraft
   ): Either[ApiError, MonitorView] =
@@ -96,7 +100,7 @@ final class MonitorService(
     * `Paused`.
     */
   def pause(
-      ownerId: Long,
+      ownerId: UserId,
       monitorId: MonitorId
   ): Either[ApiError, MonitorView] =
     transition(ownerId, monitorId, MonitorState.Paused)
@@ -106,18 +110,18 @@ final class MonitorService(
     * transition on an owned monitor, reported as `Conflict`.
     */
   def resume(
-      ownerId: Long,
+      ownerId: UserId,
       monitorId: MonitorId
   ): Either[ApiError, MonitorView] =
     transition(ownerId, monitorId, MonitorState.Active)
 
-  def delete(ownerId: Long, monitorId: MonitorId): Either[ApiError, Unit] =
+  def delete(ownerId: UserId, monitorId: MonitorId): Either[ApiError, Unit] =
     attempt.either(dbFailure(deleteFailed)):
       if monitors.deleteOwned(monitorId, ownerId) then Right(())
       else Left(ApiError.NotFound)
 
   private def transition(
-      ownerId: Long,
+      ownerId: UserId,
       monitorId: MonitorId,
       newState: MonitorState
   ): Either[ApiError, MonitorView] =
@@ -150,7 +154,7 @@ final class MonitorService(
     * can assume, so it stays a total function over `Either`.
     */
   private def findOwnedAccount(
-      ownerId: Long,
+      ownerId: UserId,
       accountId: AccountId,
       onFailure: String
   ): Either[ApiError, LuxmedAccountRow] =
@@ -158,7 +162,7 @@ final class MonitorService(
       .flatMap(_.toRight(ApiError.NotFound))
 
   private def findOwnedMonitor(
-      ownerId: Long,
+      ownerId: UserId,
       monitorId: MonitorId,
       onFailure: String
   ): Either[ApiError, MonitorRow] =

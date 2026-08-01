@@ -24,7 +24,8 @@ class CodecRoundTripTest extends munit.FunSuite:
 
   test("UserView round-trips for both roles"):
     List(Role.Admin, Role.User).foreach: role =>
-      val original = UserView(7L, "mom", "Mom", role, telegramLinked = true)
+      val original =
+        UserView(UserId(7L), "mom", "Mom", role, telegramLinked = true)
       assertEquals(readFromString[UserView](writeToString(original)), original)
 
   test("ErrorBody round-trips"):
@@ -43,7 +44,7 @@ class CodecRoundTripTest extends munit.FunSuite:
 
   test("UserView carries role as a string, not a discriminated object"):
     val json = writeToString(
-      UserView(1L, "admin", "admin", Role.Admin, telegramLinked = false)
+      UserView(UserId(1L), "admin", "admin", Role.Admin, telegramLinked = false)
     )
     assert(
       json.contains("\"role\":\"Admin\""),

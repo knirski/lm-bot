@@ -8,7 +8,7 @@ import lmbot.backend.crypto.{
   EncryptionPurpose
 }
 import lmbot.shared.api.ApiError
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 
 /** Decrypts one encrypted column of a stored Luxmed account. Shared by
   * [[AccountService]] (owner-facing reads) and [[AccountClientFactory]]
@@ -21,7 +21,7 @@ object StoredSecret:
   def decrypt(
       crypto: AesGcm,
       value: String,
-      ownerId: Long,
+      ownerId: UserId,
       accountId: AccountId,
       purpose: EncryptionPurpose
   ): Either[ApiError, Secret] =

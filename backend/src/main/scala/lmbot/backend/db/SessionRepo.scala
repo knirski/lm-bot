@@ -3,13 +3,18 @@ package lmbot.backend.db
 import java.time.OffsetDateTime
 
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
+import lmbot.shared.domain.UserId
 
 class SessionRepo(xa: Transactor):
 
-  def insert(tokenHash: String, userId: Long, expiresAt: OffsetDateTime): Unit =
+  def insert(
+      tokenHash: String,
+      userId: UserId,
+      expiresAt: OffsetDateTime
+  ): Unit =
     transact(xa):
       sql"""insert into sessions (token_hash, user_id, expires_at)
-          values ($tokenHash, $userId, $expiresAt)""".update.run()
+          values ($tokenHash, ${userId.value}, $expiresAt)""".update.run()
       ()
 
   def find(tokenHash: String): Option[SessionRow] = connect(xa):

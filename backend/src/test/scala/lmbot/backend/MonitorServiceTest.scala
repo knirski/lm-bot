@@ -18,27 +18,33 @@ import lmbot.shared.domain.{
   MonitorId,
   MonitorState,
   NamedId,
-  Role
+  Role,
+  UserId
 }
 
 class MonitorServiceTest extends PostgresSuite:
 
   private var nextUser = 0
 
-  private def owner(prefix: String = "owner"): Long =
+  private def owner(prefix: String = "owner"): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
+        .id
+    )
 
-  private def insertAccount(ownerId: Long, label: String = "Main"): AccountId =
+  private def insertAccount(
+      ownerId: UserId,
+      label: String = "Main"
+  ): AccountId =
     val repo = AccountRepo(xa)
     val id = repo.reserveId()
     val now = OffsetDateTime.now()
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         label,
         "encrypted-username",
         "encrypted-password",

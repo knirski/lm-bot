@@ -4,16 +4,18 @@ import java.time.OffsetDateTime
 
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{AccountId, Role}
+import lmbot.shared.domain.{AccountId, Role, UserId}
 
 class AccountRepoTest extends PostgresSuite:
 
   private var nextUser = 0
-  private def anOwner(): Long =
+  private def anOwner(): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"owner$nextUser", s"Owner $nextUser", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"owner$nextUser", s"Owner $nextUser", "hash", Role.Admin)
+        .id
+    )
 
   private val now = OffsetDateTime.now()
 
@@ -29,7 +31,7 @@ class AccountRepoTest extends PostgresSuite:
     val accountId = repo.reserveId()
     val row = LuxmedAccountRow(
       id = accountId.value,
-      ownerUserId = ownerId,
+      ownerUserId = ownerId.value,
       label = "My Luxmed",
       encryptedUsername = "user@example.com",
       encryptedPassword = "enc-pass-1",
@@ -55,7 +57,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id1.value,
-        ownerId,
+        ownerId.value,
         "A",
         "u1",
         "p1",
@@ -71,7 +73,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id2.value,
-        ownerId,
+        ownerId.value,
         "B",
         "u2",
         "p2",
@@ -95,7 +97,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        o1,
+        o1.value,
         "A",
         "u",
         "p",
@@ -119,7 +121,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         "A",
         "u",
         "p",
@@ -149,7 +151,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        o1,
+        o1.value,
         "A",
         "u",
         "p",
@@ -174,7 +176,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id1.value,
-        ownerId,
+        ownerId.value,
         "Same",
         "u1",
         "p1",
@@ -191,7 +193,7 @@ class AccountRepoTest extends PostgresSuite:
       repo.insert(
         LuxmedAccountRow(
           id2.value,
-          ownerId,
+          ownerId.value,
           "Same",
           "u2",
           "p2",
@@ -214,7 +216,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id1.value,
-        o1,
+        o1.value,
         "A",
         "same-user",
         "p1",
@@ -230,7 +232,7 @@ class AccountRepoTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id2.value,
-        o2,
+        o2.value,
         "B",
         "same-user",
         "p2",

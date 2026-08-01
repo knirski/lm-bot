@@ -15,7 +15,8 @@ import lmbot.shared.domain.{
   DictionaryDoctor,
   DictionaryFacility,
   DictionaryService as DictionaryServiceItem,
-  FacilitiesDoctorsResponse
+  FacilitiesDoctorsResponse,
+  UserId
 }
 
 /** Proxies Luxmed dictionary lookups for a caller-owned account, translating
@@ -26,7 +27,7 @@ final class DictionaryService(clients: AccountClientFactory):
 
   private val unavailable = "Luxmed is temporarily unavailable."
 
-  def cities(ownerId: Long, accountId: AccountId)(using
+  def cities(ownerId: UserId, accountId: AccountId)(using
       Async
   ): Either[ApiError, List[DictionaryCity]] =
     withClient(ownerId, accountId): client =>
@@ -36,7 +37,7 @@ final class DictionaryService(clients: AccountClientFactory):
         .map(luxmedErrorMapping(_, unavailable))
         .map(_.map(city => DictionaryCity(city.id.value, city.name)))
 
-  def services(ownerId: Long, accountId: AccountId)(using
+  def services(ownerId: UserId, accountId: AccountId)(using
       Async
   ): Either[ApiError, List[DictionaryServiceItem]] =
     withClient(ownerId, accountId): client =>
@@ -47,7 +48,7 @@ final class DictionaryService(clients: AccountClientFactory):
         .map(flatten(_, ancestry = None))
 
   def facilitiesDoctors(
-      ownerId: Long,
+      ownerId: UserId,
       accountId: AccountId,
       cityId: Long,
       serviceId: Long
@@ -65,7 +66,7 @@ final class DictionaryService(clients: AccountClientFactory):
           )
         }
 
-  private def withClient[A](ownerId: Long, accountId: AccountId)(
+  private def withClient[A](ownerId: UserId, accountId: AccountId)(
       op: LuxmedClient => Either[ApiError, A]
   ): Either[ApiError, A] =
     clients.forStored(ownerId, accountId).flatMap(op)

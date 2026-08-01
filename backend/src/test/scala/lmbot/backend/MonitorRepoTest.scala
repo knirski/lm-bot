@@ -11,25 +11,27 @@ import lmbot.backend.db.{
   UserRepo
 }
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{AccountId, MonitorId, MonitorState, Role}
+import lmbot.shared.domain.{AccountId, MonitorId, MonitorState, Role, UserId}
 
 class MonitorRepoTest extends PostgresSuite:
 
   private var nextUser = 0
-  private def anOwner(): Long =
+  private def anOwner(): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"owner$nextUser", s"Owner $nextUser", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"owner$nextUser", s"Owner $nextUser", "hash", Role.Admin)
+        .id
+    )
 
-  private def anAccount(ownerId: Long): Long =
+  private def anAccount(ownerId: UserId): Long =
     val repo = AccountRepo(xa)
     val accountId = repo.reserveId()
     val now = OffsetDateTime.now()
     repo.insert(
       LuxmedAccountRow(
         id = accountId.value,
-        ownerUserId = ownerId,
+        ownerUserId = ownerId.value,
         label = "Test Account",
         encryptedUsername = "user@example.com",
         encryptedPassword = "enc-pass",

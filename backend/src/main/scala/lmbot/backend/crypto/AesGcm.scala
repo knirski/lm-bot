@@ -6,7 +6,7 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.{GCMParameterSpec, SecretKeySpec}
 import lmbot.backend.config.{MasterKey, Secret}
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 
 /** The purpose for which a secret is being encrypted.
   *
@@ -25,12 +25,12 @@ enum EncryptionPurpose(val wireName: String):
   * ownerId, accountId, and purpose all match the values used during encryption.
   */
 final case class EncryptionContext(
-    ownerId: Long,
+    ownerId: UserId,
     accountId: AccountId,
     purpose: EncryptionPurpose
 ):
   def aad: Array[Byte] =
-    s"lm-bot:v1:$ownerId:${accountId.value}:${purpose.wireName}"
+    s"lm-bot:v1:${ownerId.value}:${accountId.value}:${purpose.wireName}"
       .getBytes(StandardCharsets.UTF_8)
 
 /** AES-256/GCM/NoPadding encryption and decryption.

@@ -18,6 +18,7 @@ import lmbot.shared.domain.{
   MonitorView,
   NamedId,
   Role,
+  UserId,
   UserView
 }
 import sttp.model.Uri
@@ -31,7 +32,7 @@ class UpdateTest extends munit.FunSuite:
   private val update = Update(api)
 
   private val alice =
-    UserView(1L, "alice", "Alice", Role.User, telegramLinked = false)
+    UserView(UserId(1L), "alice", "Alice", Role.User, telegramLinked = false)
 
   private val account1 = AccountView(
     AccountId(1L),

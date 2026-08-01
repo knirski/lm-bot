@@ -28,7 +28,8 @@ import lmbot.shared.domain.{
   DictionaryService as DictionaryServiceItem,
   FacilitiesDoctorsResponse,
   LinkAccountRequest,
-  Role
+  Role,
+  UserId
 }
 import sttp.model.Uri
 
@@ -49,11 +50,13 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
 
   private var nextUser = 0
 
-  private def owner(prefix: String = "owner"): Long =
+  private def owner(prefix: String = "owner"): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
+        .id
+    )
 
   private def config(server: RealHttpLuxmedServer): LuxmedConfig =
     LuxmedConfig(
@@ -121,7 +124,7 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
   private def linkedAccount(
       server: RealHttpLuxmedServer,
       accountService: AccountService,
-      ownerId: Long
+      ownerId: UserId
   ): AccountId =
     enqueue(server, LuxmedResponseScripts.realisticAuthFlow())
     val linked = runAsync:

@@ -18,7 +18,7 @@ import lmbot.backend.db.{
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, MonitorRoutes, Server}
 import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{Role, UserId}
 import sttp.client3.*
 import sttp.model.{StatusCode, Uri}
 
@@ -65,10 +65,12 @@ class MonitorHttpApiTest extends PostgresSuite:
       username: String,
       password: String,
       role: Role = Role.User
-  ): Long =
-    UserRepo(xa)
-      .insert(username, "Krzysiek", Passwords.hash(password), role)
-      .id
+  ): UserId =
+    UserId(
+      UserRepo(xa)
+        .insert(username, "Krzysiek", Passwords.hash(password), role)
+        .id
+    )
 
   private def login(username: String, password: String) =
     basicRequest
@@ -93,18 +95,18 @@ class MonitorHttpApiTest extends PostgresSuite:
       username: String = "krzysiek",
       password: String = "s3cret",
       role: Role = Role.User
-  ): (Long, String) =
+  ): (UserId, String) =
     val id = aUser(username, password, role)
     val token = sessionCookieValue(login(username, password))
     (id, token)
 
-  private def insertAccount(ownerId: Long, label: String = "Main"): Long =
+  private def insertAccount(ownerId: UserId, label: String = "Main"): Long =
     val repo = AccountRepo(xa)
     val id = repo.reserveId()
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         label,
         "encrypted-username",
         "encrypted-password",

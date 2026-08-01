@@ -18,7 +18,7 @@ import lmbot.backend.luxmed.{
   SessionStore
 }
 import lmbot.shared.api.ApiError
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 
 final class AccountClientFactory private (
     xa: Transactor,
@@ -54,7 +54,7 @@ final class AccountClientFactory private (
     )
 
   def forStored(
-      ownerId: Long,
+      ownerId: UserId,
       accountId: AccountId
   ): Either[ApiError, LuxmedClient] =
     try

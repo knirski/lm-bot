@@ -4,12 +4,12 @@ import java.time.{Duration, OffsetDateTime}
 
 import lmbot.backend.db.{SessionRepo, UserRepo}
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{Role, UserId}
 
 class SessionRepoTest extends PostgresSuite:
 
-  private def aUser(): Long =
-    UserRepo(xa).insert("krzysiek", "Krzysiek", "hash-1", Role.Admin).id
+  private def aUser(): UserId =
+    UserId(UserRepo(xa).insert("krzysiek", "Krzysiek", "hash-1", Role.Admin).id)
 
   test("a stored session is retrievable by its token hash"):
     val repo = SessionRepo(xa)
@@ -19,7 +19,7 @@ class SessionRepoTest extends PostgresSuite:
     repo.insert("token-hash-1", userId, expiry)
 
     val found = repo.find("token-hash-1")
-    assertEquals(found.map(_.userId), Some(userId))
+    assertEquals(found.map(_.userId), Some(userId.value))
 
   test("an unknown token hash yields None"):
     assertEquals(SessionRepo(xa).find("nope"), None)

@@ -27,7 +27,7 @@ import lmbot.backend.luxmed.support.{
   RealHttpLuxmedServer
 }
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{Role, UserId}
 import sttp.client3.*
 import sttp.model.{StatusCode, Uri}
 
@@ -97,10 +97,12 @@ class AccountHttpApiTest extends PostgresSuite:
     if luxmed != null then luxmed.close()
     super.afterEach(context)
 
-  private def aUser(username: String, password: String): Long =
-    UserRepo(xa)
-      .insert(username, "Krzysiek", Passwords.hash(password), Role.User)
-      .id
+  private def aUser(username: String, password: String): UserId =
+    UserId(
+      UserRepo(xa)
+        .insert(username, "Krzysiek", Passwords.hash(password), Role.User)
+        .id
+    )
 
   private def login(username: String, password: String) =
     basicRequest
@@ -124,7 +126,7 @@ class AccountHttpApiTest extends PostgresSuite:
   private def loggedIn(
       username: String = "krzysiek",
       password: String = "s3cret"
-  ): (Long, String) =
+  ): (UserId, String) =
     val id = aUser(username, password)
     val token = sessionCookieValue(login(username, password))
     (id, token)
@@ -162,7 +164,7 @@ class AccountHttpApiTest extends PostgresSuite:
       .send(http)
 
   private def insertAccount(
-      ownerId: Long,
+      ownerId: UserId,
       label: String,
       username: String = "stored@example.com"
   ): Long =
@@ -171,7 +173,7 @@ class AccountHttpApiTest extends PostgresSuite:
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         label,
         crypto
           .encrypt(

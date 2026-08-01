@@ -12,13 +12,13 @@ import lmbot.backend.crypto.{
   EncryptionPurpose
 }
 import lmbot.backend.luxmed.model.LuxmedSession
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 import org.slf4j.LoggerFactory
 
 /** Encrypted, owner-scoped PostgreSQL session store with refresh-token CAS. */
 final class PostgresSessionStore(
     xa: Transactor,
-    ownerId: Long,
+    ownerId: UserId,
     accountId: AccountId,
     crypto: AesGcm,
     // Test hook used to coordinate concurrent CAS attempts after the row read.
@@ -27,6 +27,7 @@ final class PostgresSessionStore(
 
   private val log = LoggerFactory.getLogger(getClass)
   private val rawAccountId = accountId.value
+  private val rawOwnerId = ownerId.value
   private val context =
     EncryptionContext(ownerId, accountId, EncryptionPurpose.Session)
 
@@ -68,7 +69,7 @@ final class PostgresSessionStore(
     try
       connect(xa):
         sql"""select encrypted_session from luxmed_accounts
-              where id = $rawAccountId and owner_user_id = $ownerId"""
+              where id = $rawAccountId and owner_user_id = $rawOwnerId"""
           .query[Option[String]]
           .run()
           .headOption match
@@ -88,7 +89,7 @@ final class PostgresSessionStore(
       connect(xa):
         val stored =
           sql"""select encrypted_session from luxmed_accounts
-                where id = $rawAccountId and owner_user_id = $ownerId"""
+                where id = $rawAccountId and owner_user_id = $rawOwnerId"""
             .query[Option[String]]
             .run()
             .headOption
@@ -108,12 +109,12 @@ final class PostgresSessionStore(
                 case Some(previous) =>
                   sql"""update luxmed_accounts
                         set encrypted_session = $encrypted, updated_at = now()
-                        where id = $rawAccountId and owner_user_id = $ownerId
+                        where id = $rawAccountId and owner_user_id = $rawOwnerId
                           and encrypted_session = $previous""".update.run()
                 case None =>
                   sql"""update luxmed_accounts
                         set encrypted_session = $encrypted, updated_at = now()
-                        where id = $rawAccountId and owner_user_id = $ownerId
+                        where id = $rawAccountId and owner_user_id = $rawOwnerId
                           and encrypted_session is null""".update.run()
               if changed == 1 then Right(())
               else Left(SessionStoreError.ConcurrentModification)
@@ -127,7 +128,7 @@ final class PostgresSessionStore(
       transact(xa):
         val changed = sql"""update luxmed_accounts
               set encrypted_session = null, updated_at = now()
-              where id = $rawAccountId and owner_user_id = $ownerId""".update
+              where id = $rawAccountId and owner_user_id = $rawOwnerId""".update
           .run()
         if changed == 1 then Right(())
         else Left(SessionStoreError.Unavailable("session persistence failed"))

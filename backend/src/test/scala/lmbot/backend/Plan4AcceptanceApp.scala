@@ -35,7 +35,7 @@ import lmbot.backend.http.{
 import lmbot.backend.luxmed.{LuxmedConfig, PostgresSessionStore}
 import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.EmbeddedPg
-import lmbot.shared.domain.{AccountId, Role}
+import lmbot.shared.domain.{AccountId, Role, UserId}
 import org.slf4j.LoggerFactory
 
 /** A test-scope main for the Plan 4 browser acceptance run: the ordinary
@@ -284,8 +284,9 @@ object Plan4AcceptanceApp:
       crypto: AesGcm,
       clockOffset: Duration
   ): String =
-    val owner =
-      UserRepo(xa).findByUsername(Plan4AcceptanceConfig.adminUsername).map(_.id)
+    val owner = UserRepo(xa)
+      .findByUsername(Plan4AcceptanceConfig.adminUsername)
+      .map(row => UserId(row.id))
     val stored = for
       ownerId <- owner
       account <- AccountRepo(xa).listOwned(ownerId).headOption
