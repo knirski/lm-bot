@@ -705,9 +705,9 @@ cross-owner 404, duplicate-label 409, invalid request 422, and deletion
 cascade. Verify `password`, cookies, UUID, JWT, access token, and refresh token
 never appear in any response.
 
-Dictionary tests map recursive `ServiceVariant` values to a flattened wizard
-list while retaining parent/variant display names, and map facilities/doctors
-to shared `NamedId` values.
+Dictionary tests map recursive `ServiceVariant` values to a flattened,
+selectable list while retaining parent/variant display names, and map
+facilities/doctors to shared `NamedId` values.
 
 - [ ] **Step 2: Run focused suites and verify red**
 
@@ -1001,7 +1001,9 @@ Cover:
 sbt "frontend/testOnly lmbot.frontend.UpdateTest"
 ```
 
-- [ ] **Step 3: Implement pure wizard transitions and effects**
+- [ ] **Step 3: Implement pure wizard transitions and effects** (superseded —
+  see the note above; the shipped code has no wizard steps, but the
+  staleness-guarding approach described below is unchanged)
 
 Represent each dictionary request with a request key containing account and
 prerequisite IDs. Response messages carry the same key; `update` applies a
@@ -1031,6 +1033,10 @@ git diff --check
 git add frontend
 git commit -m "feat: add monitor wizard and management UI"
 ```
+
+This was the actual first commit (`bf2a4ed`); it was superseded on top by
+`860d0f0`, "refactor: consolidate monitor wizard into a single-page form" —
+see the note above Step 1.
 
 ### Task 11: Exercise the complete browser flow and close Plan 4
 

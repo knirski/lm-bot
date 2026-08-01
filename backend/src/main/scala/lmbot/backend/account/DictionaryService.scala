@@ -71,7 +71,7 @@ final class DictionaryService(clients: AccountClientFactory):
   ): Either[ApiError, A] =
     clients.forStored(ownerId, accountId).flatMap(op)
 
-  /** Flattens the recursive `ServiceVariant` tree into a wizard-friendly list.
+  /** Flattens the recursive `ServiceVariant` tree into a flat, selectable list.
     * Each node's own name is prefixed with its ancestors' names (`"Parent >
     * Child"`) so that two variants with the same leaf name under different
     * parents remain distinguishable once flattened — `ServiceVariant.flatten`

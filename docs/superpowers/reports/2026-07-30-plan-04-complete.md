@@ -185,12 +185,27 @@ directory could make it a literal process restart.
   behaviour, and the accessibility pass are Plan 7's scope; every control is
   reachable and labelled, but nothing is designed.
 - **No favicon**, so every page load logs a 404 for `/favicon.ico`.
-- **Concurrent refresh at the boundary.** Each dictionary request builds its own
-  `LuxmedClient` with its own `AccountGate`, so two simultaneous requests
-  arriving exactly at the refresh boundary can both attempt a refresh; the
-  loser's compare-and-set fails and its request surfaces "Luxmed is temporarily
-  unavailable" with a retry. The rotated token is never lost, which is what the
-  CAS exists to guarantee. Plan 5 introduces a per-account scheduler that is the
-  natural place to hold one client per account.
+- **The per-account Luxmed mutex and minimum call spacing are not actually held
+  across requests.** `AccountClientFactory.forStored` builds a brand-new
+  `LuxmedClient` and `AccountGate` on every call
+  (`AccountClientFactory.scala:40,56`), so `AccountGate`'s `Semaphore(1)` and
+  `minimumSpacing` only serialize and pace calls *within one request* — never
+  across the several concurrent requests one browser session can now issue
+  against the same account (the single-page monitor form's `loadDictionaries`
+  fires up to three simultaneous Luxmed calls per "Edit" click). This is
+  narrower than spec §5.4's "one in-flight request per Luxmed account, minimum
+  spacing between calls" and the fair-use-lockout mitigation it exists for
+  (spec §10) — the invariant those describe is not currently held at all
+  across requests, not merely raced at one boundary. The concrete symptom seen
+  so far is benign — two calls landing at the refresh boundary can both
+  attempt a refresh; the CAS loser surfaces "Luxmed is temporarily unavailable"
+  with a retry, and the rotated token is never lost, which is what the CAS
+  exists to guarantee — but that is one consequence, not the whole gap. Fixing
+  it means giving a Luxmed account's client and gate a lifetime longer than one
+  request, which is exactly the shape of the per-account scheduler Plan 5
+  needs anyway (see the tracking issue). Left for Plan 5 rather than fixed in
+  Plan 4, deliberately: Plan 4 doesn't execute any recurring Luxmed calls of
+  its own, so nothing in this plan depends on the invariant actually holding
+  yet.
 - **No user management.** A second operator can only be created by the
   acceptance harness; the admin UI is Plan 7.
