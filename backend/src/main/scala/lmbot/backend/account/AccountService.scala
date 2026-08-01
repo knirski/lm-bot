@@ -16,7 +16,8 @@ import lmbot.shared.domain.{
   AccountId,
   AccountStatus,
   AccountView,
-  LinkAccountRequest
+  LinkAccountRequest,
+  UserId
 }
 
 final class AccountService(
@@ -43,7 +44,7 @@ final class AccountService(
     * check runs before authentication, so a request that cannot succeed never
     * spends a real login (Luxmed can lock an account after repeated attempts).
     */
-  def link(ownerId: Long, request: LinkAccountRequest)(using
+  def link(ownerId: UserId, request: LinkAccountRequest)(using
       Async
   ): Either[ApiError, AccountView] =
     result:
@@ -67,7 +68,7 @@ final class AccountService(
       val timestamp = now().atOffset(ZoneOffset.UTC)
       val row = LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         normalized.label,
         encrypt(normalized.username, ownerId, id, EncryptionPurpose.Username),
         encrypt(
@@ -99,7 +100,7 @@ final class AccountService(
       case sql: SQLException if sql.getSQLState == state => true
       case _ => Option(error.getCause).exists(hasSqlState(_, state))
 
-  def list(ownerId: Long): Either[ApiError, List[AccountView]] =
+  def list(ownerId: UserId): Either[ApiError, List[AccountView]] =
     result:
       val rows =
         attempt(_ => ApiError.Unexpected(accountsLoadFailed))(
@@ -107,14 +108,14 @@ final class AccountService(
         ).?
       rows.toList.map(row => toView(row).?)
 
-  def delete(ownerId: Long, accountId: AccountId): Either[ApiError, Unit] =
+  def delete(ownerId: UserId, accountId: AccountId): Either[ApiError, Unit] =
     attempt.either(_ => ApiError.Unexpected(accountDeleteFailed)):
       if accounts.deleteOwned(accountId, ownerId) then Right(())
       else Left(ApiError.NotFound)
 
   private def encrypt(
       value: String,
-      ownerId: Long,
+      ownerId: UserId,
       accountId: AccountId,
       purpose: EncryptionPurpose
   ): String =
@@ -131,7 +132,7 @@ final class AccountService(
         .decrypt(
           crypto,
           row.encryptedUsername,
-          row.ownerUserId,
+          UserId(row.ownerUserId),
           AccountId(row.id),
           EncryptionPurpose.Username
         )
@@ -145,15 +146,5 @@ final class AccountService(
         row.lastSuccessfulLogin.map(_.toInstant)
       )
 
-  private def linkError(error: LuxmedError): ApiError = error match
-    case LuxmedError.AuthFailed =>
-      ApiError.Validation(AccountStatusReason.AuthFailed.value)
-    case _: LuxmedError.UnexpectedAuthResponse =>
-      ApiError.Conflict(AccountStatusReason.Challenge.value)
-    case LuxmedError.RateLimited =>
-      ApiError.Conflict(AccountStatusReason.RateLimited.value)
-    case _: LuxmedError.VersionRejected =>
-      ApiError.Conflict(AccountStatusReason.VersionRejected.value)
-    case _: LuxmedError.NetworkFailure | _: LuxmedError.Transient =>
-      ApiError.Unexpected("Luxmed is temporarily unavailable.")
-    case _ => ApiError.Unexpected(linkFailed)
+  private def linkError(error: LuxmedError): ApiError =
+    luxmedErrorMapping(error, linkFailed)

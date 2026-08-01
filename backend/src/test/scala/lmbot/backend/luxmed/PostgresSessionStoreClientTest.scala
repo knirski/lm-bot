@@ -15,7 +15,7 @@ import lmbot.backend.luxmed.support.{
   StubLuxmedBackend
 }
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{AccountId, Role}
+import lmbot.shared.domain.{AccountId, Role, UserId}
 import sttp.model.Uri
 
 class PostgresSessionStoreClientTest extends PostgresSuite with GearsTest:
@@ -27,16 +27,18 @@ class PostgresSessionStoreClientTest extends PostgresSuite with GearsTest:
     deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
   )
 
-  private def account(): (Long, Long) =
-    val owner = UserRepo(xa)
-      .insert("client-owner", "Client owner", "hash", Role.Admin)
-      .id
+  private def account(): (UserId, Long) =
+    val owner = UserId(
+      UserRepo(xa)
+        .insert("client-owner", "Client owner", "hash", Role.Admin)
+        .id
+    )
     val accountId = AccountRepo(xa).reserveId()
     val now = OffsetDateTime.now()
     AccountRepo(xa).insert(
       LuxmedAccountRow(
         accountId.value,
-        owner,
+        owner.value,
         "Client account",
         "user@example.com",
         "encrypted-password",

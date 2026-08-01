@@ -9,7 +9,7 @@ The spec describes a complete application. At the TDD granularity this project u
 | 1 | Foundation & auth walking skeleton | A deployable app you can log into | ✅ **complete** — [plan](2026-07-27-lm-bot-01-foundation.md), [review](../reports/2026-07-27-plan-01-review.md) |
 | 2 | **API spike** (investigation, not implementation) | Auth flows, JWT, token rotation measured; MFA found **not enforced** | ✅ **complete** — [plan](2026-07-27-lm-bot-02-2fa-spike.md), [findings](../reports/2026-07-27-luxmed-api-analysis.md) |
 | 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | ✅ **complete** — [plan](2026-07-28-lm-bot-03-luxmed-client.md), [report](../reports/2026-07-28-plan-03-complete.md) |
-| 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | 🚧 **in progress** — persistence & service layer shipped, [reviewed](../reports/2026-07-30-plan-04-review.md) (Tasks 1–5 of [the plan](2026-07-30-lm-bot-04-accounts-monitors.md)); HTTP routes, monitor service wiring, and the frontend UI (Tasks 6–11) remain |
+| 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | ✅ **complete** — [plan](2026-07-30-lm-bot-04-accounts-monitors.md), [report](../reports/2026-07-30-plan-04-complete.md), [mid-plan review](../reports/2026-07-30-plan-04-review.md) |
 | 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | not yet written |
 | 6 | Auto-booking | Matching slots get booked | not yet written |
 | 7 | Hardening & ops | Admin UI, ops notifications, observability, release polish | not yet written |
@@ -36,7 +36,9 @@ One caution: §1.5 of the analysis report lists mobile-API endpoint paths (`/api
 
 ### Plan 4 — Luxmed accounts & monitor CRUD
 
-AES-256-GCM encryption at rest for credentials and **persisted sessions**, with the master key from env; the PostgreSQL implementation of Plan 3's compare-and-set `SessionStore`; an lm-bot `AccountId` owned by the account/application domain rather than the Luxmed wire model; **single-step linking** verified by a live login; account status (`active` / `auth_failed` / `disabled`) with a reason string so a challenge or lockout is never surfaced as "wrong password" (§5.5); a dictionaries proxy endpoint so the wizard is driven by live Luxmed data; the `monitors` table; monitor create/edit/pause/delete endpoints with service-layer ownership checks; the guided wizard UI and the monitor list. Interval validation enforces the 10-min default / 5-min floor from spec §3.3. Monitors are stored but nothing runs them yet.
+AES-256-GCM encryption at rest for credentials and **persisted sessions**, with the master key from env; the PostgreSQL implementation of Plan 3's compare-and-set `SessionStore`; an lm-bot `AccountId` owned by the account/application domain rather than the Luxmed wire model; **single-step linking** verified by a live login; account status (`active` / `auth_failed` / `disabled`) with a reason string so a challenge or lockout is never surfaced as "wrong password" (§5.5); a dictionaries proxy endpoint so the monitor form is driven by live Luxmed data; the `monitors` table; monitor create/edit/pause/delete endpoints with service-layer ownership checks; the monitor form and the monitor list. Interval validation enforces the 10-min default / 5-min floor from spec §3.3. Monitors are stored but nothing runs them yet.
+
+The monitor UI shipped as a **single-page form** — every field visible at once, one submit button — rather than the guided wizard this scope statement originally described; the change was asked for by the project owner during Task 10 and the plan document records it.
 
 The session round-trip gets explicit test coverage: store, restart, refresh, and confirm the rotated refresh token survived. Losing that write is unrecoverable without a password grant (§10).
 

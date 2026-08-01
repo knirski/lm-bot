@@ -38,6 +38,7 @@ object Codecs:
       .withDiscriminatorFieldName(None)
 
   given JsonValueCodec[Role] = JsonCodecMaker.make(config)
+  given JsonValueCodec[UserId] = JsonCodecMaker.make(config)
   given JsonValueCodec[UserView] = JsonCodecMaker.make(config)
   given JsonValueCodec[LoginRequest] = JsonCodecMaker.make(config)
   given JsonValueCodec[ErrorBody] = JsonCodecMaker.make(config)
@@ -134,6 +135,8 @@ object Codecs:
   // --- Tapir schemas ---
 
   given Schema[Role] = Schema.derivedEnumeration[Role].defaultStringBased
+  given Schema[UserId] =
+    Schema.schemaForLong.map(id => Some(UserId(id)))(_.value)
   given Schema[UserView] = Schema.derived
   given Schema[LoginRequest] = Schema.derived
   given Schema[ErrorBody] = Schema.derived

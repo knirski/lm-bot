@@ -33,7 +33,8 @@ import lmbot.shared.domain.{
   AccountStatus,
   LinkAccountRequest,
   MonitorId,
-  Role
+  Role,
+  UserId
 }
 import sttp.model.Uri
 
@@ -51,11 +52,13 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
 
   private var nextUser = 0
 
-  private def owner(prefix: String = "owner"): Long =
+  private def owner(prefix: String = "owner"): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"$prefix-$nextUser", s"Owner $nextUser", "hash", Role.Admin)
+        .id
+    )
 
   private def config(server: RealHttpLuxmedServer): LuxmedConfig =
     LuxmedConfig(
@@ -131,11 +134,11 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
   private def passwordGrantCount(server: RealHttpLuxmedServer): Int =
     server.requests.count(_.body.contains("grant_type=password"))
 
-  private def accountRows(ownerId: Long): Seq[LuxmedAccountRow] =
+  private def accountRows(ownerId: UserId): Seq[LuxmedAccountRow] =
     AccountRepo(xa).listOwned(ownerId)
 
   private def insertAccount(
-      ownerId: Long,
+      ownerId: UserId,
       label: String,
       username: String = "stored@example.com",
       status: String = "active",
@@ -146,7 +149,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         label,
         crypto
           .encrypt(
@@ -171,16 +174,17 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       encrypted: String,
       purpose: EncryptionPurpose
   ): Secret =
-    val envelope = EncryptedEnvelope.parse(encrypted).toOption.get
-    crypto
-      .decrypt(
-        envelope,
-        EncryptionContext(row.ownerUserId, AccountId(row.id), purpose)
-      )
-      .toOption
-      .get
+    EncryptedEnvelope.parse(encrypted) match
+      case Left(error)     => fail(s"envelope parse failed: $error")
+      case Right(envelope) =>
+        crypto.decrypt(
+          envelope,
+          EncryptionContext(UserId(row.ownerUserId), AccountId(row.id), purpose)
+        ) match
+          case Left(error)      => fail(s"decrypt failed: $error")
+          case Right(plaintext) => plaintext
 
-  private def insertMonitor(ownerId: Long, accountId: Long): Long =
+  private def insertMonitor(ownerId: UserId, accountId: Long): Long =
     val repo = MonitorRepo(xa)
     val monitorId = repo.reserveId()
     repo.insert(
@@ -368,7 +372,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
     "persistence failure after auth returns safe unexpected error with no row"
   ):
     withServer: server =>
-      val missingOwner = 99999999L
+      val missingOwner = UserId(99999999L)
       enqueueAuth(server)
       val (accounts, _) = service(config(server))
 

@@ -705,9 +705,9 @@ cross-owner 404, duplicate-label 409, invalid request 422, and deletion
 cascade. Verify `password`, cookies, UUID, JWT, access token, and refresh token
 never appear in any response.
 
-Dictionary tests map recursive `ServiceVariant` values to a flattened wizard
-list while retaining parent/variant display names, and map facilities/doctors
-to shared `NamedId` values.
+Dictionary tests map recursive `ServiceVariant` values to a flattened,
+selectable list while retaining parent/variant display names, and map
+facilities/doctors to shared `NamedId` values.
 
 - [ ] **Step 2: Run focused suites and verify red**
 
@@ -942,7 +942,16 @@ git add frontend
 git commit -m "feat: add Luxmed account management UI"
 ```
 
-### Task 10: Add the guided monitor wizard, list, and edit UI
+### Task 10: Add the monitor form, list, and edit UI
+
+> **Superseded by human direction (2026-08-01):** this task originally
+> specified a 6-step guided wizard. The human who owns this project asked
+> instead for a single-page form (every field visible at once, one submit
+> button), which is what shipped and is described below. The per-task SDD
+> report (implementation and review record) lives in the gitignored
+> `.superpowers/sdd/` workspace and is not committed; see
+> `docs/superpowers/reports/2026-07-30-plan-04-complete.md` for the
+> committed record of what shipped.
 
 **Files:**
 
@@ -956,20 +965,28 @@ git commit -m "feat: add Luxmed account management UI"
 
 **Interfaces:**
 
-- Wizard steps are `Account`, `City`, `Service`, `Providers`, `Schedule`, and
-  `Review`.
-- City selection triggers service loading; city/service selection triggers
+- One single-page form shows account, city, service, providers, and schedule
+  fields at once, gated only by which dictionaries have loaded; there is no
+  step state and one submit button.
+- Account selection triggers city *and* service loading together (the
+  `DictionaryEndpoints.services` endpoint is account-scoped, not
+  city-scoped); city and service together (in either order) trigger
   facility/doctor loading for the selected owned account.
+- Changing the city clears only the facility/doctor selection and keeps the
+  chosen service, since the service list does not depend on city and the
+  previously chosen value is still valid. Changing the service still clears
+  facility/doctor selections.
 - Create and edit share one `MonitorForm`; edit starts from persisted
   denormalized IDs and names.
 
-- [ ] **Step 1: Write failing wizard/update tests**
+- [ ] **Step 1: Write failing single-page/update tests**
 
 Cover:
 
 - no linked accounts shows a link-account action;
-- dictionary calls occur only after prerequisites exist;
-- changing city clears service/facility/doctor selections;
+- dictionary calls occur only after prerequisites exist (account → cities +
+  services together; city + service, in either order, → facilities/doctors);
+- changing city clears facility/doctor selections but keeps the service;
 - changing service clears facility/doctor selections;
 - optional facility and doctor selections may remain empty;
 - date, time, days, and interval validation blocks submission;
@@ -986,7 +1003,9 @@ Cover:
 sbt "frontend/testOnly lmbot.frontend.UpdateTest"
 ```
 
-- [ ] **Step 3: Implement pure wizard transitions and effects**
+- [ ] **Step 3: Implement pure wizard transitions and effects** (superseded —
+  see the note above; the shipped code has no wizard steps, but the
+  staleness-guarding approach described below is unchanged)
 
 Represent each dictionary request with a request key containing account and
 prerequisite IDs. Response messages carry the same key; `update` applies a
@@ -997,13 +1016,16 @@ Keep local validation aligned with server validation for immediate feedback,
 but still display server `ApiError.Validation` because the backend is
 authoritative.
 
-- [ ] **Step 4: Implement accessible rendering-only views**
+- [ ] **Step 4: Implement accessible rendering-only views** (superseded — see
+  the note above; the single-page form has no previous/next controls or a
+  separate review step, since every field is visible and editable at once)
 
 Use real `label` elements, fieldsets/legends for days and provider selections,
-an error summary with `role="alert"`, disabled/busy states, and explicit
-previous/next controls. The review step shows denormalized names and Warsaw
-date/time semantics before submit. List rows expose edit, pause/resume, and
-delete; do not show a fake last-check timestamp or event log.
+an error summary with `role="alert"`, and disabled/busy states. Warsaw
+date/time semantics are visible in the fields themselves, not in a separate
+review step, since there is no wizard step to review from. List rows expose
+edit, pause/resume, and delete; do not show a fake last-check timestamp or
+event log.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -1016,6 +1038,10 @@ git diff --check
 git add frontend
 git commit -m "feat: add monitor wizard and management UI"
 ```
+
+This was the actual first commit (`bf2a4ed`); it was superseded on top by
+`860d0f0`, "refactor: consolidate monitor wizard into a single-page form" —
+see the note above Step 1.
 
 ### Task 11: Exercise the complete browser flow and close Plan 4
 
@@ -1032,8 +1058,8 @@ git commit -m "feat: add monitor wizard and management UI"
 - Produces a recorded, secret-free acceptance result for link → create → edit →
   pause → resume → delete.
 - `Plan4AcceptanceApp` is a test-scope main that starts the ordinary
-  composition graph with `LuxmedTransport.withBackend` supplied by a
-  deterministic stub; it is unavailable from the production artifact.
+  composition graph against a deterministic Luxmed stub; it is unavailable from
+  the production artifact.
 - Marks Plan 4 complete only after all automated gates and a real-browser flow
   pass.
 
@@ -1041,11 +1067,23 @@ git commit -m "feat: add monitor wizard and management UI"
 
 Implement `Plan4AcceptanceApp` under `backend/src/test`: use the real embedded
 database, built frontend, routes, services, repositories, and crypto. Substitute
-only the owned Luxmed HTTP boundary with `LuxmedTransport.withBackend` and
-`StubLuxmedBackend`, loading `LuxmedResponseScripts`. Put fixed non-secret
-acceptance usernames, stub responses, and random-port discovery in
+only the owned Luxmed HTTP boundary with a deterministic stub, loading
+`LuxmedResponseScripts` and the committed dictionary fixtures. Put fixed
+non-secret acceptance usernames, stub responses, and random-port discovery in
 `Plan4AcceptanceConfig`. Do not add a runtime “mock Luxmed” configuration or
 ship fixture credentials in `backend/src/main`.
+
+> **Corrected during implementation (2026-08-01):** this step originally named
+> `LuxmedTransport.withBackend` with `StubLuxmedBackend`. Neither is usable
+> here. `withBackend` is `private[luxmed]` and `AccountClientFactory`'s
+> constructor is private, so injecting a backend into the app graph would mean
+> widening production visibility; pointing `LuxmedConfig` at a loopback base URI
+> needs no production change and is what `AccountHttpApiTest` and
+> `DictionaryServiceTest` already do. And `StubLuxmedBackend` answers from a
+> FIFO queue, while a browser decides how many Luxmed calls happen and in what
+> order — the monitor form asks for cities and services concurrently — so a
+> queue would answer a city request with a service list. The harness stub
+> therefore routes by request path.
 
 - [ ] **Step 2: Run the app in the pinned devShell and drive a real browser**
 
@@ -1054,7 +1092,7 @@ Use the `agent-browser` skill. Verify:
 1. sign in;
 2. link one Luxmed account and see `active`;
 3. reload the page and see the persisted account;
-4. create a monitor through every wizard step;
+4. create a monitor by filling in the single-page form;
 5. reload and see its criteria;
 6. edit its time window and interval;
 7. pause and resume it;
@@ -1062,7 +1100,7 @@ Use the `agent-browser` skill. Verify:
 9. delete the account only after confirmation and observe monitor cascade;
 10. inspect browser console and network failures.
 
-Capture screenshots of the account page, wizard review, and monitor list. Keep
+Capture screenshots of the account page, monitor form, and monitor list. Keep
 all secrets and live Luxmed payloads out of screenshots and reports.
 
 - [ ] **Step 3: Re-run the restart/refresh acceptance**

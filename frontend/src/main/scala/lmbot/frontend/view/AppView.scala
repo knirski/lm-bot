@@ -74,5 +74,6 @@ object AppView:
         "Sign out",
         onClick.mapTo(Msg.LogoutRequested) --> (m => rt.dispatch(m))
       ),
-      p(cls := "placeholder", "Monitors will appear here.")
+      AccountsView(rt),
+      MonitorsView(rt)
     )

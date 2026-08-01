@@ -24,8 +24,16 @@ class CodecRoundTripTest extends munit.FunSuite:
 
   test("UserView round-trips for both roles"):
     List(Role.Admin, Role.User).foreach: role =>
-      val original = UserView(7L, "mom", "Mom", role, telegramLinked = true)
+      val original =
+        UserView(UserId(7L), "mom", "Mom", role, telegramLinked = true)
       assertEquals(readFromString[UserView](writeToString(original)), original)
+      // Round-tripping alone would not catch UserId drifting onto a
+      // discriminated-object encoding while the Tapir Schema below still
+      // advertises a bare number — the same gap Role's own two tests guard.
+      assert(
+        writeToString(original).contains("\"id\":7"),
+        s"expected UserId(7L) to serialise as a bare JSON number: ${writeToString(original)}"
+      )
 
   test("ErrorBody round-trips"):
     val original = ErrorBody("conflict", "username taken")
@@ -43,7 +51,7 @@ class CodecRoundTripTest extends munit.FunSuite:
 
   test("UserView carries role as a string, not a discriminated object"):
     val json = writeToString(
-      UserView(1L, "admin", "admin", Role.Admin, telegramLinked = false)
+      UserView(UserId(1L), "admin", "admin", Role.Admin, telegramLinked = false)
     )
     assert(
       json.contains("\"role\":\"Admin\""),

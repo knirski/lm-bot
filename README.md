@@ -7,13 +7,18 @@ and [the implementation roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadma
 
 ## Status
 
-Plan 3 of 7 complete (foundation, auth, and a Luxmed API client). Plan 4
-(Luxmed accounts & monitor CRUD) is **in progress**: encrypted account
-linking, session persistence, and the monitor schema are implemented and
-tested, but there are no HTTP routes or UI for any of it yet — the running
-app cannot link an account or manage a monitor. See
+Plan 4 of 7 complete. You can sign in, link a Luxmed account (its credentials,
+device identity, and session are encrypted at rest), and create, edit, pause,
+resume, and delete appointment monitors — through the browser or the HTTP API.
+Deleting an account deletes its monitors with it, after an explicit
+confirmation.
+
+**Monitors are stored but nothing runs them yet.** Nothing queries Luxmed for
+slots on a schedule, there is no event history or notification, and nothing
+books: that is Plan 5 (monitor engine & notifications) and Plan 6
+(auto-booking). See
 [the roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md) for the
-task-by-task breakdown.
+plan-by-plan breakdown.
 
 ## Requirements
 

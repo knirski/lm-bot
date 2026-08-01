@@ -1,7 +1,7 @@
 package lmbot.backend.db
 
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
-import lmbot.shared.domain.AccountId
+import lmbot.shared.domain.{AccountId, UserId}
 
 class AccountRepo(xa: Transactor):
 
@@ -27,22 +27,22 @@ class AccountRepo(xa: Transactor):
       .run()
       .head
 
-  def findOwned(id: AccountId, ownerUserId: Long): Option[LuxmedAccountRow] =
+  def findOwned(id: AccountId, ownerUserId: UserId): Option[LuxmedAccountRow] =
     connect(xa):
       sql"""select a.* from luxmed_accounts a
-            where a.id = ${id.value} and a.owner_user_id = $ownerUserId"""
+            where a.id = ${id.value} and a.owner_user_id = ${ownerUserId.value}"""
         .query[LuxmedAccountRow]
         .run()
         .headOption
 
-  def listOwned(ownerUserId: Long): Seq[LuxmedAccountRow] = connect(xa):
+  def listOwned(ownerUserId: UserId): Seq[LuxmedAccountRow] = connect(xa):
     sql"""select a.* from luxmed_accounts a
-          where a.owner_user_id = $ownerUserId
+          where a.owner_user_id = ${ownerUserId.value}
           order by a.created_at desc"""
       .query[LuxmedAccountRow]
       .run()
 
-  def deleteOwned(id: AccountId, ownerUserId: Long): Boolean = transact(xa):
+  def deleteOwned(id: AccountId, ownerUserId: UserId): Boolean = transact(xa):
     sql"""delete from luxmed_accounts a
-          where a.id = ${id.value} and a.owner_user_id = $ownerUserId""".update
+          where a.id = ${id.value} and a.owner_user_id = ${ownerUserId.value}""".update
       .run() > 0

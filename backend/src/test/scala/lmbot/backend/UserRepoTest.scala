@@ -2,7 +2,7 @@ package lmbot.backend
 
 import lmbot.backend.db.UserRepo
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.Role
+import lmbot.shared.domain.{Role, UserId}
 
 class UserRepoTest extends PostgresSuite:
 
@@ -15,7 +15,10 @@ class UserRepoTest extends PostgresSuite:
 
     assertEquals(repo.count(), 1L)
     assertEquals(repo.findByUsername("krzysiek").map(_.id), Some(stored.id))
-    assertEquals(repo.findById(stored.id).map(_.username), Some("krzysiek"))
+    assertEquals(
+      repo.findById(UserId(stored.id)).map(_.username),
+      Some("krzysiek")
+    )
     assertEquals(stored.role, "admin")
     assertEquals(stored.disabled, false)
     assertEquals(stored.telegramChatId, None)

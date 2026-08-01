@@ -11,7 +11,7 @@ import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.luxmed.model.{LuxmedSession, TokenType}
 import lmbot.backend.luxmed.{CookieJar, PostgresSessionStore, SessionStoreError}
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{AccountId, Role}
+import lmbot.shared.domain.{AccountId, Role, UserId}
 
 class PostgresSessionStoreTest extends PostgresSuite:
 
@@ -22,20 +22,22 @@ class PostgresSessionStoreTest extends PostgresSuite:
   private val crypto = AesGcm(key)
   private var nextUser = 0
 
-  private def owner(): Long =
+  private def owner(): UserId =
     nextUser += 1
-    UserRepo(xa)
-      .insert(s"session-owner$nextUser", "Session owner", "hash", Role.Admin)
-      .id
+    UserId(
+      UserRepo(xa)
+        .insert(s"session-owner$nextUser", "Session owner", "hash", Role.Admin)
+        .id
+    )
 
-  private def account(ownerId: Long): Long =
+  private def account(ownerId: UserId): Long =
     val repo = AccountRepo(xa)
     val id = repo.reserveId()
     val now = OffsetDateTime.now()
     repo.insert(
       LuxmedAccountRow(
         id.value,
-        ownerId,
+        ownerId.value,
         "Session account",
         "user@example.com",
         "encrypted-password",
@@ -61,7 +63,7 @@ class PostgresSessionStoreTest extends PostgresSuite:
     )
 
   private def store(
-      ownerId: Long,
+      ownerId: UserId,
       accountId: Long,
       afterRead: () => Unit = () => ()
   ): PostgresSessionStore =
