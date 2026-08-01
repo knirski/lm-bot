@@ -164,13 +164,17 @@ class Update(api: ApiClient):
       // The whole form resets to empty once the new account shows up in the
       // list — unlike a login failure, we stay on this screen, so there is no
       // "leaving the form behind" moment to rely on for forgetting it.
-      val updated = state.accounts match
-        case LoadState.Loaded(existing) => LoadState.Loaded(existing :+ account)
-        case _                          => LoadState.Loaded(List(account))
-      Transition(
-        state.copy(accounts = updated, linkForm = LinkAccountForm()),
-        Nil
-      )
+      val linked = state.copy(linkForm = LinkAccountForm())
+      state.accounts match
+        case LoadState.Loaded(existing) =>
+          Transition(
+            linked.copy(accounts = LoadState.Loaded(existing :+ account)),
+            Nil
+          )
+        // The list never loaded (or failed to), so this one account is not
+        // the whole of it — re-issuing the request is honest, mirroring
+        // Msg.MonitorSaved's handling of the same situation below.
+        case _ => apply(linked, Msg.AccountsRequested)
 
     case Msg.AccountLinkFailed(err) =>
       Transition(
