@@ -536,6 +536,26 @@ class UpdateTest extends munit.FunSuite:
       "the monitor being edited was cascade-deleted with its account"
     )
 
+  test(
+    "deleting an account closes an edit of its monitor even if the form now targets another account"
+  ):
+    val editing =
+      update(dashboardState, Msg.MonitorEditStarted(monitor1)).state
+    assertEquals(form(editing).accountId, Some(account1.id))
+
+    val reassigned =
+      update(editing, Msg.MonitorAccountSelected(account2.id)).state
+    assertEquals(form(reassigned).accountId, Some(account2.id))
+
+    val s = update(reassigned, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(
+      s.monitorForm,
+      None,
+      "monitor1 was cascade-deleted with account1, even though the form's " +
+        "account selector had since been changed to account2"
+    )
+
   test("deleting an account leaves a form for another account alone"):
     val creating = List(
       Msg.MonitorCreateStarted,

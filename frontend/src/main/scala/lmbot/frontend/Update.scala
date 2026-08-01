@@ -234,9 +234,13 @@ class Update(api: ApiClient):
           // An open form for this account would look unanswered — its radio is
           // simply gone from the choices — yet `accountId` is still set, so it
           // would submit and be told `NotFound`. An edit is worse: it would go
-          // on editing a monitor that no longer exists.
-          monitorForm =
-            state.monitorForm.filterNot(_.accountId.contains(accountId)),
+          // on editing a monitor that no longer exists — including one whose
+          // form now points at a *different* account, if the account selector
+          // was changed after the edit was opened.
+          monitorForm = state.monitorForm.filterNot(f =>
+            f.accountId.contains(accountId) ||
+              f.editingMonitorId.exists(cascaded.contains)
+          ),
           // A pause in flight, or an open delete confirmation, for a monitor
           // that went with the account.
           monitorAction =
