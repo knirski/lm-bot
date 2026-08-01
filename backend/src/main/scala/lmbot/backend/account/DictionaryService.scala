@@ -24,8 +24,7 @@ import lmbot.shared.domain.{
   */
 final class DictionaryService(clients: AccountClientFactory):
 
-  private val unavailable =
-    ApiError.Unexpected("Luxmed is temporarily unavailable.")
+  private val unavailable = "Luxmed is temporarily unavailable."
 
   def cities(ownerId: Long, accountId: AccountId)(using
       Async
@@ -34,7 +33,7 @@ final class DictionaryService(clients: AccountClientFactory):
       client
         .cities()
         .left
-        .map(_ => unavailable)
+        .map(luxmedErrorMapping(_, unavailable))
         .map(_.map(city => DictionaryCity(city.id.value, city.name)))
 
   def services(ownerId: Long, accountId: AccountId)(using
@@ -44,7 +43,7 @@ final class DictionaryService(clients: AccountClientFactory):
       client
         .serviceVariants()
         .left
-        .map(_ => unavailable)
+        .map(luxmedErrorMapping(_, unavailable))
         .map(flatten(_, ancestry = None))
 
   def facilitiesDoctors(
@@ -57,7 +56,7 @@ final class DictionaryService(clients: AccountClientFactory):
       client
         .facilitiesAndDoctors(CityId(cityId), ServiceVariantId(serviceId))
         .left
-        .map(_ => unavailable)
+        .map(luxmedErrorMapping(_, unavailable))
         .map { data =>
           FacilitiesDoctorsResponse(
             facilities =

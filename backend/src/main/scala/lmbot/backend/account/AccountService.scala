@@ -145,15 +145,5 @@ final class AccountService(
         row.lastSuccessfulLogin.map(_.toInstant)
       )
 
-  private def linkError(error: LuxmedError): ApiError = error match
-    case LuxmedError.AuthFailed =>
-      ApiError.Validation(AccountStatusReason.AuthFailed.value)
-    case _: LuxmedError.UnexpectedAuthResponse =>
-      ApiError.Conflict(AccountStatusReason.Challenge.value)
-    case LuxmedError.RateLimited =>
-      ApiError.Conflict(AccountStatusReason.RateLimited.value)
-    case _: LuxmedError.VersionRejected =>
-      ApiError.Conflict(AccountStatusReason.VersionRejected.value)
-    case _: LuxmedError.NetworkFailure | _: LuxmedError.Transient =>
-      ApiError.Unexpected("Luxmed is temporarily unavailable.")
-    case _ => ApiError.Unexpected(linkFailed)
+  private def linkError(error: LuxmedError): ApiError =
+    luxmedErrorMapping(error, linkFailed)
