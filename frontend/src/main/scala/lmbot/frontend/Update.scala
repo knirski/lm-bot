@@ -135,7 +135,8 @@ class Update(api: ApiClient):
     case Msg.LinkAccountSubmitted =>
       val form = state.linkForm
       if form.submitting then Transition(state, Nil)
-      else if form.label.isEmpty || form.username.isEmpty || form.password.isEmpty
+      else if form.label.trim.isEmpty || form.username.trim.isEmpty ||
+        form.password.isEmpty
       then
         Transition(
           state.copy(linkForm =
@@ -144,8 +145,11 @@ class Update(api: ApiClient):
           Nil
         )
       else
-        val request =
-          LinkAccountRequest(form.label, form.username, form.password)
+        val request = LinkAccountRequest(
+          form.label.trim,
+          form.username.trim,
+          form.password
+        )
         val effect = new Effect[Msg]:
           def run(using Async): Option[Msg] = Some:
             api.createAccount(request) match
