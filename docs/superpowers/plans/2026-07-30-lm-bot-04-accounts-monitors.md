@@ -1016,13 +1016,16 @@ Keep local validation aligned with server validation for immediate feedback,
 but still display server `ApiError.Validation` because the backend is
 authoritative.
 
-- [ ] **Step 4: Implement accessible rendering-only views**
+- [ ] **Step 4: Implement accessible rendering-only views** (superseded — see
+  the note above; the single-page form has no previous/next controls or a
+  separate review step, since every field is visible and editable at once)
 
 Use real `label` elements, fieldsets/legends for days and provider selections,
-an error summary with `role="alert"`, disabled/busy states, and explicit
-previous/next controls. The review step shows denormalized names and Warsaw
-date/time semantics before submit. List rows expose edit, pause/resume, and
-delete; do not show a fake last-check timestamp or event log.
+an error summary with `role="alert"`, and disabled/busy states. Warsaw
+date/time semantics are visible in the fields themselves, not in a separate
+review step, since there is no wizard step to review from. List rows expose
+edit, pause/resume, and delete; do not show a fake last-check timestamp or
+event log.
 
 - [ ] **Step 5: Verify and commit**
 
