@@ -126,17 +126,25 @@ object Plan4AcceptanceConfig:
     server.createContext(
       "/",
       exchange =>
-        val body =
-          Source
-            .fromInputStream(exchange.getRequestBody)(using Codec.UTF8)
-            .mkString
-        val response = route(exchange.getRequestURI.getRawPath, body)
-        response.headers.foreach: (name, value) =>
-          exchange.getResponseHeaders.add(name, value)
-        val bytes = response.body.getBytes("UTF-8")
-        exchange.sendResponseHeaders(response.status, bytes.length)
-        exchange.getResponseBody.write(bytes)
-        exchange.close()
+        try
+          val body =
+            val source =
+              Source.fromInputStream(exchange.getRequestBody)(using Codec.UTF8)
+            try source.mkString
+            finally source.close()
+          val response = route(exchange.getRequestURI.getRawPath, body)
+          response.headers.foreach: (name, value) =>
+            exchange.getResponseHeaders.add(name, value)
+          val bytes = response.body.getBytes("UTF-8")
+          exchange.sendResponseHeaders(response.status, bytes.length)
+          exchange.getResponseBody.write(bytes)
+        catch
+          case t: Throwable =>
+            val bytes =
+              s"stub request failed: ${t.getMessage}".getBytes("UTF-8")
+            exchange.sendResponseHeaders(500, bytes.length)
+            exchange.getResponseBody.write(bytes)
+        finally exchange.close()
     )
     server.start()
 

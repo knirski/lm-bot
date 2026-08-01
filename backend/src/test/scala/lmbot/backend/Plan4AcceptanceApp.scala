@@ -217,21 +217,32 @@ object Plan4AcceptanceApp:
     server.createContext(
       "/",
       exchange =>
-        val body = exchange.getRequestURI.getRawPath match
-          case "/restart" =>
-            val advance = advanceSeconds(exchange)
-            graph.get().server.stop(0)
-            graph.set(
-              start(config, xa, luxmed, crypto, Duration.ofSeconds(advance))
+        try
+          val body = exchange.getRequestURI.getRawPath match
+            case "/restart" =>
+              val advance = advanceSeconds(exchange)
+              graph.get().server.stop(0)
+              graph.set(
+                start(config, xa, luxmed, crypto, Duration.ofSeconds(advance))
+              )
+              s"""{"restarted":true,"clockOffsetSeconds":$advance}"""
+            case "/status" =>
+              status(xa, luxmed, crypto, graph.get().clockOffset)
+            case "/second-owner" =>
+              secondOwner(UserRepo(xa))
+            case other =>
+              s"""{"error":"unknown control path","path":${quote(other)}}"""
+          respond(exchange, 200, body)
+        catch
+          case t: Throwable =>
+            log.error("Control request failed", t)
+            respond(
+              exchange,
+              500,
+              s"""{"error":${quote(
+                  Option(t.getMessage).getOrElse(t.toString)
+                )}}"""
             )
-            s"""{"restarted":true,"clockOffsetSeconds":$advance}"""
-          case "/status" =>
-            status(xa, luxmed, crypto, graph.get().clockOffset)
-          case "/second-owner" =>
-            secondOwner(UserRepo(xa))
-          case other =>
-            s"""{"error":"unknown control path","path":"$other"}"""
-        respond(exchange, body)
     )
     server.start()
     server
@@ -285,8 +296,7 @@ object Plan4AcceptanceApp:
         crypto
       ).load().toOption.flatten
     yield session.refreshToken.value == luxmed.latestIssuedRefreshToken
-    val unrouted =
-      luxmed.unroutedPaths.map(path => s""""$path"""").mkString(",")
+    val unrouted = luxmed.unroutedPaths.map(quote).mkString(",")
     s"""{"clockOffsetSeconds":${clockOffset.toSeconds},""" +
       s""""passwordGrants":${luxmed.passwordGrantCount},""" +
       s""""refreshGrants":${luxmed.refreshGrantCount},""" +
@@ -294,9 +304,25 @@ object Plan4AcceptanceApp:
       s""""rotationPersisted":${stored.getOrElse(false)},""" +
       s""""unroutedLuxmedPaths":[$unrouted]}"""
 
-  private def respond(exchange: HttpExchange, body: String): Unit =
-    val bytes = body.getBytes("UTF-8")
-    exchange.getResponseHeaders.add("Content-Type", "application/json")
-    exchange.sendResponseHeaders(200, bytes.length)
-    exchange.getResponseBody.write(bytes)
-    exchange.close()
+  private def respond(exchange: HttpExchange, status: Int, body: String): Unit =
+    try
+      val bytes = body.getBytes("UTF-8")
+      exchange.getResponseHeaders.add("Content-Type", "application/json")
+      exchange.sendResponseHeaders(status, bytes.length)
+      exchange.getResponseBody.write(bytes)
+    finally exchange.close()
+
+  /** Minimal JSON string literal encoder for the control responses, since
+    * `unroutedPaths` and the request path carry data the app or the browser can
+    * influence.
+    */
+  private def quote(value: String): String =
+    val escaped = value.flatMap:
+      case '"'                 => "\\\""
+      case '\\'                => "\\\\"
+      case '\n'                => "\\n"
+      case '\r'                => "\\r"
+      case '\t'                => "\\t"
+      case c if c.toInt < 0x20 => f"\\u${c.toInt}%04x"
+      case c                   => c.toString
+    s""""$escaped""""
