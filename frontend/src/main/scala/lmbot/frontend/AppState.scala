@@ -45,7 +45,9 @@ case class LinkAccountForm(
     password: String = "",
     submitting: Boolean = false,
     error: Option[String] = None
-)
+):
+  override def toString: String =
+    s"LinkAccountForm($label, $username, ***, $submitting, $error)"
 
 /** Which account a "Delete" click is asking to confirm, and the in-flight /
   * error state of that confirmation, kept separate from the account list so the
