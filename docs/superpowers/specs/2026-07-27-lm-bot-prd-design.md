@@ -492,3 +492,16 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 | **Fair-use policy locks the account.** LuxMed temporarily locks an account (reported: ~1 day for a first breach) for excessive querying. A lock takes out every monitor on that account at once, and looks like an auth failure. | 10-min default interval with a 5-min enforced floor (§3.3), ±20% jitter, per-account rate limiting + mutex so monitors sharing an account queue rather than multiply, browser-like headers. Treat a sudden auth failure on a previously-working account as a possible lock, not only a bad password — surface it as such so the user does not "fix" it by re-entering correct credentials in a loop. |
 | Aggressive polling triggers other Luxmed countermeasures | Per-account rate limiting + mutex, jittered intervals, browser-like headers |
 | Auto-booking books the wrong thing | Strict filter re-validation before lock; payment/referral services excluded; full details in notification; bookings recorded and visible |
+
+## Appendix A — Embedded database decision (2026-08-02)
+
+The implementation uses Zonky embedded-postgres as the only embedded database
+backend. The previously documented memgres default and opt-in Zonky switch are
+retired because memgres behavior was too different from real PostgreSQL for the
+application's persistence guarantees. In particular, its JDBC array support,
+timestamp comparisons, and concurrent row-update behavior required compatibility
+fallbacks or test skips that masked the semantics production depends on. The
+memgres dependency, adapter, environment selector, and test-only compatibility
+skip have been removed. Development and test databases now always run real
+PostgreSQL through Zonky, while external PostgreSQL remains available through
+the normal database configuration for deployment.

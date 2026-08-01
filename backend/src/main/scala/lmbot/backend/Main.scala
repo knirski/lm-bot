@@ -50,9 +50,8 @@ object Main:
 
       case Right(config) =>
         // Start embedded database in dev mode (EMBEDDED_PG env var set by
-        // build.sbt's Compile / envVars).  The shutdown hook stops it when the
-        // JVM exits.  Uses memgres by default; set EMBEDDED_DB=zonky for the
-        // real PostgreSQL binary.
+        // build.sbt's Compile / envVars). The shutdown hook stops it when the
+        // JVM exits.
         if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
           log.info("Starting embedded database on port 15432")
           val pg: EmbeddedDb = EmbeddedPg.startForDev(15432)

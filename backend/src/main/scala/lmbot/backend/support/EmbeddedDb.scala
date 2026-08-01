@@ -1,15 +1,9 @@
 package lmbot.backend.support
 
-/** Abstraction over embedded PostgreSQL-compatible databases.
+/** Abstraction over the embedded PostgreSQL database.
   *
-  * Two built-in implementations exist:
-  *   - [[MemgresBackend]] (default) — in-memory PG-compatible engine, no native
-  *     binaries, no Docker, millisecond startup.
-  *   - [[ZonkyBackend]] — real PostgreSQL downloaded and started as a native
-  *     binary via zonky embedded-postgres. Useful when 100% PG fidelity is
-  *     required during debugging.
-  *
-  * Switch by setting `EMBEDDED_DB=zonky` (default: `memgres`).
+  * The implementation is [[ZonkyBackend]], which downloads and starts a real
+  * PostgreSQL binary via zonky embedded-postgres.
   */
 trait EmbeddedDb extends AutoCloseable:
 

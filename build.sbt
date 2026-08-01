@@ -31,7 +31,6 @@ val Vhikari = "7.1.0"
 val Vargon2 = "2.12"
 val Vlogback = "1.6.0"
 val Vmunit = "1.3.4"
-val Vmemgres = "0.2.4"
 val VembeddedPg = "2.2.2"
 val Vpureconfig = "0.17.10"
 val VscalaJavaTimeTzdb = "2.7.0"
@@ -142,18 +141,15 @@ lazy val backend = project
       "com.zaxxer" % "HikariCP" % Vhikari,
       "de.mkammerer" % "argon2-jvm" % Vargon2,
       "ch.qos.logback" % "logback-classic" % Vlogback,
-      "com.memgres" % "memgres-core" % Vmemgres,
       "io.zonky.test" % "embedded-postgres" % VembeddedPg,
       "com.github.pureconfig" %% "pureconfig-core" % Vpureconfig,
       "org.scalameta" %% "munit" % Vmunit % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp
     ),
-    // Each database test case manages its own embedded database on a random
-    // port, so suites can run concurrently without shared test state. This is
-    // validated for memgres (the default backend). The zonky backend shares a
-    // binary cache at /tmp/embedded-pg/, so a cold cache extracting
-    // concurrently from several suites is untested; warm the cache with a
-    // single `EMBEDDED_DB=zonky` run before relying on a parallel one.
+    // Each database test case manages its own Zonky PostgreSQL instance on a
+    // random port, so suites can run concurrently without shared test state.
+    // Zonky shares a binary cache at /tmp/embedded-pg/; a warm cache avoids
+    // concurrent extraction of the same PostgreSQL distribution.
     Test / parallelExecution := true,
 
     // Virtual threads want a real JVM 25+.
