@@ -467,7 +467,7 @@ object MonitorsView:
         s"Check every (minutes, at least ${MonitorForm.minimumIntervalMinutes})",
         input(
           tpe := "number",
-          value <-- formSignal.map(_.intervalMinutes.toString).distinct,
+          value <-- formSignal.map(f => isoText(f.intervalMinutes)).distinct,
           onInput.mapToValue --> (v =>
             rt.dispatch(Msg.MonitorIntervalChanged(v))
           )

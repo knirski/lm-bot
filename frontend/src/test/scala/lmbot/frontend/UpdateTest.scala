@@ -647,7 +647,7 @@ class UpdateTest extends munit.FunSuite:
     )
     assertEquals(form(t.state).editingMonitorId, None)
     assertEquals(form(t.state).accountId, None)
-    assertEquals(form(t.state).intervalMinutes, 10)
+    assertEquals(form(t.state).intervalMinutes, Some(10))
     assertEquals(form(t.state).cities, LoadState.NotAsked)
     assertEquals(form(t.state).services, LoadState.NotAsked)
     assertEquals(form(t.state).providers, LoadState.NotAsked)
@@ -912,17 +912,30 @@ class UpdateTest extends munit.FunSuite:
     )
 
   test("the interval starts at ten minutes and rejects four"):
-    assertEquals(form(ready).intervalMinutes, 10)
+    assertEquals(form(ready).intervalMinutes, Some(10))
 
     val tooOften = update(ready, Msg.MonitorIntervalChanged("4")).state
     val t = update(tooOften, Msg.MonitorSubmitted)
 
-    assertEquals(form(t.state).intervalMinutes, 4)
+    assertEquals(form(t.state).intervalMinutes, Some(4))
     assertEquals(t.effects, Nil)
     assert(form(t.state).errors.exists(_.contains("5 minutes")))
 
     val fixed = update(tooOften, Msg.MonitorIntervalChanged("5")).state
     assertEquals(update(fixed, Msg.MonitorSubmitted).effects.size, 1)
+
+  test("non-numeric interval text is unanswered, not a sentinel number"):
+    val cleared = update(ready, Msg.MonitorIntervalChanged("abc")).state
+    assertEquals(
+      form(cleared).intervalMinutes,
+      None,
+      "unreadable text must not silently become 0 and get written back " +
+        "into the input, fighting whatever the user is typing"
+    )
+
+    val t = update(cleared, Msg.MonitorSubmitted)
+    assertEquals(t.effects, Nil)
+    assert(form(t.state).errors.contains("Enter a number of minutes."))
 
   test("a nameless monitor cannot be submitted"):
     val nameless = update(ready, Msg.MonitorNameChanged("   ")).state
@@ -1000,7 +1013,7 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(form(t.state).dateFrom, Some(monitor1.dateFrom))
     assertEquals(form(t.state).timeFrom, Some(monitor1.timeFrom))
     assertEquals(form(t.state).daysOfWeek, monitor1.daysOfWeek)
-    assertEquals(form(t.state).intervalMinutes, monitor1.intervalMinutes)
+    assertEquals(form(t.state).intervalMinutes, Some(monitor1.intervalMinutes))
     assert(
       form(t.state).toDraft.isDefined,
       "a stored monitor is already valid, so it could be saved again unchanged"

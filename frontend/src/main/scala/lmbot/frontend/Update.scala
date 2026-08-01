@@ -666,11 +666,13 @@ class Update(api: ApiClient):
   private def parseTime(value: String): Option[LocalTime] =
     Try(LocalTime.parse(value)).toOption
 
-  /** Non-numeric text becomes zero rather than keeping the previous number: the
-    * field shows what the user typed, and validation then says it is too often.
+  /** Unreadable text becomes `None` — "unanswered", the same treatment
+    * `parseDate`/`parseTime` give a value `java.time` can't parse — rather than
+    * a sentinel number that would get written back into the input and fight
+    * whatever the user is typing.
     */
-  private def parseInterval(value: String): Int =
-    value.trim.toIntOption.getOrElse(0)
+  private def parseInterval(value: String): Option[Int] =
+    value.trim.toIntOption
 
   private def explain(err: ApiError): String = err match
     case ApiError.Unauthorized => "Wrong username or password."

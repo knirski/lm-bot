@@ -91,7 +91,7 @@ case class MonitorForm(
     timeTo: Option[LocalTime] = None,
     daysOfWeek: List[DayOfWeek] = Nil,
     autoBook: Boolean = false,
-    intervalMinutes: Int = MonitorForm.defaultIntervalMinutes,
+    intervalMinutes: Option[Int] = Some(MonitorForm.defaultIntervalMinutes),
     cities: LoadState[List[DictionaryCity]] = LoadState.NotAsked,
     services: LoadState[List[DictionaryService]] = LoadState.NotAsked,
     providers: LoadState[FacilitiesDoctorsResponse] = LoadState.NotAsked,
@@ -168,6 +168,7 @@ case class MonitorForm(
         to <- dateTo
         opensAt <- timeFrom
         closesAt <- timeTo
+        interval <- intervalMinutes
       yield MonitorDraft(
         accountId = account,
         name = name.trim,
@@ -181,7 +182,7 @@ case class MonitorForm(
         timeTo = closesAt,
         daysOfWeek = daysOfWeek,
         autoBook = autoBook,
-        intervalMinutes = intervalMinutes
+        intervalMinutes = interval
       )
 
   private def accountErrors: List[String] =
@@ -210,12 +211,13 @@ case class MonitorForm(
     val days =
       if daysOfWeek.isEmpty then List("Select at least one day of the week.")
       else Nil
-    val interval =
-      if intervalMinutes < MonitorForm.minimumIntervalMinutes then
+    val interval = intervalMinutes match
+      case None => List("Enter a number of minutes.")
+      case Some(value) if value < MonitorForm.minimumIntervalMinutes =>
         List(
           s"Check no more often than every ${MonitorForm.minimumIntervalMinutes} minutes."
         )
-      else Nil
+      case _ => Nil
     dates ++ times ++ days ++ interval
 
 object MonitorForm:
@@ -240,7 +242,7 @@ object MonitorForm:
       timeTo = Some(monitor.timeTo),
       daysOfWeek = monitor.daysOfWeek,
       autoBook = monitor.autoBook,
-      intervalMinutes = monitor.intervalMinutes
+      intervalMinutes = Some(monitor.intervalMinutes)
     )
 
   /** Compared by id, not by whole value: the same facility arriving from a
