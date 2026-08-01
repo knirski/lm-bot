@@ -1047,8 +1047,8 @@ git commit -m "feat: add monitor wizard and management UI"
 - Produces a recorded, secret-free acceptance result for link → create → edit →
   pause → resume → delete.
 - `Plan4AcceptanceApp` is a test-scope main that starts the ordinary
-  composition graph with `LuxmedTransport.withBackend` supplied by a
-  deterministic stub; it is unavailable from the production artifact.
+  composition graph against a deterministic Luxmed stub; it is unavailable from
+  the production artifact.
 - Marks Plan 4 complete only after all automated gates and a real-browser flow
   pass.
 
@@ -1056,11 +1056,23 @@ git commit -m "feat: add monitor wizard and management UI"
 
 Implement `Plan4AcceptanceApp` under `backend/src/test`: use the real embedded
 database, built frontend, routes, services, repositories, and crypto. Substitute
-only the owned Luxmed HTTP boundary with `LuxmedTransport.withBackend` and
-`StubLuxmedBackend`, loading `LuxmedResponseScripts`. Put fixed non-secret
-acceptance usernames, stub responses, and random-port discovery in
+only the owned Luxmed HTTP boundary with a deterministic stub, loading
+`LuxmedResponseScripts` and the committed dictionary fixtures. Put fixed
+non-secret acceptance usernames, stub responses, and random-port discovery in
 `Plan4AcceptanceConfig`. Do not add a runtime “mock Luxmed” configuration or
 ship fixture credentials in `backend/src/main`.
+
+> **Corrected during implementation (2026-08-01):** this step originally named
+> `LuxmedTransport.withBackend` with `StubLuxmedBackend`. Neither is usable
+> here. `withBackend` is `private[luxmed]` and `AccountClientFactory`'s
+> constructor is private, so injecting a backend into the app graph would mean
+> widening production visibility; pointing `LuxmedConfig` at a loopback base URI
+> needs no production change and is what `AccountHttpApiTest` and
+> `DictionaryServiceTest` already do. And `StubLuxmedBackend` answers from a
+> FIFO queue, while a browser decides how many Luxmed calls happen and in what
+> order — the monitor form asks for cities and services concurrently — so a
+> queue would answer a city request with a service list. The harness stub
+> therefore routes by request path.
 
 - [ ] **Step 2: Run the app in the pinned devShell and drive a real browser**
 
