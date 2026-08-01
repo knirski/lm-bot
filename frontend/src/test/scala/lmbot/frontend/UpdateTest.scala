@@ -339,8 +339,6 @@ class UpdateTest extends munit.FunSuite:
     val s =
       update(loading, Msg.AccountsLoaded(List(account1, account2))).state
     assertEquals(s.accounts, LoadState.Loaded(List(account1, account2)))
-    val loaded = s.accounts.asInstanceOf[LoadState.Loaded[List[AccountView]]]
-    assertEquals(loaded.value(1).statusReason, account2.statusReason)
 
   test("a failed accounts load shows the server's message"):
     val loading = update(AppState.initial, Msg.AccountsRequested).state
