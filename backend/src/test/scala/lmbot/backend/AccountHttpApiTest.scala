@@ -95,6 +95,7 @@ class AccountHttpApiTest extends PostgresSuite:
   override def afterEach(context: AfterEach): Unit =
     if server != null then server.stop(0)
     if luxmed != null then luxmed.close()
+    super.afterEach(context)
 
   private def aUser(username: String, password: String): Long =
     UserRepo(xa)
