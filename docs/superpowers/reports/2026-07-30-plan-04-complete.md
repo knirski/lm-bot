@@ -62,8 +62,10 @@ sbt "backend/Test/runMain lmbot.backend.Plan4AcceptanceApp"
 
 `Plan4AcceptanceConfig` holds every fixed input — the acceptance operator's
 credentials, the Luxmed link-form credentials, a fixed master key, and free-port
-discovery for the app, the control server, and the database. None of it is a
-secret and none of it reaches `backend/src/main`.
+discovery for the app, the control server, and the database. The credentials
+are not secrets; the master key is genuine AES-256-GCM key material, but a
+fixed, test-only one that must never be reused outside this harness. None of
+it reaches `backend/src/main`.
 
 **How the boundary is substituted.** The plan text named
 `LuxmedTransport.withBackend` with `StubLuxmedBackend`. Two things made that
