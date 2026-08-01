@@ -1,6 +1,7 @@
 package lmbot.frontend.view
 
-import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.time.{Instant, ZoneId}
 
 import com.raquo.laminar.api.L.*
 import lmbot.frontend.elm.Runtime
@@ -150,5 +151,13 @@ object AccountsView:
     case AccountStatus.AuthFailed => "Needs attention"
     case AccountStatus.Disabled   => "Disabled"
 
+  private val warsawZone = ZoneId.of("Europe/Warsaw")
+  private val lastLoginFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
   private def lastLoginText(instant: Option[Instant]): String =
-    instant.map(_.toString).getOrElse("Never")
+    instant
+      .map(i =>
+        s"${lastLoginFormatter.format(i.atZone(warsawZone))} Warsaw time"
+      )
+      .getOrElse("Never")

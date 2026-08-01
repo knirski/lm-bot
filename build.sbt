@@ -34,6 +34,7 @@ val Vmunit = "1.3.4"
 val Vmemgres = "0.2.4"
 val VembeddedPg = "2.2.2"
 val Vpureconfig = "0.17.10"
+val VscalaJavaTimeTzdb = "2.7.0"
 
 /** Names a Scala.js artifact explicitly, since sbt 2 has no `%%%`. The suffix
   * encodes Scala.js 1.x + Scala 3, both pinned by this build.
@@ -239,6 +240,15 @@ lazy val frontend = project
       jsDep("org.scala-js", "scalajs-dom", VscalajsDom),
       jsDep("com.softwaremill.sttp.tapir", "tapir-sttp-client", Vtapir),
       jsDep("com.softwaremill.sttp.client3", "core", Vsttp),
+      // scala-java-time itself is already pulled in transitively (via the
+      // sttp/tapir client stack), but not this — without it, ZoneId.of of any
+      // named zone (e.g. "Europe/Warsaw") throws ZoneRulesException at
+      // runtime, since Scala.js has no IANA tzdb of its own.
+      jsDep(
+        "io.github.cquiroz",
+        "scala-java-time-tzdb",
+        VscalaJavaTimeTzdb
+      ),
       jsDep("org.scalameta", "munit", Vmunit) % Test
     )
   )
