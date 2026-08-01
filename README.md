@@ -27,8 +27,11 @@ plan-by-plan breakdown.
   Metals, scalafmt.
 - **A JSPI-capable browser** (recent Chrome or Firefox) — the frontend compiles
   to WebAssembly via Scala.js + JSPI.
-- **No external PostgreSQL needed.** The dev server and tests use Zonky's
+- **PostgreSQL on x86_64 Linux.** The dev server and tests use Zonky's
   embedded-postgres, which starts a real PostgreSQL instance automatically.
+  Zonky's required binaries are not currently available for aarch64/Apple
+  silicon, so backend development and tests are currently x86_64-only. The
+  paused ARM CI job can be revisited with a Testcontainers backend.
 
 Node's version is not a preference: Node 24 and 25 contain a V8 bug that
 stack-overflows in the nested async contexts Gears relies on. The flake pins
