@@ -185,7 +185,7 @@ class ApiClient(baseUri: Uri):
   def deleteMonitor(id: MonitorId)(using Async): Either[ApiError, Unit] =
     Bridge.awaitEither(deleteMonitorFn(None)(id))(transportFailure)
 
-  /** The dictionaries the monitor wizard offers. Each is proxied per linked
+  /** The dictionaries the monitor form offers. Each is proxied per linked
     * account, because the choices come from that account's own Luxmed session.
     */
   def cities(

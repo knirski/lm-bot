@@ -10,8 +10,7 @@ import lmbot.frontend.{
   MonitorAction,
   MonitorDeleteConfirmation,
   MonitorForm,
-  Msg,
-  WizardStep
+  Msg
 }
 import lmbot.shared.domain.{
   FacilitiesDoctorsResponse,
@@ -37,10 +36,10 @@ object MonitorsView:
       cls := "monitors",
       h2("Monitors"),
       // Keyed on "is a form open", not on the form itself, so that typing into
-      // the wizard re-binds fields instead of rebuilding the element under the
+      // the form re-binds fields instead of rebuilding the element under the
       // caret.
       child <-- rt.store.signal.map(_.monitorForm.isDefined).distinct.map {
-        case true  => wizard(rt)
+        case true  => monitorForm(rt)
         case false => monitorList(rt)
       }
     )
@@ -52,7 +51,7 @@ object MonitorsView:
       cls := "monitor-list",
       // No dead controls: "New monitor" appears only once there is an account
       // for it to watch, because that is also the only case `Update` opens the
-      // wizard in.
+      // form in.
       child <-- rt.store.signal.map(_.accounts).distinct.map {
         case LoadState.NotAsked | LoadState.Loading =>
           p(cls := "loading", "Loading accounts…")
@@ -72,7 +71,7 @@ object MonitorsView:
         case LoadState.Loaded(Nil) =>
           p(cls := "placeholder", "No monitors yet.")
         case LoadState.Loaded(monitors) =>
-          ul(cls := "monitors", monitors.map(monitorItem(rt, _)))
+          ul(cls := "monitor-rows", monitors.map(monitorItem(rt, _)))
       }
     )
 
@@ -83,9 +82,9 @@ object MonitorsView:
       onClick.mapTo(Msg.MonitorCreateStarted) --> (m => rt.dispatch(m))
     )
 
-  /** A monitor watches one linked Luxmed account, so with none linked the
-    * wizard would open on a step with nothing to choose. The link form above is
-    * the next thing to do, and this points straight at it.
+  /** A monitor watches one linked Luxmed account, so with none linked the form
+    * would open with nothing to choose. The link form above is the next thing
+    * to do, and this points straight at it.
     */
   private def linkAccountFirst: HtmlElement =
     div(
@@ -202,9 +201,14 @@ object MonitorsView:
         .toList
     )
 
-  // --- The wizard ---
+  // --- The form ---
 
-  private def wizard(rt: Runtime[AppState, Msg]): HtmlElement =
+  /** One page holding every field: the account, the criteria, and the schedule
+    * are all answerable at once and in any order. `Update` decides what is
+    * still missing and which dictionaries can be asked for; this only shows the
+    * answers and reports what it was told.
+    */
+  private def monitorForm(rt: Runtime[AppState, Msg]): HtmlElement =
     // While this element is mounted a form is open. The fallback exists only
     // because closing the form and swapping this element out are two separate
     // notifications, and is never what the user sees.
@@ -212,11 +216,13 @@ object MonitorsView:
       rt.store.signal.map(_.monitorForm.getOrElse(MonitorForm())).distinct
     val submittingSignal = formSignal.map(_.submitting).distinct
     form(
-      cls := "monitor-wizard",
+      cls := "monitor-form",
+      // The only validation the user sees is the summary below, built from the
+      // same rules `update` submits on. Native constraint validation would
+      // otherwise intercept the submit first and argue with it.
+      noValidate := true,
       aria.busy <-- submittingSignal,
-      // One forward control, so one message: on the last step, going forward is
-      // saving. `Update` decides which it is.
-      onSubmit.preventDefault.mapTo(Msg.MonitorStepAdvanced) --> (m =>
+      onSubmit.preventDefault.mapTo(Msg.MonitorSubmitted) --> (m =>
         rt.dispatch(m)
       ),
       h3(
@@ -227,34 +233,18 @@ object MonitorsView:
           )
           .distinct
       ),
-      p(
-        cls := "progress",
-        child.text <-- formSignal
-          .map(_.step)
-          .distinct
-          .map(step =>
-            s"Step ${step.number} of ${WizardStep.values.length}: ${stepTitle(step)}"
-          )
-      ),
       errorSummary(formSignal),
-      child <-- formSignal
-        .map(_.step)
-        .distinct
-        .map(step => stepFields(rt, formSignal, step)),
+      accountFields(rt, formSignal),
+      cityField(rt, formSignal),
+      serviceField(rt, formSignal),
+      providerFields(rt, formSignal),
+      scheduleFields(rt, formSignal),
       div(
-        cls := "wizard-nav",
-        button(
-          tpe := "button",
-          "Previous",
-          disabled <-- formSignal
-            .map(f => f.step == WizardStep.Account || f.submitting)
-            .distinct,
-          onClick.mapTo(Msg.MonitorStepReturned) --> (m => rt.dispatch(m))
-        ),
+        cls := "form-actions",
         button(
           tpe := "submit",
           disabled <-- submittingSignal,
-          child.text <-- formSignal.map(forwardLabel).distinct
+          child.text <-- formSignal.map(saveLabel).distinct
         ),
         button(
           tpe := "button",
@@ -266,14 +256,14 @@ object MonitorsView:
     )
 
   /** A live region that is always present, so a problem appended to it later is
-    * announced. Its contents are whatever `Update` decided is missing, plus any
-    * reason the server gave for refusing the save.
+    * announced. Its contents are whatever `Update` found missing, or the reason
+    * the server gave for refusing the save.
     */
   private def errorSummary(formSignal: Signal[MonitorForm]): HtmlElement =
     div(
       // `role="alert"` already implies an assertive live region, so no
       // `aria-live` beside it: the two would contradict each other.
-      cls := "wizard-errors",
+      cls := "form-errors",
       role := "alert",
       children <-- formSignal
         .map(_.errors)
@@ -281,38 +271,17 @@ object MonitorsView:
         .map(_.map(message => p(cls := "error", message)))
     )
 
-  private def forwardLabel(form: MonitorForm): String =
-    if form.step != WizardStep.Review then "Next"
-    else if form.submitting then "Saving…"
+  private def saveLabel(form: MonitorForm): String =
+    if form.submitting then "Saving…"
     else if form.editingMonitorId.isDefined then "Save changes"
     else "Create monitor"
 
-  private def stepTitle(step: WizardStep): String = step match
-    case WizardStep.Account   => "Account and name"
-    case WizardStep.City      => "City"
-    case WizardStep.Service   => "Service"
-    case WizardStep.Providers => "Clinics and doctors"
-    case WizardStep.Schedule  => "Schedule"
-    case WizardStep.Review    => "Review"
-
-  private def stepFields(
-      rt: Runtime[AppState, Msg],
-      formSignal: Signal[MonitorForm],
-      step: WizardStep
-  ): HtmlElement = step match
-    case WizardStep.Account   => accountStep(rt, formSignal)
-    case WizardStep.City      => cityStep(rt, formSignal)
-    case WizardStep.Service   => serviceStep(rt, formSignal)
-    case WizardStep.Providers => providersStep(rt, formSignal)
-    case WizardStep.Schedule  => scheduleStep(rt, formSignal)
-    case WizardStep.Review    => reviewStep(rt)
-
-  private def accountStep(
+  private def accountFields(
       rt: Runtime[AppState, Msg],
       formSignal: Signal[MonitorForm]
   ): HtmlElement =
     div(
-      cls := "wizard-step",
+      cls := "form-group",
       label(
         cls := "field",
         "Monitor name",
@@ -346,54 +315,55 @@ object MonitorsView:
       )
     )
 
-  private def cityStep(
+  private def cityField(
       rt: Runtime[AppState, Msg],
       formSignal: Signal[MonitorForm]
   ): HtmlElement =
-    div(
-      cls := "wizard-step",
-      choiceGroup(
-        rt = rt,
-        legendText = "City",
-        groupName = "monitor-city",
-        kind = "radio",
-        loadingText = "Loading cities…",
-        choices = formSignal
-          .map(f => mapLoad(f.cities)(_.map(c => NamedId(c.id, c.name))))
-          .distinct,
-        isSelected =
-          item => formSignal.map(_.city.exists(_.id == item.id)).distinct,
-        select = Msg.MonitorCitySelected(_)
-      )
+    choiceGroup(
+      rt = rt,
+      legendText = "City",
+      groupName = "monitor-city",
+      kind = "radio",
+      waitingText = "Choose a Luxmed account first.",
+      loadingText = "Loading cities…",
+      choices = formSignal
+        .map(f => mapLoad(f.cities)(_.map(c => NamedId(c.id, c.name))))
+        .distinct,
+      isSelected =
+        item => formSignal.map(_.city.exists(_.id == item.id)).distinct,
+      select = Msg.MonitorCitySelected(_),
+      chosen = Some(formSignal.map(f => nameOrNone(f.city)))
     )
 
-  private def serviceStep(
+  private def serviceField(
       rt: Runtime[AppState, Msg],
       formSignal: Signal[MonitorForm]
   ): HtmlElement =
-    div(
-      cls := "wizard-step",
-      choiceGroup(
-        rt = rt,
-        legendText = "Service",
-        groupName = "monitor-service",
-        kind = "radio",
-        loadingText = "Loading services…",
-        choices = formSignal
-          .map(f => mapLoad(f.services)(_.map(s => NamedId(s.id, s.name))))
-          .distinct,
-        isSelected =
-          item => formSignal.map(_.service.exists(_.id == item.id)).distinct,
-        select = Msg.MonitorServiceSelected(_)
-      )
+    choiceGroup(
+      rt = rt,
+      legendText = "Service",
+      groupName = "monitor-service",
+      kind = "radio",
+      waitingText = "Choose a Luxmed account first.",
+      loadingText = "Loading services…",
+      choices = formSignal
+        .map(f => mapLoad(f.services)(_.map(s => NamedId(s.id, s.name))))
+        .distinct,
+      isSelected =
+        item => formSignal.map(_.service.exists(_.id == item.id)).distinct,
+      select = Msg.MonitorServiceSelected(_),
+      chosen = Some(formSignal.map(f => nameOrNone(f.service)))
     )
 
-  private def providersStep(
+  /** Optional, and the only pair of fields that needs two other answers first —
+    * Luxmed offers facilities and doctors per city *and* service.
+    */
+  private def providerFields(
       rt: Runtime[AppState, Msg],
       formSignal: Signal[MonitorForm]
   ): HtmlElement =
     div(
-      cls := "wizard-step",
+      cls := "form-group",
       p(
         cls := "hint",
         "Optional. Leave both empty to accept any clinic and any doctor."
@@ -403,34 +373,39 @@ object MonitorsView:
         legendText = "Clinics",
         groupName = "monitor-facility",
         kind = "checkbox",
+        waitingText = "Choose a city and a service first.",
         loadingText = "Loading clinics and doctors…",
-        choices = formSignal
-          .map(f => mapLoad(f.providers)(facilityChoices))
-          .distinct,
+        choices =
+          formSignal.map(f => mapLoad(f.providers)(facilityChoices)).distinct,
         isSelected =
           item => formSignal.map(_.facilities.exists(_.id == item.id)).distinct,
-        select = Msg.MonitorFacilityToggled(_)
+        select = Msg.MonitorFacilityToggled(_),
+        // Shown whatever the dictionary is doing, so an edited monitor's saved
+        // clinics are visible before (and if) the alternatives arrive.
+        chosen = Some(formSignal.map(f => chosenText("clinic", f.facilities)))
       ),
       choiceGroup(
         rt = rt,
         legendText = "Doctors",
         groupName = "monitor-doctor",
         kind = "checkbox",
+        waitingText = "Choose a city and a service first.",
         loadingText = "Loading clinics and doctors…",
         choices =
           formSignal.map(f => mapLoad(f.providers)(doctorChoices)).distinct,
         isSelected =
           item => formSignal.map(_.doctors.exists(_.id == item.id)).distinct,
-        select = Msg.MonitorDoctorToggled(_)
+        select = Msg.MonitorDoctorToggled(_),
+        chosen = Some(formSignal.map(f => chosenText("doctor", f.doctors)))
       )
     )
 
-  private def scheduleStep(
+  private def scheduleFields(
       rt: Runtime[AppState, Msg],
       formSignal: Signal[MonitorForm]
   ): HtmlElement =
     div(
-      cls := "wizard-step",
+      cls := "form-group",
       p(cls := "hint", "Dates and times are Warsaw time."),
       label(
         cls := "field",
@@ -486,11 +461,9 @@ object MonitorsView:
       ),
       label(
         cls := "field",
-        "Check every (minutes)",
+        s"Check every (minutes, at least ${MonitorForm.minimumIntervalMinutes})",
         input(
           tpe := "number",
-          minAttr := MonitorForm.minimumIntervalMinutes.toString,
-          stepAttr := "1",
           value <-- formSignal.map(_.intervalMinutes.toString).distinct,
           onInput.mapToValue --> (v =>
             rt.dispatch(Msg.MonitorIntervalChanged(v))
@@ -509,45 +482,6 @@ object MonitorsView:
         span("Book a slot automatically when one is found")
       )
     )
-
-  /** The last look before saving, in the names the monitor will keep — the ids
-    * behind them are what is stored, but they are not what a person checks.
-    */
-  private def reviewStep(rt: Runtime[AppState, Msg]): HtmlElement =
-    div(
-      cls := "wizard-step",
-      p(cls := "hint", "Dates and times are Warsaw time."),
-      dl(
-        cls := "review",
-        children <-- rt.store.signal
-          .map(reviewRows)
-          .distinct
-          .map(_.flatMap((term, detail) => List(dt(term), dd(detail))))
-      )
-    )
-
-  private def reviewRows(state: AppState): List[(String, String)] =
-    state.monitorForm.toList.flatMap: form =>
-      val account = state.accounts match
-        case LoadState.Loaded(accounts) =>
-          accounts
-            .find(a => form.accountId.contains(a.id))
-            .map(_.label)
-            .getOrElse("—")
-        case _ => "—"
-      List(
-        "Luxmed account" -> account,
-        "Name" -> form.name,
-        "City" -> form.city.map(_.name).getOrElse("—"),
-        "Service" -> form.service.map(_.name).getOrElse("—"),
-        "Clinics" -> chosenText("clinic", form.facilities),
-        "Doctors" -> chosenText("doctor", form.doctors),
-        "Dates" -> s"${isoText(form.dateFrom)} to ${isoText(form.dateTo)}",
-        "Times" -> s"${isoText(form.timeFrom)}–${isoText(form.timeTo)}",
-        "Days" -> daysText(form.daysOfWeek),
-        "Checks" -> s"every ${form.intervalMinutes} minutes",
-        "Auto-book" -> (if form.autoBook then "Yes" else "No")
-      )
 
   // --- Shared rendering ---
 
@@ -577,16 +511,27 @@ object MonitorsView:
       legendText: String,
       groupName: String,
       kind: String,
+      waitingText: String,
       loadingText: String,
       choices: Signal[LoadState[List[NamedId]]],
       isSelected: NamedId => Signal[Boolean],
-      select: NamedId => Msg
+      select: NamedId => Msg,
+      chosen: Option[Signal[String]]
   ): HtmlElement =
     fieldSet(
       cls := "field",
       legend(legendText),
+      // What is chosen is shown whatever the dictionary of alternatives is
+      // doing, so an edited monitor's saved criteria are readable immediately.
+      chosen
+        .map(text =>
+          p(cls := "chosen", "Chosen: ", child.text <-- text.distinct)
+        )
+        .toList,
       children <-- choices.map {
-        case LoadState.NotAsked | LoadState.Loading =>
+        case LoadState.NotAsked =>
+          List(p(cls := "hint", waitingText))
+        case LoadState.Loading =>
           List(p(cls := "loading", loadingText))
         case LoadState.Failed(message) =>
           List(
@@ -642,6 +587,9 @@ object MonitorsView:
     case MonitorState.Paused    => "Paused"
     case MonitorState.Completed => "Completed"
     case MonitorState.Failed    => "Failed"
+
+  private def nameOrNone(chosen: Option[NamedId]): String =
+    chosen.map(_.name).getOrElse("nothing yet")
 
   private def chosenText(kind: String, chosen: List[NamedId]): String =
     if chosen.isEmpty then s"Any $kind"

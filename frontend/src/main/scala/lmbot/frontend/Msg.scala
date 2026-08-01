@@ -52,13 +52,6 @@ enum Msg:
   case MonitorEditStarted(monitor: MonitorView)
   case MonitorFormCancelled
 
-  /** "Next" on any step, and "Save" on the last one — advancing past the review
-    * step is what submitting means, so one message covers the form's single
-    * forward control.
-    */
-  case MonitorStepAdvanced
-  case MonitorStepReturned
-
   case MonitorAccountSelected(accountId: AccountId)
   case MonitorNameChanged(value: String)
   case MonitorCitySelected(city: NamedId)
@@ -93,9 +86,9 @@ enum Msg:
   case ServicesLoaded(accountId: AccountId, services: List[DictionaryService])
   case ServicesLoadFailed(accountId: AccountId, error: ApiError)
 
-  /** "Try again" after a failed dictionary load. Which dictionary that is
-    * follows from the step the wizard is on, which `Update` already knows — so
-    * the view does not have to work it out.
+  /** "Try again" after a failed dictionary load. Which dictionaries are asked
+    * again follows from what the form has answered so far, which `Update`
+    * already knows — so the view does not have to work it out.
     */
   case DictionaryRetryRequested
 

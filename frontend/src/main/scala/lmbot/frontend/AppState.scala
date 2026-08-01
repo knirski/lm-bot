@@ -57,33 +57,16 @@ case class DeleteConfirmation(
     error: Option[String] = None
 )
 
-/** The guided monitor flow, in the order the Luxmed dictionaries can answer:
-  * nothing can be asked about a city before an account is chosen, and nothing
-  * about facilities or doctors before both a city and a service are.
-  */
-enum WizardStep:
-  case Account, City, Service, Providers, Schedule, Review
-
-object WizardStep:
-  extension (step: WizardStep)
-    def next: Option[WizardStep] =
-      Option.when(step.ordinal < values.length - 1)(
-        fromOrdinal(step.ordinal + 1)
-      )
-
-    def previous: Option[WizardStep] =
-      Option.when(step.ordinal > 0)(fromOrdinal(step.ordinal - 1))
-
-    /** 1-based, for "Step 3 of 6" — `ordinal` is not a user-facing number. */
-    def number: Int = step.ordinal + 1
-
 /** The single form model behind both creating and editing a monitor.
   *
   * `editingMonitorId` is the only thing that differs between the two: `None`
   * means "create", `Some(id)` means "replace that monitor's criteria". Every
-  * other decision — which dictionaries to fetch, what counts as valid, what the
-  * review step shows — is identical, which is why there is one type and not
+  * other decision — which dictionaries to fetch, what counts as valid, what is
+  * shown before saving — is identical, which is why there is one type and not
   * two.
+  *
+  * Every field is answerable at once and in any order: the form is one page,
+  * not a sequence of steps, so nothing here records "where the user is".
   *
   * Editing starts fully populated from the persisted denormalized `NamedId`s,
   * so a saved monitor stays readable and editable even if a later dictionary
@@ -94,7 +77,6 @@ object WizardStep:
   */
 case class MonitorForm(
     editingMonitorId: Option[MonitorId] = None,
-    step: WizardStep = WizardStep.Account,
     accountId: Option[AccountId] = None,
     name: String = "",
     city: Option[NamedId] = None,
@@ -128,23 +110,20 @@ case class MonitorForm(
         services = LoadState.NotAsked
       ).clearCity
 
-  /** Services are account-scoped, not city-scoped, so the offered *list*
-    * survives a city change — but the chosen service does not, because
-    * facilities and doctors are looked up per (city, service) pair and a
-    * service kept across a city change would silently keep providers from the
-    * old city.
+  /** Services are account-scoped, not city-scoped, so a new city invalidates
+    * neither the offered service list nor the chosen service — only the
+    * facilities and doctors, which are looked up per (city, service) pair.
     */
   def withCity(chosen: NamedId): MonitorForm =
     if city.contains(chosen) then this
-    else copy(city = Some(chosen)).clearService
+    else copy(city = Some(chosen)).clearProviders
 
   def withService(chosen: NamedId): MonitorForm =
     if service.contains(chosen) then this
     else copy(service = Some(chosen)).clearProviders
 
-  private def clearCity: MonitorForm = copy(city = None).clearService
-
-  private def clearService: MonitorForm = copy(service = None).clearProviders
+  private def clearCity: MonitorForm =
+    copy(city = None, service = None).clearProviders
 
   private def clearProviders: MonitorForm =
     copy(facilities = Nil, doctors = Nil, providers = LoadState.NotAsked)
@@ -156,7 +135,7 @@ case class MonitorForm(
     copy(doctors = MonitorForm.toggled(doctors, doctor))
 
   /** Kept in calendar order regardless of the order they were ticked in, so the
-    * review step and the saved monitor read Monday-first.
+    * form and the saved monitor read Monday-first.
     */
   def toggleDay(day: DayOfWeek): MonitorForm =
     val next =
@@ -164,19 +143,11 @@ case class MonitorForm(
       else day :: daysOfWeek
     copy(daysOfWeek = next.sortBy(_.getValue))
 
-  /** What this step still needs before "Next" can move on. The wizard exists to
-    * ask one question at a time, so each step withholds only its own
-    * prerequisite rather than the whole form's.
-    */
-  def stepErrors: List[String] = step match
-    case WizardStep.Account   => accountErrors ++ nameErrors
-    case WizardStep.City      => cityErrors
-    case WizardStep.Service   => serviceErrors
-    case WizardStep.Providers => Nil
-    case WizardStep.Schedule  => scheduleErrors
-    case WizardStep.Review    => Nil
-
-  /** Mirrors the server's own checks (`MonitorService.validate`) so a mistake
+  /** Everything still missing or contradictory, in the order the fields are
+    * shown — the whole form at once, because the whole form is on screen at
+    * once.
+    *
+    * Mirrors the server's own checks (`MonitorService.validate`) so a mistake
     * is caught before a round trip — the server stays authoritative, and its
     * `ApiError.Validation` text is displayed when it disagrees.
     */
@@ -240,7 +211,7 @@ case class MonitorForm(
     val interval =
       if intervalMinutes < MonitorForm.minimumIntervalMinutes then
         List(
-          s"Check at most every ${MonitorForm.minimumIntervalMinutes} minutes."
+          s"Check no more often than every ${MonitorForm.minimumIntervalMinutes} minutes."
         )
       else Nil
     dates ++ times ++ days ++ interval

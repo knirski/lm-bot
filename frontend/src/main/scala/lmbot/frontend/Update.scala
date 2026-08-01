@@ -243,52 +243,35 @@ class Update(api: ApiClient):
 
     case Msg.MonitorCreateStarted =>
       // A monitor watches one linked account's calendar, so with no account
-      // there is nothing to open a wizard about; the view offers linking one
-      // instead of an unusable first step.
+      // there is nothing to open a form about; the view offers linking one
+      // instead of a form with nothing to choose.
       state.accounts match
         case LoadState.Loaded(accounts) if accounts.nonEmpty =>
           openForm(state, MonitorForm())
         case _ => Transition(state, Nil)
 
     case Msg.MonitorEditStarted(monitor) =>
-      // Everything the form needs is already in the stored monitor, names
-      // included, so editing opens without waiting for any dictionary.
-      openForm(state, MonitorForm.edit(monitor))
+      // The form is already fully populated from the stored monitor, names
+      // included; these requests fetch the *alternatives*, so that every
+      // criterion can be changed rather than only read.
+      loadDictionaries(openForm(state, MonitorForm.edit(monitor)).state)
 
     case Msg.MonitorFormCancelled =>
       Transition(state.copy(monitorForm = None), Nil)
 
-    case Msg.MonitorStepAdvanced =>
-      withForm(state): form =>
-        val missing = form.stepErrors
-        if missing.nonEmpty then
-          Transition(
-            state.copy(monitorForm = Some(form.copy(errors = missing))),
-            Nil
-          )
-        else
-          form.step.next match
-            // Review is the last step: going forward from it means saving.
-            case None       => apply(state, Msg.MonitorSubmitted)
-            case Some(next) => enterStep(state, form, next)
-
-    case Msg.MonitorStepReturned =>
-      withForm(state): form =>
-        form.step.previous match
-          case None       => Transition(state, Nil)
-          case Some(back) => enterStep(state, form, back)
-
     case Msg.MonitorAccountSelected(accountId) =>
-      editForm(state)(_.withAccount(accountId))
+      // Choosing whose calendar to watch is what makes the account-scoped
+      // dictionaries answerable, so they are asked for here.
+      changeSelection(state)(_.withAccount(accountId))
 
     case Msg.MonitorNameChanged(value) =>
       editForm(state)(_.copy(name = value))
 
     case Msg.MonitorCitySelected(city) =>
-      editForm(state)(_.withCity(city))
+      changeSelection(state)(_.withCity(city))
 
     case Msg.MonitorServiceSelected(service) =>
-      editForm(state)(_.withService(service))
+      changeSelection(state)(_.withService(service))
 
     case Msg.MonitorFacilityToggled(facility) =>
       editForm(state)(_.toggleFacility(facility))
@@ -355,10 +338,13 @@ class Update(api: ApiClient):
         if existing.exists(_.id == monitor.id) then
           existing.map(m => if m.id == monitor.id then monitor else m)
         else existing :+ monitor
-      Transition(
-        state.copy(monitors = orLoaded(updated, monitor), monitorForm = None),
-        Nil
-      )
+      val saved = state.copy(monitors = updated, monitorForm = None)
+      state.monitors match
+        case LoadState.Loaded(_) => Transition(saved, Nil)
+        // The list never loaded (or failed to), so this one monitor is not the
+        // whole of it. Asking again is honest; pretending the list is now
+        // exactly this row would hide the earlier failure.
+        case _ => apply(saved, Msg.MonitorsRequested)
 
     case Msg.MonitorSaveFailed(err) =>
       editForm(state)(_.copy(submitting = false, errors = List(explain(err))))
@@ -405,9 +391,9 @@ class Update(api: ApiClient):
         _.copy(services = LoadState.Failed(explain(err)))
 
     case Msg.DictionaryRetryRequested =>
-      // Re-entering the current step is exactly "ask again what this step
-      // needs", and a failed load is one `enterStep` treats as unanswered.
-      withForm(state)(form => enterStep(state, form, form.step))
+      // A failed load counts as unanswered, so asking for everything the form
+      // can currently ask about re-issues exactly the failed requests.
+      loadDictionaries(state)
 
     case Msg.ProvidersRequested(accountId, cityId, serviceId) =>
       withForm(state): form =>
@@ -541,7 +527,7 @@ class Update(api: ApiClient):
       state: AppState,
       form: MonitorForm
   ): Transition[AppState, Msg] =
-    // The wizard replaces the list, so a confirmation or a failed pause left
+    // The form replaces the list, so a confirmation or a failed pause left
     // open there would reappear behind it on cancel.
     Transition(
       state.copy(
@@ -552,7 +538,7 @@ class Update(api: ApiClient):
       Nil
     )
 
-  /** A wizard message is meaningful only while a wizard is open. If it was
+  /** A form message is meaningful only while a form is open. If it was
     * cancelled meanwhile — or the message is a late answer to a question nobody
     * is asking any more — it is dropped rather than reopening the form.
     */
@@ -593,27 +579,37 @@ class Update(api: ApiClient):
       form.city.exists(_.id == cityId) &&
       form.service.exists(_.id == serviceId)
 
-  /** Arriving on a step is also when its choices are fetched — and the only
-    * time, so no dictionary is ever asked about ids that do not exist yet.
-    * Choices already loaded are not re-fetched; a previous failure is retried.
+  /** A selection that other choices depend on: apply it, then ask for whatever
+    * it just made answerable.
     */
-  private def enterStep(
-      state: AppState,
-      form: MonitorForm,
-      step: WizardStep
-  ): Transition[AppState, Msg] =
-    val moved =
-      state.copy(monitorForm = Some(form.copy(step = step, errors = Nil)))
-    (step, form.accountId, form.city, form.service) match
-      case (WizardStep.City, Some(accountId), _, _) if unloaded(form.cities) =>
-        apply(moved, Msg.CitiesRequested(accountId))
-      case (WizardStep.Service, Some(accountId), _, _)
-          if unloaded(form.services) =>
-        apply(moved, Msg.ServicesRequested(accountId))
-      case (WizardStep.Providers, Some(accountId), Some(city), Some(service))
-          if unloaded(form.providers) =>
-        apply(moved, Msg.ProvidersRequested(accountId, city.id, service.id))
-      case _ => Transition(moved, Nil)
+  private def changeSelection(
+      state: AppState
+  )(f: MonitorForm => MonitorForm): Transition[AppState, Msg] =
+    loadDictionaries(editForm(state)(f).state)
+
+  /** Asks for every dictionary the form has the ids for and does not already
+    * have — and for no others, so nothing is ever requested before the ids it
+    * needs exist. Cities and services need only the account; facilities and
+    * doctors need the city and the service too. A load already in flight is not
+    * repeated; a previous failure counts as missing and is retried.
+    */
+  private def loadDictionaries(state: AppState): Transition[AppState, Msg] =
+    withForm(state): form =>
+      val cities = form.accountId
+        .filter(_ => unloaded(form.cities))
+        .map(Msg.CitiesRequested(_))
+      val services = form.accountId
+        .filter(_ => unloaded(form.services))
+        .map(Msg.ServicesRequested(_))
+      val providers = (form.accountId, form.city, form.service) match
+        case (Some(accountId), Some(city), Some(service))
+            if unloaded(form.providers) =>
+          Some(Msg.ProvidersRequested(accountId, city.id, service.id))
+        case _ => None
+      List(cities, services, providers).flatten
+        .foldLeft(Transition(state, List.empty[Effect[Msg]])): (acc, msg) =>
+          val next = apply(acc.state, msg)
+          Transition(next.state, acc.effects ++ next.effects)
 
   private def unloaded(load: LoadState[?]): Boolean = load match
     case LoadState.NotAsked | LoadState.Failed(_) => true
@@ -628,17 +624,6 @@ class Update(api: ApiClient):
     state.monitors match
       case LoadState.Loaded(existing) => LoadState.Loaded(f(existing))
       case other                      => other
-
-  /** A monitor that has just been saved exists, whatever the list's own load
-    * state says — so a save landing before (or instead of) a successful list
-    * load still shows it.
-    */
-  private def orLoaded(
-      monitors: LoadState[List[MonitorView]],
-      saved: MonitorView
-  ): LoadState[List[MonitorView]] = monitors match
-    case loaded: LoadState.Loaded[List[MonitorView]] => loaded
-    case _ => LoadState.Loaded(List(saved))
 
   /** `input type="date"`, `type="time"` and `type="number"` hand back text —
     * ISO text when the field holds a value, and `""` once it is cleared.
