@@ -188,6 +188,7 @@ object MonitorsView:
       p("Delete this monitor?"),
       button(
         "Cancel",
+        onMountFocus,
         disabled := confirmation.submitting,
         onClick.mapTo(Msg.MonitorDeleteCancelled) --> (m => rt.dispatch(m))
       ),
@@ -226,6 +227,8 @@ object MonitorsView:
         rt.dispatch(m)
       ),
       h3(
+        tabIndex := -1,
+        onMountFocus,
         child.text <-- formSignal
           .map(f =>
             if f.editingMonitorId.isDefined then "Edit monitor"

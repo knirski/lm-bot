@@ -131,6 +131,7 @@ object AccountsView:
       p("Deleting this account will also delete its monitors."),
       button(
         "Cancel",
+        onMountFocus,
         disabled := confirmation.submitting,
         onClick.mapTo(Msg.DeleteCancelled) --> (m => rt.dispatch(m))
       ),
