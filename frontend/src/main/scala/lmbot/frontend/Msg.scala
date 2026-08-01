@@ -28,8 +28,16 @@ enum Msg:
   case LoggedOut
 
   case AccountsRequested
-  case AccountsLoaded(accounts: List[AccountView])
-  case AccountsLoadFailed(error: ApiError)
+  case AccountsLoaded(
+      accounts: List[AccountView],
+      dashboardGeneration: Int,
+      accountsGeneration: Int
+  )
+  case AccountsLoadFailed(
+      error: ApiError,
+      dashboardGeneration: Int,
+      accountsGeneration: Int
+  )
 
   case LinkLabelChanged(value: String)
   case LinkUsernameChanged(value: String)
@@ -45,8 +53,16 @@ enum Msg:
   case AccountDeleteFailed(error: ApiError)
 
   case MonitorsRequested
-  case MonitorsLoaded(monitors: List[MonitorView])
-  case MonitorsLoadFailed(error: ApiError)
+  case MonitorsLoaded(
+      monitors: List[MonitorView],
+      dashboardGeneration: Int,
+      monitorsGeneration: Int
+  )
+  case MonitorsLoadFailed(
+      error: ApiError,
+      dashboardGeneration: Int,
+      monitorsGeneration: Int
+  )
 
   case MonitorCreateStarted
   case MonitorEditStarted(monitor: MonitorView)
@@ -115,4 +131,4 @@ enum Msg:
   case MonitorDeleteConfirmed
   case MonitorDeleteCancelled
   case MonitorDeleted(monitorId: MonitorId)
-  case MonitorDeleteFailed(error: ApiError)
+  case MonitorDeleteFailed(monitorId: MonitorId, error: ApiError)

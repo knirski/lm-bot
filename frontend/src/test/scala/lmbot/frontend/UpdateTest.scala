@@ -114,12 +114,51 @@ class UpdateTest extends munit.FunSuite:
     service = dermatologist
   )
 
+  /** Builds the `AccountsLoaded` that `state`'s own most recent
+    * `AccountsRequested` would receive — i.e. one the reducer must accept.
+    * Constructing a message that answers a *different* generation is exactly
+    * how the staleness tests below prove a superseded response is dropped.
+    */
+  private def accountsLoaded(
+      state: AppState,
+      accounts: List[AccountView]
+  ): Msg =
+    Msg.AccountsLoaded(
+      accounts,
+      state.dashboardGeneration,
+      state.accountsGeneration
+    )
+
+  private def accountsLoadFailed(state: AppState, error: ApiError): Msg =
+    Msg.AccountsLoadFailed(
+      error,
+      state.dashboardGeneration,
+      state.accountsGeneration
+    )
+
+  private def monitorsLoaded(
+      state: AppState,
+      monitors: List[MonitorView]
+  ): Msg =
+    Msg.MonitorsLoaded(
+      monitors,
+      state.dashboardGeneration,
+      state.monitorsGeneration
+    )
+
+  private def monitorsLoadFailed(state: AppState, error: ApiError): Msg =
+    Msg.MonitorsLoadFailed(
+      error,
+      state.dashboardGeneration,
+      state.monitorsGeneration
+    )
+
   /** A dashboard with two linked accounts and one stored monitor. */
   private val dashboardState: AppState =
     val restored = update(AppState.initial, Msg.SessionRestored(alice)).state
     val withAccounts =
-      update(restored, Msg.AccountsLoaded(List(account1, account2))).state
-    update(withAccounts, Msg.MonitorsLoaded(List(monitor1))).state
+      update(restored, accountsLoaded(restored, List(account1, account2))).state
+    update(withAccounts, monitorsLoaded(withAccounts, List(monitor1))).state
 
   private def form(state: AppState): MonitorForm =
     state.monitorForm.getOrElse(fail("no monitor form is open"))
@@ -288,9 +327,11 @@ class UpdateTest extends munit.FunSuite:
     // A shared browser is the whole point of this test: everything one user
     // loaded or half-typed has to be gone, not just the three fields the login
     // screen happens to read.
+    val afterRestore =
+      update(AppState.initial, Msg.SessionRestored(alice)).state
     val busy = List(
-      Msg.AccountsLoaded(List(account1, account2)),
-      Msg.MonitorsLoaded(List(monitor1, monitor2)),
+      accountsLoaded(afterRestore, List(account1, account2)),
+      monitorsLoaded(afterRestore, List(monitor1, monitor2)),
       Msg.LinkLabelChanged("Main"),
       Msg.LinkUsernameChanged("user1"),
       Msg.LinkPasswordChanged("luxmed-secret"),
@@ -299,8 +340,8 @@ class UpdateTest extends munit.FunSuite:
       Msg.MonitorNameChanged("Knee"),
       Msg.MonitorPauseRequested(monitor1.id),
       Msg.MonitorDeleteRequested(monitor2.id)
-    ).foldLeft(update(AppState.initial, Msg.SessionRestored(alice)).state):
-      (s, msg) => update(s, msg).state
+    ).foldLeft(afterRestore): (s, msg) =>
+      update(s, msg).state
     assert(busy.monitorForm.isDefined, "the fixture must actually be dirty")
     assert(busy.monitorAction.isDefined)
     assert(busy.monitorDeleteConfirmation.isDefined)
@@ -309,8 +350,11 @@ class UpdateTest extends munit.FunSuite:
 
     assertEquals(
       s,
-      AppState.initial.copy(booting = false),
-      "every field must be back to its initial value, the new ones included"
+      AppState.initial.copy(booting = false, dashboardGeneration = 1),
+      "every field must be back to its initial value, the new ones " +
+        "included, except dashboardGeneration — that one must keep " +
+        "advancing so a stale response from this session can never land " +
+        "on the next one"
     )
 
   test("navigating to accounts starts loading and emits one effect"):
@@ -338,16 +382,37 @@ class UpdateTest extends munit.FunSuite:
   test("loading accounts successfully stores the list, status reason included"):
     val loading = update(AppState.initial, Msg.AccountsRequested).state
     val s =
-      update(loading, Msg.AccountsLoaded(List(account1, account2))).state
+      update(loading, accountsLoaded(loading, List(account1, account2))).state
     assertEquals(s.accounts, LoadState.Loaded(List(account1, account2)))
 
   test("a failed accounts load shows the server's message"):
     val loading = update(AppState.initial, Msg.AccountsRequested).state
     val s = update(
       loading,
-      Msg.AccountsLoadFailed(ApiError.Validation("luxmed unreachable"))
+      accountsLoadFailed(loading, ApiError.Validation("luxmed unreachable"))
     ).state
     assertEquals(s.accounts, LoadState.Failed("luxmed unreachable"))
+
+  test("a superseded accounts response is dropped, not applied"):
+    val loading = update(AppState.initial, Msg.AccountsRequested).state
+    // A second request supersedes the first: the response the first request
+    // is still waiting on must now land on nothing.
+    val superseded = update(loading, Msg.AccountsRequested).state
+    val s = update(superseded, accountsLoaded(loading, List(account1))).state
+    assertEquals(s.accounts, LoadState.Loading)
+
+  test(
+    "an accounts response from a session that has since logged out is dropped"
+  ):
+    val loading = update(AppState.initial, Msg.AccountsRequested).state
+    val loggedOut = update(loading, Msg.LoggedOut).state
+    val restored = update(loggedOut, Msg.SessionRestored(alice)).state
+    // The new session's own request coincidentally reuses the same
+    // accountsGeneration (1) the old one had — only dashboardGeneration
+    // tells them apart.
+    assertEquals(restored.accountsGeneration, loading.accountsGeneration)
+    val s = update(restored, accountsLoaded(loading, List(account1))).state
+    assertEquals(s.accounts, LoadState.Loading)
 
   test("submitting an incomplete link form is rejected without a request"):
     val t = update(AppState.initial, Msg.LinkAccountSubmitted)
@@ -378,7 +443,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("linking succeeds: the new account is appended and the form resets"):
     val loaded =
-      update(AppState.initial, Msg.AccountsLoaded(List(account1))).state
+      update(
+        AppState.initial,
+        accountsLoaded(AppState.initial, List(account1))
+      ).state
     val filled = filledLinkForm(loaded)
     val busy = update(filled, Msg.LinkAccountSubmitted).state
     val newAccount =
@@ -428,7 +496,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("requesting a delete opens a confirmation naming the account"):
     val loaded =
-      update(AppState.initial, Msg.AccountsLoaded(List(account1))).state
+      update(
+        AppState.initial,
+        accountsLoaded(AppState.initial, List(account1))
+      ).state
     val t = update(loaded, Msg.DeleteAccountRequested(account1.id))
     assertEquals(t.effects, Nil)
     assertEquals(
@@ -469,7 +540,7 @@ class UpdateTest extends munit.FunSuite:
     val loaded =
       update(
         AppState.initial,
-        Msg.AccountsLoaded(List(account1, account2))
+        accountsLoaded(AppState.initial, List(account1, account2))
       ).state
     val requested =
       update(loaded, Msg.DeleteAccountRequested(account1.id)).state
@@ -496,7 +567,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("deleting an account drops the monitors the server deletes with it"):
     val loaded =
-      update(dashboardState, Msg.MonitorsLoaded(List(monitor1, monitor2))).state
+      update(
+        dashboardState,
+        monitorsLoaded(dashboardState, List(monitor1, monitor2))
+      ).state
 
     val s = update(loaded, Msg.AccountDeleted(account1.id)).state
 
@@ -590,7 +664,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("deleting an account keeps state pointing at another account's monitor"):
     val loaded =
-      update(dashboardState, Msg.MonitorsLoaded(List(monitor1, monitor2))).state
+      update(
+        dashboardState,
+        monitorsLoaded(dashboardState, List(monitor1, monitor2))
+      ).state
     val confirming =
       update(loaded, Msg.MonitorDeleteRequested(monitor2.id)).state
     val pausing =
@@ -612,23 +689,34 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(loading.state.monitors, LoadState.Loading)
     assertEquals(loading.effects.size, 1)
 
-    val s = update(loading.state, Msg.MonitorsLoaded(List(monitor1))).state
+    val s =
+      update(loading.state, monitorsLoaded(loading.state, List(monitor1))).state
     assertEquals(s.monitors, LoadState.Loaded(List(monitor1)))
 
   test("a failed monitors load shows the server's message"):
     val s = update(
       AppState.initial,
-      Msg.MonitorsLoadFailed(ApiError.Unexpected("db unavailable"))
+      monitorsLoadFailed(
+        AppState.initial,
+        ApiError.Unexpected("db unavailable")
+      )
     ).state
     assertEquals(
       s.monitors,
       LoadState.Failed("Something went wrong: db unavailable")
     )
 
+  test("a superseded monitors response is dropped, not applied"):
+    val loading = update(AppState.initial, Msg.MonitorsRequested).state
+    val superseded = update(loading, Msg.MonitorsRequested).state
+    val s = update(superseded, monitorsLoaded(loading, List(monitor1))).state
+    assertEquals(s.monitors, LoadState.Loading)
+
   // --- Monitors: the form ---
 
   test("starting a monitor with no linked account opens no form"):
-    val noAccounts = update(dashboardState, Msg.AccountsLoaded(Nil)).state
+    val noAccounts =
+      update(dashboardState, accountsLoaded(dashboardState, Nil)).state
 
     val t = update(noAccounts, Msg.MonitorCreateStarted)
 
@@ -970,7 +1058,7 @@ class UpdateTest extends munit.FunSuite:
   test("a save while the list is unavailable asks for the list again"):
     val listFailed = update(
       ready,
-      Msg.MonitorsLoadFailed(ApiError.Unexpected("db unavailable"))
+      monitorsLoadFailed(ready, ApiError.Unexpected("db unavailable"))
     ).state
     val busy = update(listFailed, Msg.MonitorSubmitted).state
 
@@ -1078,7 +1166,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("resuming a paused monitor makes it active again"):
     val paused =
-      update(dashboardState, Msg.MonitorsLoaded(List(monitor2))).state
+      update(
+        dashboardState,
+        monitorsLoaded(dashboardState, List(monitor2))
+      ).state
     val t = update(paused, Msg.MonitorResumeRequested(monitor2.id))
     assertEquals(t.effects.size, 1)
     assertEquals(
@@ -1159,7 +1250,10 @@ class UpdateTest extends munit.FunSuite:
 
   test("a successful monitor delete removes it and closes the confirmation"):
     val loaded =
-      update(dashboardState, Msg.MonitorsLoaded(List(monitor1, monitor2))).state
+      update(
+        dashboardState,
+        monitorsLoaded(dashboardState, List(monitor1, monitor2))
+      ).state
     val requested =
       update(loaded, Msg.MonitorDeleteRequested(monitor1.id)).state
     val busy = update(requested, Msg.MonitorDeleteConfirmed).state
@@ -1176,7 +1270,10 @@ class UpdateTest extends munit.FunSuite:
 
     val s = update(
       busy,
-      Msg.MonitorDeleteFailed(ApiError.Unexpected("db unavailable"))
+      Msg.MonitorDeleteFailed(
+        monitor1.id,
+        ApiError.Unexpected("db unavailable")
+      )
     ).state
 
     assertEquals(
@@ -1186,3 +1283,80 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(s.monitorDeleteConfirmation.map(_.submitting), Some(false))
     assert(s.monitorDeleteConfirmation.flatMap(_.error).isDefined)
     assertEquals(monitors(s).size, 1, "a failed delete removes nothing")
+
+  test(
+    "requesting a delete for a different monitor while one is submitting does nothing"
+  ):
+    val loaded = update(
+      dashboardState,
+      monitorsLoaded(dashboardState, List(monitor1, monitor2))
+    ).state
+    val requested =
+      update(loaded, Msg.MonitorDeleteRequested(monitor1.id)).state
+    val busy = update(requested, Msg.MonitorDeleteConfirmed).state
+
+    val t = update(busy, Msg.MonitorDeleteRequested(monitor2.id))
+
+    assertEquals(t.effects, Nil)
+    assertEquals(
+      t.state.monitorDeleteConfirmation.map(_.monitorId),
+      Some(monitor1.id),
+      "a second row's delete click must not steal the in-flight confirmation"
+    )
+
+  test(
+    "a delete result for one monitor does not touch a confirmation naming another"
+  ):
+    val loaded = update(
+      dashboardState,
+      monitorsLoaded(dashboardState, List(monitor1, monitor2))
+    ).state
+    val confirmingOther =
+      update(loaded, Msg.MonitorDeleteRequested(monitor2.id)).state
+
+    val deleted = update(confirmingOther, Msg.MonitorDeleted(monitor1.id)).state
+    assertEquals(
+      deleted.monitorDeleteConfirmation.map(_.monitorId),
+      Some(monitor2.id),
+      "a stale completion for a different monitor must not clear this one's " +
+        "confirmation"
+    )
+
+    val failed = update(
+      confirmingOther,
+      Msg.MonitorDeleteFailed(
+        monitor1.id,
+        ApiError.Unexpected("db unavailable")
+      )
+    ).state
+    assertEquals(
+      failed.monitorDeleteConfirmation,
+      confirmingOther.monitorDeleteConfirmation,
+      "a stale failure for a different monitor must not attach its error here"
+    )
+
+  test(
+    "a successful monitor delete also closes its own open edit form and pending action"
+  ):
+    val loaded = update(
+      dashboardState,
+      monitorsLoaded(dashboardState, List(monitor1, monitor2))
+    ).state
+    val editing = update(loaded, Msg.MonitorEditStarted(monitor1)).state
+    val pausing = update(editing, Msg.MonitorPauseRequested(monitor1.id)).state
+    val requested =
+      update(pausing, Msg.MonitorDeleteRequested(monitor1.id)).state
+    val busy = update(requested, Msg.MonitorDeleteConfirmed).state
+
+    val s = update(busy, Msg.MonitorDeleted(monitor1.id)).state
+
+    assertEquals(
+      s.monitorForm,
+      None,
+      "the deleted monitor's own open edit form must close"
+    )
+    assertEquals(
+      s.monitorAction,
+      None,
+      "a pause/resume in flight for the deleted monitor must clear too"
+    )

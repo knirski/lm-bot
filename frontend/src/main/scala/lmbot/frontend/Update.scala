@@ -98,24 +98,46 @@ class Update(api: ApiClient):
       Transition(state, List(effect))
 
     case Msg.LoggedOut =>
+      // Bumping this — and only this — survives the reset below: a stale
+      // list response from the session just ending must never land on the
+      // next one, even on a shared browser where the per-list counters would
+      // otherwise restart at the same values and coincidentally match.
       Transition(
-        AppState(Screen.Login, LoginForm(), None, booting = false),
+        AppState(
+          Screen.Login,
+          LoginForm(),
+          None,
+          booting = false,
+          dashboardGeneration = state.dashboardGeneration + 1
+        ),
         Nil
       )
 
     case Msg.AccountsRequested =>
+      val dashboardGen = state.dashboardGeneration
+      val accountsGen = state.accountsGeneration + 1
       val effect = new Effect[Msg]:
         def run(using Async): Option[Msg] = Some:
           api.listAccounts() match
-            case Right(accounts) => Msg.AccountsLoaded(accounts)
-            case Left(err)       => Msg.AccountsLoadFailed(err)
-      Transition(state.copy(accounts = LoadState.Loading), List(effect))
+            case Right(accounts) =>
+              Msg.AccountsLoaded(accounts, dashboardGen, accountsGen)
+            case Left(err) =>
+              Msg.AccountsLoadFailed(err, dashboardGen, accountsGen)
+      Transition(
+        state
+          .copy(accounts = LoadState.Loading, accountsGeneration = accountsGen),
+        List(effect)
+      )
 
-    case Msg.AccountsLoaded(accounts) =>
-      Transition(state.copy(accounts = LoadState.Loaded(accounts)), Nil)
+    case Msg.AccountsLoaded(accounts, dashboardGen, accountsGen) =>
+      if isCurrent(state, dashboardGen, accountsGen, _.accountsGeneration) then
+        Transition(state.copy(accounts = LoadState.Loaded(accounts)), Nil)
+      else Transition(state, Nil)
 
-    case Msg.AccountsLoadFailed(err) =>
-      Transition(state.copy(accounts = LoadState.Failed(explain(err))), Nil)
+    case Msg.AccountsLoadFailed(err, dashboardGen, accountsGen) =>
+      if isCurrent(state, dashboardGen, accountsGen, _.accountsGeneration) then
+        Transition(state.copy(accounts = LoadState.Failed(explain(err))), Nil)
+      else Transition(state, Nil)
 
     case Msg.LinkLabelChanged(v) =>
       Transition(state.copy(linkForm = state.linkForm.copy(label = v)), Nil)
@@ -258,18 +280,30 @@ class Update(api: ApiClient):
       Transition(state.copy(deleteConfirmation = updated), Nil)
 
     case Msg.MonitorsRequested =>
+      val dashboardGen = state.dashboardGeneration
+      val monitorsGen = state.monitorsGeneration + 1
       val effect = new Effect[Msg]:
         def run(using Async): Option[Msg] = Some:
           api.listMonitors() match
-            case Right(monitors) => Msg.MonitorsLoaded(monitors)
-            case Left(err)       => Msg.MonitorsLoadFailed(err)
-      Transition(state.copy(monitors = LoadState.Loading), List(effect))
+            case Right(monitors) =>
+              Msg.MonitorsLoaded(monitors, dashboardGen, monitorsGen)
+            case Left(err) =>
+              Msg.MonitorsLoadFailed(err, dashboardGen, monitorsGen)
+      Transition(
+        state
+          .copy(monitors = LoadState.Loading, monitorsGeneration = monitorsGen),
+        List(effect)
+      )
 
-    case Msg.MonitorsLoaded(monitors) =>
-      Transition(state.copy(monitors = LoadState.Loaded(monitors)), Nil)
+    case Msg.MonitorsLoaded(monitors, dashboardGen, monitorsGen) =>
+      if isCurrent(state, dashboardGen, monitorsGen, _.monitorsGeneration) then
+        Transition(state.copy(monitors = LoadState.Loaded(monitors)), Nil)
+      else Transition(state, Nil)
 
-    case Msg.MonitorsLoadFailed(err) =>
-      Transition(state.copy(monitors = LoadState.Failed(explain(err))), Nil)
+    case Msg.MonitorsLoadFailed(err, dashboardGen, monitorsGen) =>
+      if isCurrent(state, dashboardGen, monitorsGen, _.monitorsGeneration) then
+        Transition(state.copy(monitors = LoadState.Failed(explain(err))), Nil)
+      else Transition(state, Nil)
 
     case Msg.MonitorCreateStarted =>
       // A monitor watches one linked account's calendar, so with no account
@@ -498,12 +532,19 @@ class Update(api: ApiClient):
       Transition(state.copy(monitorAction = updated), Nil)
 
     case Msg.MonitorDeleteRequested(monitorId) =>
-      Transition(
-        state.copy(monitorDeleteConfirmation =
-          Some(MonitorDeleteConfirmation(monitorId))
-        ),
-        Nil
-      )
+      // A submitting confirmation is a request already in flight for some
+      // monitor; a click on a different row's "Delete" must not clobber it
+      // and orphan that request's result (see MonitorDeleted/DeleteFailed
+      // below, which now only ever apply to the confirmation they answer).
+      state.monitorDeleteConfirmation match
+        case Some(existing) if existing.submitting => Transition(state, Nil)
+        case _                                     =>
+          Transition(
+            state.copy(monitorDeleteConfirmation =
+              Some(MonitorDeleteConfirmation(monitorId))
+            ),
+            Nil
+          )
 
     case Msg.MonitorDeleteCancelled =>
       Transition(state.copy(monitorDeleteConfirmation = None), Nil)
@@ -518,7 +559,8 @@ class Update(api: ApiClient):
             def run(using Async): Option[Msg] = Some:
               api.deleteMonitor(confirmation.monitorId) match
                 case Right(()) => Msg.MonitorDeleted(confirmation.monitorId)
-                case Left(err) => Msg.MonitorDeleteFailed(err)
+                case Left(err) =>
+                  Msg.MonitorDeleteFailed(confirmation.monitorId, err)
           Transition(
             state.copy(monitorDeleteConfirmation =
               Some(confirmation.copy(submitting = true, error = None))
@@ -527,18 +569,34 @@ class Update(api: ApiClient):
           )
 
     case Msg.MonitorDeleted(monitorId) =>
+      // The monitor is gone server-side regardless of which confirmation is
+      // showing now, so the list, any open edit of it, and any pause/resume
+      // in flight for it are cleared unconditionally. The confirmation dialog
+      // itself is cleared only if it still names this monitor — a newer one
+      // for a different row must survive this stale-looking completion.
+      val confirmationMatches =
+        state.monitorDeleteConfirmation.exists(_.monitorId == monitorId)
       Transition(
         state.copy(
           monitors = mapMonitors(state)(_.filterNot(_.id == monitorId)),
-          monitorDeleteConfirmation = None
+          monitorForm =
+            state.monitorForm.filterNot(_.editingMonitorId.contains(monitorId)),
+          monitorAction =
+            state.monitorAction.filterNot(_.monitorId == monitorId),
+          monitorDeleteConfirmation =
+            if confirmationMatches then None
+            else state.monitorDeleteConfirmation
         ),
         Nil
       )
 
-    case Msg.MonitorDeleteFailed(err) =>
-      val updated = state.monitorDeleteConfirmation.map(
-        _.copy(submitting = false, error = Some(explain(err)))
-      )
+    case Msg.MonitorDeleteFailed(monitorId, err) =>
+      val updated = state.monitorDeleteConfirmation match
+        case Some(confirmation) if confirmation.monitorId == monitorId =>
+          Some(
+            confirmation.copy(submitting = false, error = Some(explain(err)))
+          )
+        case other => other
       Transition(state.copy(monitorDeleteConfirmation = updated), Nil)
 
   /** Both ways onto the dashboard need both lists. `apply` delegates to one
@@ -552,6 +610,21 @@ class Update(api: ApiClient):
       withMonitors.state,
       withAccounts.effects ++ withMonitors.effects
     )
+
+  /** True when a list response still answers the most recent request for that
+    * list on the same dashboard — false when a newer request (a refresh, a
+    * local mutation like `AccountLinked`, or a logout) has since superseded it,
+    * in which case the response is answering a question nobody is asking
+    * anymore and must be dropped rather than overwrite fresher state.
+    */
+  private def isCurrent(
+      state: AppState,
+      dashboardGeneration: Int,
+      listGeneration: Int,
+      currentListGeneration: AppState => Int
+  ): Boolean =
+    dashboardGeneration == state.dashboardGeneration &&
+      listGeneration == currentListGeneration(state)
 
   private def openForm(
       state: AppState,

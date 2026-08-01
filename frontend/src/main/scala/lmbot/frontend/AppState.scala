@@ -286,7 +286,16 @@ case class AppState(
     monitors: LoadState[List[MonitorView]] = LoadState.NotAsked,
     monitorForm: Option[MonitorForm] = None,
     monitorAction: Option[MonitorAction] = None,
-    monitorDeleteConfirmation: Option[MonitorDeleteConfirmation] = None
+    monitorDeleteConfirmation: Option[MonitorDeleteConfirmation] = None,
+    // Bumped whenever a stale list response must be told apart from the most
+    // recent request for that same list — dashboardGeneration on every login
+    // (so a response from a previous, logged-out session can never land on a
+    // new one even if the per-list counter happens to coincide), the other two
+    // whenever that specific list is (re-)requested, including a refresh
+    // triggered by a local mutation like AccountLinked.
+    dashboardGeneration: Int = 0,
+    accountsGeneration: Int = 0,
+    monitorsGeneration: Int = 0
 )
 
 object AppState:
