@@ -1,5 +1,7 @@
 package lmbot.frontend.view
 
+import java.time.Instant
+
 import com.raquo.laminar.api.L.*
 import lmbot.frontend.elm.Runtime
 import lmbot.frontend.{AppState, DeleteConfirmation, LoadState, Msg}
@@ -147,5 +149,5 @@ object AccountsView:
     case AccountStatus.AuthFailed => "Needs attention"
     case AccountStatus.Disabled   => "Disabled"
 
-  private def lastLoginText(instant: Option[java.time.Instant]): String =
+  private def lastLoginText(instant: Option[Instant]): String =
     instant.map(_.toString).getOrElse("Never")
