@@ -6,7 +6,7 @@
 **Mid-plan review:** [`2026-07-30-plan-04-review.md`](2026-07-30-plan-04-review.md) (Tasks 1–5)
 
 **changed-files:** Task 11 added `backend/src/test/scala/lmbot/backend/Plan4AcceptanceApp.scala`, `backend/src/test/scala/lmbot/backend/Plan4AcceptanceConfig.scala`, this report, and updated `README.md` and `docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md`. The plan as a whole added the accounts/monitors migration, `AccountRepo`/`MonitorRepo`/`SessionRepo`, `AesGcm` envelopes, `PostgresSessionStore`, `AccountService`/`DictionaryService`/`MonitorService`, `AccountRoutes`/`DictionaryRoutes`/`MonitorRoutes`, the shared `AccountEndpoints`/`DictionaryEndpoints`/`MonitorEndpoints` contracts, and the Laminar account and monitor UI.
-**verification-run:** `sbt scalafmtAll`, `sbt scalafmtCheckAll`, `sbt scalafmtSbtCheck`, `sbt testFull` (392 tests: sharedJVM 32, frontend 82, backend 278 — 0 failed, 0 errors, 1 skipped), `sbt frontend/fastLinkJS` (Wasm + JSPI), `nix flake check` (all checks passed), async-vocabulary grep (no output), `git diff --check` (no output), plus a ten-scenario real-browser run against `Plan4AcceptanceApp` in Chromium 150.
+**verification-run:** `sbt scalafmtAll`, `sbt scalafmtCheckAll`, `sbt scalafmtSbtCheck`, `sbt testFull` (0 failed, 0 errors, 1 skipped across sharedJVM 32, sharedJS 32, frontend 82, backend 278 — sbt's own sum is 424; this report counts 392, treating the cross-compiled `shared` suite as one 32-test suite rather than two, since sharedJVM and sharedJS run the identical source set), `sbt frontend/fastLinkJS` (Wasm + JSPI), `nix flake check` (all checks passed), async-vocabulary grep (no output), `git diff --check` (no output), plus a ten-scenario real-browser run against `Plan4AcceptanceApp` in Chromium 150.
 **skipped-checks:** none. One test skips itself: `PostgresSessionStoreTest."concurrent replacements allow exactly one CAS winner"` calls `assumeRealPostgres()` and is skipped unless `EMBEDDED_DB=zonky`, because Memgres does not guarantee the row-level locking the assertion is about. This is pre-existing and by design, not an exclusion added for this plan.
 **branch:** `feat/plan-04-complete`
 **pr:** not yet opened — the branch is committed and awaiting whole-branch review before push.
@@ -120,24 +120,36 @@ server.
 
 Re-run as a release gate, not treated as optional coverage.
 
-Automated: `PostgresSessionStoreClientTest."a new client refreshes a persisted
-session without a password grant"` — a fresh client, given only the encrypted
-row and a clock past the boundary, refreshes, and the rotated refresh token is
-read back out of the database. Runs in `sbt testFull`.
+The gate is carried by an automated test, not by the harness step below:
+`PostgresSessionStoreClientTest."a new client refreshes a persisted session
+without a password grant"` constructs a client from nothing but the encrypted
+row and a clock past the boundary — the same starting state a restarted
+process would have — refreshes, and reads the rotated refresh token back out
+of the database. Runs in `sbt testFull`.
 
-At the composition level, through the harness:
+The composition-level walk below **corroborates** that same behaviour end to
+end through a real browser and the full app graph; it is not independent proof
+on its own, because `AccountClientFactory.forStored` already builds a fresh
+`LuxmedClient`/`PostgresSessionStore` per request in production — there is no
+in-memory Luxmed session cache anywhere in the request path for a restart to
+invalidate. The same refresh would fire on any post-boundary request whether
+or not the graph were rebuilt; rebuilding it is what makes this step exercise
+the *whole* app (routes, services, repos) rather than just the store-and-client
+layer, not what makes the refresh-without-a-password-grant property true.
+
+Through the harness:
 
 1. After linking, `GET /status` reported `passwordGrants: 1`,
    `refreshGrants: 0`, `sessionPersisted: true`.
 2. `POST /restart?advanceSeconds=301` tore down the whole composition graph and
    rebuilt it on the same port with its Luxmed-facing clock moved 301 seconds
    past the mint time — one second past the 300-second proactive-refresh
-   boundary for the stub's 600-second tokens. Every service, repository,
-   client-factory, and in-memory session cache is new; the database keeps its
-   rows, so the new graph starts from exactly what a restarted process reads: an
-   encrypted persisted session and nothing else. (The app's own login sessions
-   keep the wall clock, so the browser stayed signed in — the two clocks answer
-   different questions.)
+   boundary for the stub's 600-second tokens. Every service, repository, and
+   client factory is new; the database keeps its rows, so the new graph starts
+   from exactly what a restarted process would read: an encrypted persisted
+   session and nothing else. (The app's own login sessions keep the wall clock,
+   so the browser stayed signed in — the two clocks answer different
+   questions.)
 3. One dictionary call from the browser then drove the refresh. Afterwards:
    `passwordGrants: 1` (**unchanged** — no password was spent),
    `refreshGrants: 1`, and `rotationPersisted: true`, meaning the refresh token
