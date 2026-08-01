@@ -174,14 +174,15 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       encrypted: String,
       purpose: EncryptionPurpose
   ): Secret =
-    val envelope = EncryptedEnvelope.parse(encrypted).toOption.get
-    crypto
-      .decrypt(
-        envelope,
-        EncryptionContext(UserId(row.ownerUserId), AccountId(row.id), purpose)
-      )
-      .toOption
-      .get
+    EncryptedEnvelope.parse(encrypted) match
+      case Left(error)     => fail(s"envelope parse failed: $error")
+      case Right(envelope) =>
+        crypto.decrypt(
+          envelope,
+          EncryptionContext(UserId(row.ownerUserId), AccountId(row.id), purpose)
+        ) match
+          case Left(error)      => fail(s"decrypt failed: $error")
+          case Right(plaintext) => plaintext
 
   private def insertMonitor(ownerId: UserId, accountId: Long): Long =
     val repo = MonitorRepo(xa)
