@@ -210,13 +210,31 @@ class Update(api: ApiClient):
           LoadState.Loaded(existing.filterNot(_.id == accountId))
         case other => other
       // Deleting an account cascades to its monitors server-side (spec §5.3),
-      // which the confirmation warned about — so the list must not go on
-      // showing rows that no longer exist.
+      // which the confirmation warned about. The list must therefore stop
+      // showing rows that no longer exist — and so must everything else that
+      // names one of them. Read from the monitors *before* they are filtered
+      // out, since that is the only place a monitor's owning account is known.
+      val cascaded = state.monitors match
+        case LoadState.Loaded(existing) =>
+          existing.filter(_.accountId == accountId).map(_.id).toSet
+        case _ => Set.empty
       Transition(
         state.copy(
           accounts = updated,
           deleteConfirmation = None,
-          monitors = mapMonitors(state)(_.filterNot(_.accountId == accountId))
+          monitors = mapMonitors(state)(_.filterNot(_.accountId == accountId)),
+          // An open form for this account would look unanswered — its radio is
+          // simply gone from the choices — yet `accountId` is still set, so it
+          // would submit and be told `NotFound`. An edit is worse: it would go
+          // on editing a monitor that no longer exists.
+          monitorForm =
+            state.monitorForm.filterNot(_.accountId.contains(accountId)),
+          // A pause in flight, or an open delete confirmation, for a monitor
+          // that went with the account.
+          monitorAction =
+            state.monitorAction.filterNot(a => cascaded.contains(a.monitorId)),
+          monitorDeleteConfirmation = state.monitorDeleteConfirmation
+            .filterNot(c => cascaded.contains(c.monitorId))
         ),
         Nil
       )

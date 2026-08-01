@@ -283,6 +283,35 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(s.login.username, "")
     assertEquals(s.login.password, "")
 
+  test("logging out leaves nothing of the previous user behind"):
+    // A shared browser is the whole point of this test: everything one user
+    // loaded or half-typed has to be gone, not just the three fields the login
+    // screen happens to read.
+    val busy = List(
+      Msg.AccountsLoaded(List(account1, account2)),
+      Msg.MonitorsLoaded(List(monitor1, monitor2)),
+      Msg.LinkLabelChanged("Main"),
+      Msg.LinkUsernameChanged("user1"),
+      Msg.LinkPasswordChanged("luxmed-secret"),
+      Msg.DeleteAccountRequested(account2.id),
+      Msg.MonitorCreateStarted,
+      Msg.MonitorNameChanged("Knee"),
+      Msg.MonitorPauseRequested(monitor1.id),
+      Msg.MonitorDeleteRequested(monitor2.id)
+    ).foldLeft(update(AppState.initial, Msg.SessionRestored(alice)).state):
+      (s, msg) => update(s, msg).state
+    assert(busy.monitorForm.isDefined, "the fixture must actually be dirty")
+    assert(busy.monitorAction.isDefined)
+    assert(busy.monitorDeleteConfirmation.isDefined)
+
+    val s = update(busy, Msg.LoggedOut).state
+
+    assertEquals(
+      s,
+      AppState.initial.copy(booting = false),
+      "every field must be back to its initial value, the new ones included"
+    )
+
   test("navigating to accounts starts loading and emits one effect"):
     val t = update(AppState.initial, Msg.AccountsRequested)
     assertEquals(t.state.accounts, LoadState.Loading)
@@ -477,6 +506,85 @@ class UpdateTest extends munit.FunSuite:
       List(monitor2.id),
       "the cascade is server-side, so the list must not keep showing the monitor"
     )
+
+  test("deleting an account closes a form that was creating a monitor for it"):
+    val creating = List(
+      Msg.MonitorCreateStarted,
+      Msg.MonitorNameChanged("Knee"),
+      Msg.MonitorAccountSelected(account1.id)
+    ).foldLeft(dashboardState)((s, msg) => update(s, msg).state)
+
+    val t = update(creating, Msg.AccountDeleted(account1.id))
+
+    assertEquals(
+      t.state.monitorForm,
+      None,
+      "a form for a deleted account looks unanswered but would still submit"
+    )
+    assertEquals(t.effects, Nil)
+
+  test("deleting an account closes an edit of one of its monitors"):
+    val editing =
+      update(dashboardState, Msg.MonitorEditStarted(monitor1)).state
+    assertEquals(form(editing).accountId, Some(account1.id))
+
+    val s = update(editing, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(
+      s.monitorForm,
+      None,
+      "the monitor being edited was cascade-deleted with its account"
+    )
+
+  test("deleting an account leaves a form for another account alone"):
+    val creating = List(
+      Msg.MonitorCreateStarted,
+      Msg.MonitorNameChanged("Skin"),
+      Msg.MonitorAccountSelected(account2.id)
+    ).foldLeft(dashboardState)((s, msg) => update(s, msg).state)
+
+    val s = update(creating, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(s.monitorForm.flatMap(_.accountId), Some(account2.id))
+    assertEquals(s.monitorForm.map(_.name), Some("Skin"))
+
+  test("deleting an account clears a pause in flight for its monitor"):
+    val pausing =
+      update(dashboardState, Msg.MonitorPauseRequested(monitor1.id)).state
+    assert(pausing.monitorAction.isDefined)
+
+    val s = update(pausing, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(
+      s.monitorAction,
+      None,
+      "the monitor it names went with the account"
+    )
+
+  test("deleting an account clears a delete confirmation for its monitor"):
+    val confirming =
+      update(dashboardState, Msg.MonitorDeleteRequested(monitor1.id)).state
+
+    val s = update(confirming, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(s.monitorDeleteConfirmation, None)
+
+  test("deleting an account keeps state pointing at another account's monitor"):
+    val loaded =
+      update(dashboardState, Msg.MonitorsLoaded(List(monitor1, monitor2))).state
+    val confirming =
+      update(loaded, Msg.MonitorDeleteRequested(monitor2.id)).state
+    val pausing =
+      update(confirming, Msg.MonitorPauseRequested(monitor2.id)).state
+
+    val s = update(pausing, Msg.AccountDeleted(account1.id)).state
+
+    assertEquals(
+      s.monitorDeleteConfirmation.map(_.monitorId),
+      Some(monitor2.id),
+      "monitor2 belongs to account2 and survives the cascade"
+    )
+    assertEquals(s.monitorAction.map(_.monitorId), Some(monitor2.id))
 
   // --- Monitors: list ---
 
@@ -814,7 +922,7 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(form(t.state).submitting, true)
     assertEquals(form(t.state).errors, Nil)
 
-  test("a double submit does not fire a second request"):
+  test("a double submit does not fire a second monitor save request"):
     val busy = update(ready, Msg.MonitorSubmitted).state
     assertEquals(update(busy, Msg.MonitorSubmitted).effects, Nil)
 
