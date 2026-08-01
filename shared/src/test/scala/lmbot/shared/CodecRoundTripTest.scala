@@ -27,6 +27,13 @@ class CodecRoundTripTest extends munit.FunSuite:
       val original =
         UserView(UserId(7L), "mom", "Mom", role, telegramLinked = true)
       assertEquals(readFromString[UserView](writeToString(original)), original)
+      // Round-tripping alone would not catch UserId drifting onto a
+      // discriminated-object encoding while the Tapir Schema below still
+      // advertises a bare number — the same gap Role's own two tests guard.
+      assert(
+        writeToString(original).contains("\"id\":7"),
+        s"expected UserId(7L) to serialise as a bare JSON number: ${writeToString(original)}"
+      )
 
   test("ErrorBody round-trips"):
     val original = ErrorBody("conflict", "username taken")
