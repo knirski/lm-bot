@@ -947,9 +947,11 @@ git commit -m "feat: add Luxmed account management UI"
 > **Superseded by human direction (2026-08-01):** this task originally
 > specified a 6-step guided wizard. The human who owns this project asked
 > instead for a single-page form (every field visible at once, one submit
-> button), which is what shipped and is described below. See
-> `.superpowers/sdd/2026-07-30-lm-bot-04-accounts-monitors/task-10-report.md`
-> for the implementation and review record.
+> button), which is what shipped and is described below. The per-task SDD
+> report (implementation and review record) lives in the gitignored
+> `.superpowers/sdd/` workspace and is not committed; see
+> `docs/superpowers/reports/2026-07-30-plan-04-complete.md` for the
+> committed record of what shipped.
 
 **Files:**
 
