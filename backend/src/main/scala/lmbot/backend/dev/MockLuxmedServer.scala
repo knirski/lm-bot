@@ -30,8 +30,10 @@ final class MockLuxmedServer private (host: String) extends AutoCloseable:
           exchange.getResponseHeaders.add(name, value)
         )
         val bytes = body.body.getBytes(StandardCharsets.UTF_8)
-        exchange.sendResponseHeaders(body.status, bytes.length)
-        exchange.getResponseBody.write(bytes)
+        if bytes.isEmpty then exchange.sendResponseHeaders(body.status, -1)
+        else
+          exchange.sendResponseHeaders(body.status, bytes.length)
+          exchange.getResponseBody.write(bytes)
       catch
         case _: Exception =>
           val bytes =
