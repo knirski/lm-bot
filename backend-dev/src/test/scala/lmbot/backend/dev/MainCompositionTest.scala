@@ -1,9 +1,8 @@
-package lmbot.backend
+package lmbot.backend.dev
 
 import java.util.UUID
 
 import lmbot.backend.config.Config
-import lmbot.backend.dev.MockLuxmedServer
 
 class MainCompositionTest extends munit.FunSuite:
 
@@ -18,7 +17,8 @@ class MainCompositionTest extends munit.FunSuite:
     val config = Config.fromEnv(minimal).toOption.get
     val mock = MockLuxmedServer.start()
     try
-      val selected = Main.luxmedConfig(config, Some(mock), UUID.randomUUID())
+      val selected =
+        DevMain.luxmedConfig(config, Some(mock), UUID.randomUUID())
       assertEquals(selected.oldApi, mock.oldApi)
       assertEquals(selected.newApi, mock.newApi)
     finally mock.close()
@@ -26,7 +26,7 @@ class MainCompositionTest extends munit.FunSuite:
   test("live mode selects the production Luxmed endpoints"):
     val config =
       Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "true")).toOption.get
-    val selected = Main.luxmedConfig(config, None, UUID.randomUUID())
+    val selected = DevMain.luxmedConfig(config, None, UUID.randomUUID())
     assert(
       selected.oldApi.toString.startsWith("https://portalpacjenta.luxmed.pl")
     )

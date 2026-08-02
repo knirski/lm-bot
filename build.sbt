@@ -218,6 +218,14 @@ lazy val backend = project
     }
   )
 
+lazy val backendDev = project
+  .in(file("backend-dev"))
+  .dependsOn(backend % "compile->compile;test->test")
+  .settings(commonSettings)
+  .settings(
+    name := "lm-bot-backend-dev"
+  )
+
 lazy val frontend = project
   .in(file("frontend"))
   .enablePlugins(ScalaJSPlugin)
@@ -252,7 +260,7 @@ lazy val frontend = project
 
 lazy val root = project
   .in(file("."))
-  .aggregate(sharedJVM, sharedJS, backend, frontend)
+  .aggregate(sharedJVM, sharedJS, backend, backendDev, frontend)
   .settings(
     name := "lm-bot",
     publish / skip := true,
