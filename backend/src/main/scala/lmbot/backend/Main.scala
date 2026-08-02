@@ -84,8 +84,14 @@ object Main:
         val xa = Database.transactor(ds)
 
         val mockLuxmed =
-          if config.liveLuxmedApi then None
-          else Some(MockLuxmedServer.start())
+          if config.liveLuxmedApi then
+            log.info("Using the live Luxmed API")
+            None
+          else
+            log.warn(
+              "LIVE_LUXMED_API is not true; using the local mock Luxmed API"
+            )
+            Some(MockLuxmedServer.start())
 
         val users = UserRepo(xa)
         val sessions = SessionRepo(xa)
