@@ -1,1 +1,1 @@
-{"doctors":[],"facilities":[{"id":1,"name":"Mock Clinic"}]}
+{"doctors":[{"academicTitle":"dr","facilityGroupIds":[101],"firstName":"Mock","isEnglishSpeaker":true,"genderId":1,"id":200,"lastName":"Doctor"}],"facilities":[{"id":100,"name":"Mock Clinic"}]}
