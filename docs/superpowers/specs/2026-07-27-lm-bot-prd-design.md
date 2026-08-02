@@ -455,9 +455,15 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   `false` starts the mock and seeds an encrypted sample account after the
   normal admin bootstrap; `true` uses the real Luxmed endpoints and does not
   seed fixture accounts. The mock is path-routed so browser dictionary calls
-  may arrive concurrently and in any order. This switch is intended for local
-  development; production deployments must explicitly set
-  `LIVE_LUXMED_API=true`, and mock mode must never run in production.
+  may arrive concurrently and in any order. Mock code and fixtures live in a
+  separate `backend-dev` JVM project and are not packaged in the production
+  backend artifact. The production entrypoint accepts only live mode and fails
+  fast if `LIVE_LUXMED_API` is not `true`; the `backend-dev` entrypoint owns the
+  local default and may select either boundary. Both entrypoints delegate to
+  the same shared backend application composition so route and shutdown wiring
+  cannot drift. This switch is intended for local development; production
+  deployments must explicitly set `LIVE_LUXMED_API=true`, and mock mode must
+  never run in production.
 - Before Plan 3 is declared complete, run one explicit, guided
   mock-conformance exploration against an owned Luxmed account. It previews
   its safety budget and asks for confirmation before login and each later
@@ -485,8 +491,18 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 ## 9. Observability & ops
 
 - Structured logging (slf4j/logback), `/health` endpoint, monitor status visible in the UI. No metrics stack in v1.
-- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, `LIVE_LUXMED_API` (default `false` for local development; production must explicitly set it to `true`), and initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty). Device identities are **not** configuration — they are per-account data, generated once and stored (§5.3).
+- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, `LIVE_LUXMED_API` (default `false` for the `backend-dev` local launcher; the production entrypoint requires `true`), and initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty). Device identities are **not** configuration — they are per-account data, generated once and stored (§5.3).
 - docker-compose: backend container (API + static frontend) + Postgres.
+
+The build keeps the production and local-development launchers separate. The
+`backend` project contains the production entrypoint, shared application
+composition, transport, persistence, routes, and static asset serving. The
+`backend-dev` project depends on `backend` and contains only the loopback mock
+server, mock fixtures, encrypted account seeder, and the `startDev` entrypoint.
+The shared composition accepts a Luxmed boundary configuration and an optional
+account-seeding hook; production passes the live boundary and no-op hook, while
+development passes the selected boundary and the mock seeder. This is the
+single wiring path for migrations, admin bootstrap, routes, and shutdown.
 
 ## 10. Risks
 
