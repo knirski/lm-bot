@@ -7,6 +7,7 @@ import java.util.concurrent.Executors
 import scala.io.{Codec, Source}
 
 import com.sun.net.httpserver.{HttpExchange, HttpServer}
+import org.slf4j.LoggerFactory
 import sttp.model.Uri
 
 /** A deterministic loopback stand-in for the Luxmed HTTP boundary.
@@ -17,6 +18,7 @@ import sttp.model.Uri
   */
 final class MockLuxmedServer private (host: String) extends AutoCloseable:
 
+  private val log = LoggerFactory.getLogger(getClass)
   private val server = HttpServer.create(InetSocketAddress(host, 0), 0)
   private val executor = Executors.newVirtualThreadPerTaskExecutor()
   server.setExecutor(executor)
@@ -35,7 +37,8 @@ final class MockLuxmedServer private (host: String) extends AutoCloseable:
           exchange.sendResponseHeaders(body.status, bytes.length)
           exchange.getResponseBody.write(bytes)
       catch
-        case _: Exception =>
+        case error: Exception =>
+          log.warn("Mock Luxmed server failed to handle request", error)
           val bytes =
             "mock Luxmed server failure".getBytes(StandardCharsets.UTF_8)
           exchange.sendResponseHeaders(500, bytes.length)
