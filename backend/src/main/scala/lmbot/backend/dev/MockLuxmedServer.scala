@@ -6,7 +6,7 @@ import java.util.concurrent.Executors
 
 import scala.io.{Codec, Source}
 
-import com.sun.net.httpserver.HttpServer
+import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import sttp.model.Uri
 
 /** A deterministic loopback stand-in for the Luxmed HTTP boundary.
@@ -61,7 +61,7 @@ final class MockLuxmedServer private (host: String) extends AutoCloseable:
       body: String = ""
   )
 
-  private def readBody(exchange: com.sun.net.httpserver.HttpExchange): String =
+  private def readBody(exchange: HttpExchange): String =
     val source =
       Source.fromInputStream(exchange.getRequestBody)(using Codec.UTF8)
     try source.mkString
