@@ -156,43 +156,6 @@ lazy val backend = project
     javacOptions ++= Seq("-source", "25", "-target", "25"),
     Compile / mainClass := Some("lmbot.backend.Main"),
 
-    // --- Local development ---
-    // Scope to Compile so tests are unaffected (no unnecessary forking, no env
-    // pollution).
-    Compile / fork := true,
-    Compile / envVars := Map(
-      "DATABASE_URL" -> sys.env.getOrElse(
-        "DATABASE_URL",
-        s"jdbc:postgresql://localhost:$pgPort/lmbot"
-      ),
-      "DATABASE_USER" -> sys.env.getOrElse("DATABASE_USER", "lmbot"),
-      "DATABASE_PASSWORD" -> sys.env.getOrElse("DATABASE_PASSWORD", "lmbot"),
-      "EMBEDDED_PG" -> "true",
-      "COOKIE_SECURE" -> sys.env.getOrElse("COOKIE_SECURE", "false"),
-      "ADMIN_USERNAME" -> sys.env.getOrElse("ADMIN_USERNAME", "admin"),
-      "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
-      "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
-      "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
-      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
-      "LIVE_LUXMED_API" -> sys.env.getOrElse("LIVE_LUXMED_API", "false"),
-      // This fallback is scoped to the local startDev JVM only. Production
-      // deployments must inject LMBOT_MASTER_KEY explicitly.
-      "LMBOT_MASTER_KEY" -> sys.env.getOrElse(
-        "LMBOT_MASTER_KEY",
-        "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
-      )
-    ),
-
-    // Watch frontend and shared sources too, so `~backend/run` restarts on
-    // any source change in the project — frontend, backend, or shared.
-    // (sharedJS and sharedJVM compile the same directory; we only need one.)
-    watchSources ++= Def
-      .uncached(Def.task {
-        (frontend / Compile / unmanagedSources).value ++
-          (sharedJVM / Compile / unmanagedSources).value
-      })
-      .value,
-
     // Package the linked frontend as classpath resources under `web/`, which is
     // where StaticRoutes looks (served at /assets). Without this the backend
     // serves index.html but 404s /assets/main.js, so the page loads blank —
@@ -223,7 +186,46 @@ lazy val backendDev = project
   .dependsOn(backend % "compile->compile;test->test")
   .settings(commonSettings)
   .settings(
-    name := "lm-bot-backend-dev"
+    name := "lm-bot-backend-dev",
+    Compile / mainClass := Some("lmbot.backend.dev.DevMain"),
+
+    // --- Local development ---
+    // Scope to Compile so tests are unaffected (no unnecessary forking, no env
+    // pollution).
+    Compile / fork := true,
+    Compile / envVars := Map(
+      "DATABASE_URL" -> sys.env.getOrElse(
+        "DATABASE_URL",
+        s"jdbc:postgresql://localhost:$pgPort/lmbot"
+      ),
+      "DATABASE_USER" -> sys.env.getOrElse("DATABASE_USER", "lmbot"),
+      "DATABASE_PASSWORD" -> sys.env.getOrElse("DATABASE_PASSWORD", "lmbot"),
+      "EMBEDDED_PG" -> "true",
+      "COOKIE_SECURE" -> sys.env.getOrElse("COOKIE_SECURE", "false"),
+      "ADMIN_USERNAME" -> sys.env.getOrElse("ADMIN_USERNAME", "admin"),
+      "ADMIN_PASSWORD" -> sys.env.getOrElse("ADMIN_PASSWORD", "admin"),
+      "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
+      "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
+      "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
+      "LIVE_LUXMED_API" -> sys.env.getOrElse("LIVE_LUXMED_API", "false"),
+      // This fallback is scoped to the local startDev JVM only. Production
+      // deployments must inject LMBOT_MASTER_KEY explicitly.
+      "LMBOT_MASTER_KEY" -> sys.env.getOrElse(
+        "LMBOT_MASTER_KEY",
+        "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
+      )
+    ),
+
+    // Watch backend, frontend, and shared sources too, so `~backendDev/run`
+    // restarts on any source change in the project. (sharedJS and sharedJVM
+    // compile the same directory; we only need one.)
+    watchSources ++= Def
+      .uncached(Def.task {
+        (backend / Compile / unmanagedSources).value ++
+          (frontend / Compile / unmanagedSources).value ++
+          (sharedJVM / Compile / unmanagedSources).value
+      })
+      .value
   )
 
 lazy val frontend = project
@@ -279,6 +281,6 @@ lazy val root = project
       log.info("")
       // The resource generator triggers fastLinkJS on first compile, so we
       // don't run it explicitly here.
-      "~backend/run" :: state
+      "~backendDev/run" :: state
     }
   )
