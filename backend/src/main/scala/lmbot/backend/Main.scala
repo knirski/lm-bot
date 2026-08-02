@@ -1,39 +1,15 @@
 package lmbot.backend
 
-import java.time.{Instant, OffsetDateTime}
+import java.time.Instant
 import java.util.UUID
 
 import scala.jdk.CollectionConverters.*
 
-import lmbot.backend.account.{
-  AccountClientFactory,
-  AccountService,
-  DictionaryService
-}
-import lmbot.backend.auth.{AdminBootstrap, AuthService}
 import lmbot.backend.config.Config
 import lmbot.backend.crypto.AesGcm
-import lmbot.backend.db.{
-  AccountRepo,
-  Database,
-  MonitorRepo,
-  SessionRepo,
-  UserRepo
-}
+import lmbot.backend.db.AccountRepo
 import lmbot.backend.dev.{MockAccountSeed, MockLuxmedServer}
-import lmbot.backend.http.{
-  AccountRoutes,
-  AuthRoutes,
-  DictionaryRoutes,
-  HealthRoutes,
-  MonitorRoutes,
-  Server,
-  StaticRoutes
-}
 import lmbot.backend.luxmed.LuxmedConfig
-import lmbot.backend.monitor.MonitorService
-import lmbot.backend.support.EmbeddedDb
-import lmbot.backend.support.EmbeddedPg
 import lmbot.shared.domain.UserId
 import org.slf4j.LoggerFactory
 
@@ -60,6 +36,19 @@ object Main:
       case None =>
         LuxmedConfig.production(config.luxmedAppVersion, deviceUuid)
 
+  private def accountSeeder(
+      mockLuxmed: Option[MockLuxmedServer]
+  ): AccountSeeder =
+    mockLuxmed.fold(AccountSeeder.noop)(_ =>
+      new AccountSeeder:
+        override def ensure(
+            owner: UserId,
+            accounts: AccountRepo,
+            crypto: AesGcm
+        ): Unit =
+          MockAccountSeed.ensure(owner, accounts, crypto, () => Instant.now())
+    )
+
   def main(args: Array[String]): Unit =
     Config.fromEnv(System.getenv().asScala.toMap) match
       case Left(errors) =>
@@ -67,22 +56,6 @@ object Main:
         sys.exit(1)
 
       case Right(config) =>
-        // Start embedded database in dev mode (EMBEDDED_PG env var set by
-        // build.sbt's Compile / envVars). The shutdown hook stops it when the
-        // JVM exits.
-        if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
-          log.info("Starting embedded database on port 15432")
-          val pg: EmbeddedDb = EmbeddedPg.startForDev(15432)
-          Runtime.getRuntime.addShutdownHook(Thread(() => pg.close()))
-
-        val ds = Database.dataSource(
-          config.dbUrl,
-          config.dbUser,
-          config.dbPassword.value
-        )
-        Database.migrate(ds)
-        val xa = Database.transactor(ds)
-
         val mockLuxmed =
           if config.liveLuxmedApi then
             log.info("Using the live Luxmed API")
@@ -93,76 +66,21 @@ object Main:
             )
             Some(MockLuxmedServer.start())
 
-        val users = UserRepo(xa)
-        val sessions = SessionRepo(xa)
-
-        AdminBootstrap(users).run(
-          config.adminUsername,
-          config.adminPassword.map(_.value)
-        ) match
-          case AdminBootstrap.Outcome.Created(username) =>
-            log.info(s"Created initial admin account '$username'")
-          case AdminBootstrap.Outcome.SkippedUsersExist =>
-            log.info("Users already exist; skipping admin bootstrap")
-          case AdminBootstrap.Outcome.MissingCredentials =>
-            log.warn(
-              "No users exist and ADMIN_USERNAME/ADMIN_PASSWORD are not both set — " +
-                "nobody can log in. Set them and restart."
+        val application =
+          try
+            BackendApplication.start(
+              config,
+              luxmedConfig(config, mockLuxmed, UUID.randomUUID()),
+              accountSeeder(mockLuxmed)
             )
-
-        val auth = AuthService(
-          users,
-          sessions,
-          config.sessionTtl,
-          () => OffsetDateTime.now()
-        )
-        val routes = AuthRoutes(auth, config.cookieSecure, config.sessionTtl)
-
-        val crypto = AesGcm(config.masterKey)
-        val accountRepo = AccountRepo(xa)
-        val luxmedBaseConfig =
-          luxmedConfig(config, mockLuxmed, UUID.randomUUID())
-        if mockLuxmed.isDefined then
-          config.adminUsername
-            .flatMap(users.findByUsername)
-            .foreach: owner =>
-              MockAccountSeed.ensure(
-                UserId(owner.id),
-                accountRepo,
-                crypto,
-                () => Instant.now()
-              )
-        val accountClients = AccountClientFactory.production(
-          xa,
-          accountRepo,
-          luxmedBaseConfig,
-          crypto
-        )
-        val accountService =
-          AccountService(accountRepo, accountClients, crypto)
-        val accountRoutes = AccountRoutes(auth, accountService)
-        val dictionaryService = DictionaryService(accountClients)
-        val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
-        val monitorRepo = MonitorRepo(xa)
-        val monitorService = MonitorService(monitorRepo, accountRepo)
-        val monitorRoutes = MonitorRoutes(auth, monitorService)
-
-        val server = Server.start(
-          config.httpHost,
-          config.httpPort.value,
-          HealthRoutes.endpoints ++ routes.endpoints ++
-            accountRoutes.endpoints ++ dictionaryRoutes.endpoints ++
-            monitorRoutes.endpoints ++ StaticRoutes.endpoints
-        )
-
-        log.info(
-          s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}"
-        )
+          catch
+            case t: Throwable =>
+              mockLuxmed.foreach(_.close())
+              throw t
 
         Runtime.getRuntime.addShutdownHook(
           Thread: () =>
             log.info("Shutting down")
-            server.stop(3)
+            application.close()
             mockLuxmed.foreach(_.close())
-            ds.close()
         )
