@@ -135,3 +135,23 @@ class MockAccountSeedTest extends PostgresSuite:
     MockAccountSeed.ensure(owner, AccountRepo(xa), crypto, clock)
 
     assertEquals(calls.get(), 1)
+
+  test("AccountSeeder adapter seeds through the development clock"):
+    val owner = UserId(
+      UserRepo(xa)
+        .insert(
+          "adapter-owner",
+          "Adapter owner",
+          Passwords.hash("password"),
+          Role.User
+        )
+        .id
+    )
+    val accounts = AccountRepo(xa)
+
+    MockAccountSeed.ensure(owner, accounts, crypto)
+
+    assertEquals(
+      accounts.listOwned(owner).count(_.label == MockAccountSeed.label),
+      1
+    )

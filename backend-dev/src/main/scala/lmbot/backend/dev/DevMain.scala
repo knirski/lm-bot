@@ -30,6 +30,41 @@ object DevMain:
       case None =>
         LuxmedConfig.production(config.luxmedAppVersion, deviceUuid)
 
+  private[dev] def accountSeeder(
+      mock: Option[MockLuxmedServer]
+  ): AccountSeeder =
+    mock.fold(AccountSeeder.noop)(_ => MockAccountSeed)
+
+  private[dev] def closeAfterFailure(
+      application: Option[AutoCloseable],
+      mock: Option[AutoCloseable],
+      primary: Throwable
+  ): Unit =
+    (application.toList ++ mock.toList).foreach: resource =>
+      try resource.close()
+      catch
+        case cleanup: Throwable =>
+          if cleanup ne primary then primary.addSuppressed(cleanup)
+
+  private[dev] def installShutdownHook(
+      application: AutoCloseable,
+      mock: Option[AutoCloseable],
+      register: Thread => Unit
+  ): Unit =
+    val hook = Thread: () =>
+      try application.close()
+      catch
+        case error: Throwable =>
+          closeAfterFailure(None, mock, error)
+          throw error
+      mock.foreach(_.close())
+
+    try register(hook)
+    catch
+      case error: Throwable =>
+        closeAfterFailure(Some(application), mock, error)
+        throw error
+
   def main(args: Array[String]): Unit =
     Config.fromEnv(System.getenv().asScala.toMap) match
       case Left(errors) =>
@@ -45,24 +80,22 @@ object DevMain:
           log.info("Starting development backend with mock Luxmed API")
         else log.info("Starting development backend with live Luxmed API")
 
-        try
-          val selectedLuxmedConfig =
-            luxmedConfig(config, mock, UUID.randomUUID())
-          val accountSeeder =
-            mock.fold(AccountSeeder.noop)(_ => MockAccountSeed)
-          val application = BackendApplication.start(
-            config,
-            selectedLuxmedConfig,
-            accountSeeder
-          )
+        val application =
+          try
+            val selectedLuxmedConfig =
+              luxmedConfig(config, mock, UUID.randomUUID())
+            BackendApplication.start(
+              config,
+              selectedLuxmedConfig,
+              accountSeeder(mock)
+            )
+          catch
+            case error: Throwable =>
+              closeAfterFailure(None, mock, error)
+              throw error
 
-          Runtime.getRuntime.addShutdownHook(
-            Thread: () =>
-              log.info("Shutting down development backend")
-              try application.close()
-              finally mock.foreach(_.close())
-          )
-        catch
-          case error: Throwable =>
-            mock.foreach(_.close())
-            throw error
+        installShutdownHook(
+          application,
+          mock,
+          thread => Runtime.getRuntime.addShutdownHook(thread)
+        )
