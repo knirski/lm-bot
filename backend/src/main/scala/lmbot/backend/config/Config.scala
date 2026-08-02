@@ -109,7 +109,7 @@ object Config:
     val portRaw = readStructural[Int]("HTTP_PORT").getOrElse(8080)
     val secure = readStructural[Boolean]("COOKIE_SECURE").getOrElse(true)
     val ttlDays = readStructural[Int]("SESSION_TTL_DAYS").getOrElse(7)
-    val liveLuxmedApiRaw = env.get("LIVE_LUXMED_API").filter(_.nonEmpty)
+    val liveLuxmedApiRaw = env.get("LIVE_LUXMED_API")
     val parsedLiveLuxmedApi: Either[String, Boolean] =
       liveLuxmedApiRaw match
         case None          => Right(false)

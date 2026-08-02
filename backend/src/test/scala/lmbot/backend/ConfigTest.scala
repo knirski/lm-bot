@@ -85,6 +85,10 @@ class ConfigTest extends munit.FunSuite:
     val result = Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "yes"))
     assert(result.left.exists(_.exists(_.contains("LIVE_LUXMED_API"))))
 
+  test("an empty live Luxmed API flag is rejected"):
+    val result = Config.fromEnv(minimal.updated("LIVE_LUXMED_API", ""))
+    assert(result.left.exists(_.exists(_.contains("LIVE_LUXMED_API"))))
+
   test("Luxmed app version is configurable without changing the client"):
     val Right(config) =
       Config.fromEnv(
