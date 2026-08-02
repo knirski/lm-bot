@@ -2,6 +2,7 @@ package lmbot.backend.dev
 
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.{Executors, TimeUnit}
 
 import lmbot.backend.auth.Passwords
 import lmbot.backend.config.MasterKey
@@ -46,3 +47,29 @@ class MockAccountSeedTest extends PostgresSuite:
     assert(first.head.encryptedPassword.startsWith("v1."))
     assert(first.head.encryptedDeviceUuid.startsWith("v1."))
     assert(first.head.encryptedSession.exists(_.startsWith("v1.")))
+
+  test("concurrent seeding creates one mock account"):
+    val owner = UserId(
+      UserRepo(xa)
+        .insert(
+          "concurrent-owner",
+          "Concurrent owner",
+          Passwords.hash("password"),
+          Role.User
+        )
+        .id
+    )
+    val accounts = AccountRepo(xa)
+    val executor = Executors.newFixedThreadPool(8)
+    try
+      val tasks = List.fill(8):
+        executor.submit(new Runnable:
+          override def run(): Unit =
+            MockAccountSeed.ensure(owner, accounts, crypto, now))
+      tasks.foreach(_.get(10, TimeUnit.SECONDS))
+    finally executor.shutdownNow()
+
+    assertEquals(
+      accounts.listOwned(owner).count(_.label == MockAccountSeed.label),
+      1
+    )

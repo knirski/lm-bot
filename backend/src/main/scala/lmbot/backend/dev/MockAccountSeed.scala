@@ -25,20 +25,21 @@ object MockAccountSeed:
       crypto: AesGcm,
       now: () => Instant
   ): Unit =
-    if accounts.findOwnedByLabel(owner, label).isEmpty then
-      val accountId = accounts.reserveId()
-      val timestamp = now().atOffset(ZoneOffset.UTC)
-      val context = (purpose: EncryptionPurpose) =>
-        EncryptionContext(owner, accountId, purpose)
-      val session = LuxmedSession(
-        accessToken = Secret("mock-access-token"),
-        tokenType = TokenType.Bearer,
-        refreshToken = Secret("mock-refresh-token"),
-        expiresAt = now().plusSeconds(600),
-        jwtToken = Secret("mock-jwt"),
-        cookies = CookieJar("ASP.NET_SessionId" -> Secret("mock-session"))
-      )
-      accounts.insert(
+    accounts.insertIfAbsent(
+      owner,
+      label,
+      accountId =>
+        val timestamp = now().atOffset(ZoneOffset.UTC)
+        val context = (purpose: EncryptionPurpose) =>
+          EncryptionContext(owner, accountId, purpose)
+        val session = LuxmedSession(
+          accessToken = Secret("mock-access-token"),
+          tokenType = TokenType.Bearer,
+          refreshToken = Secret("mock-refresh-token"),
+          expiresAt = now().plusSeconds(600),
+          jwtToken = Secret("mock-jwt"),
+          cookies = CookieJar("ASP.NET_SessionId" -> Secret("mock-session"))
+        )
         LuxmedAccountRow(
           id = accountId.value,
           ownerUserId = owner.value,
@@ -66,4 +67,5 @@ object MockAccountSeed:
           createdAt = timestamp,
           updatedAt = timestamp
         )
-      )
+    )
+    ()
