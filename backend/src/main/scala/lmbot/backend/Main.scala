@@ -122,7 +122,7 @@ object Main:
         val accountRepo = AccountRepo(xa)
         val luxmedBaseConfig =
           luxmedConfig(config, mockLuxmed, UUID.randomUUID())
-        if !config.liveLuxmedApi then
+        if mockLuxmed.isDefined then
           config.adminUsername
             .flatMap(users.findByUsername)
             .foreach: owner =>
