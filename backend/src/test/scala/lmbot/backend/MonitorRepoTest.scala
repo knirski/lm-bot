@@ -97,12 +97,18 @@ class MonitorRepoTest extends PostgresSuite:
     val ownerId = anOwner()
     val accountId = anAccount(ownerId)
     val monitorId = repo.reserveId()
-    val row = aMonitor(accountId, monitorId)
+    val row = aMonitor(accountId, monitorId).copy(
+      facilityIds = List(10L, 20L, 30L, 40L),
+      facilityNames = List("Facility, A", "Facility \"B\"", "Facility\\C", "")
+    )
 
     repo.insert(row)
     val found = repo.findOwned(MonitorId(monitorId), ownerId).get
-    assertEquals(found.facilityIds, List(10L, 20L))
-    assertEquals(found.facilityNames, List("Facility A", "Facility B"))
+    assertEquals(found.facilityIds, List(10L, 20L, 30L, 40L))
+    assertEquals(
+      found.facilityNames,
+      List("Facility, A", "Facility \"B\"", "Facility\\C", "")
+    )
     assertEquals(found.doctorIds, List(30L, 40L))
     assertEquals(found.doctorNames, List("Dr Smith", "Dr Jones"))
 

@@ -144,14 +144,6 @@ class PostgresSessionStoreTest extends PostgresSuite:
     assertEquals(store(ownerId, accountId).load(), Right(Some(second)))
 
   test("concurrent replacements allow exactly one CAS winner"):
-    // Memgres does not appear to serialize concurrent `UPDATE ... WHERE`
-    // statements against the same row atomically: this test was observed to
-    // fail roughly 1 run in 4 under Memgres, but passed 3/3 clean runs
-    // against real PostgreSQL (`EMBEDDED_DB=zonky`). The CAS guarantee this
-    // test pins is a property of PostgreSQL row-level locking, not of
-    // PostgresSessionStore, so it is only meaningful — and only run — against
-    // a real PostgreSQL backend.
-    assumeRealPostgres()
     val ownerId = owner()
     val accountId = account(ownerId)
     val first = session("refresh-1")

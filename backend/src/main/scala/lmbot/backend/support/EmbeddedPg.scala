@@ -4,33 +4,13 @@ import java.sql.{Connection, DriverManager, SQLException}
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 
-/** Factory for embedded PostgreSQL-compatible databases.
+/** Factory for the embedded PostgreSQL database.
   *
-  * The default backend is [[MemgresBackend]] — an in-memory engine with no
-  * native binary, no Docker, millisecond startup. Set `EMBEDDED_DB=zonky` to
-  * fall back to the real PostgreSQL binary (zonky embedded-postgres).
-  *
-  * Both backends are bootstrapped identically when `startForDev` is used: a
+  * The database is bootstrapped identically for development and tests: a
   * `lmbot` role and database are created so the application can connect with
   * its default credentials.
   */
 object EmbeddedPg:
-
-  private enum Backend:
-    case Memgres, Zonky
-
-  private def resolveBackend: Backend =
-    sys.env.get("EMBEDDED_DB") match
-      case Some("zonky") => Backend.Zonky
-      case _             => Backend.Memgres
-
-  /** Whether the currently selected backend (`EMBEDDED_DB=zonky`) is the real
-    * PostgreSQL binary rather than the in-memory Memgres approximation. Tests
-    * that depend on a genuine PostgreSQL guarantee Memgres does not reliably
-    * provide — e.g. atomic row-level locking under concurrent writers — should
-    * skip themselves unless this is true.
-    */
-  def usingRealPostgres: Boolean = resolveBackend == Backend.Zonky
 
   /** Start the embedded database (dev mode). Bootstraps the `lmbot` role and
     * `lmbot` database so callers can connect with the application defaults
@@ -45,19 +25,10 @@ object EmbeddedPg:
     * has only the default superuser and default database.
     */
   def start(port: Int): EmbeddedDb =
-    resolveBackend match
-      case Backend.Memgres => MemgresBackend.start(port)
-      case Backend.Zonky   => ZonkyBackend.start(port)
+    ZonkyBackend.start(port)
 
-  /** Start the backend used by database tests.
-    *
-    * Memgres is the default for fast tests. Set `EMBEDDED_DB=zonky` to run
-    * compatibility checks against real PostgreSQL.
-    */
   def startForTest(port: Int): EmbeddedDb =
-    sys.env.get("EMBEDDED_DB") match
-      case Some("zonky") => ZonkyBackend.start(port)
-      case _             => MemgresBackend.start(port)
+    start(port)
 
   // ---------------------------------------------------------------------------
   // Bootstrap – idempotent role/database creation
