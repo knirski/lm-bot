@@ -174,6 +174,7 @@ lazy val backend = project
       "HTTP_PORT" -> sys.env.getOrElse("HTTP_PORT", "8080"),
       "HTTP_HOST" -> sys.env.getOrElse("HTTP_HOST", "127.0.0.1"),
       "SESSION_TTL_DAYS" -> sys.env.getOrElse("SESSION_TTL_DAYS", "7"),
+      "LIVE_LUXMED_API" -> sys.env.getOrElse("LIVE_LUXMED_API", "false"),
       // This fallback is scoped to the local startDev JVM only. Production
       // deployments must inject LMBOT_MASTER_KEY explicitly.
       "LMBOT_MASTER_KEY" -> sys.env.getOrElse(

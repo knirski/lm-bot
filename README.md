@@ -73,6 +73,13 @@ Override any variable from the shell — the forked JVM inherits it:
 ADMIN_PASSWORD=hunter2 sbt startDev
 ```
 
+`startDev` uses deterministic mock Luxmed data by default. Set
+`LIVE_LUXMED_API=true` to use the real Luxmed API instead:
+
+```bash
+LIVE_LUXMED_API=true sbt startDev
+```
+
 ### Full hot reload (two terminals)
 
 If you want the frontend to re-link independently without a backend restart, run
@@ -113,6 +120,7 @@ marked **required**, and may rely on the plain "Default" column for the rest.
 | `HTTP_PORT` | no | `8080` | *(same)* | bind port |
 | `COOKIE_SECURE` | no | `true` | `false` | set `false` only for plain-HTTP local dev |
 | `SESSION_TTL_DAYS` | no | `7` | *(same)* | session lifetime in days; must be at least `1` |
+| `LIVE_LUXMED_API` | no | `false` | `false` | use the real Luxmed API instead of the local mock server |
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
 | `LUXMED_APP_VERSION` | no | `4.44.0` | *(same)* | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |

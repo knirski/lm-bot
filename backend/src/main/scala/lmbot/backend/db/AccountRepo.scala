@@ -35,6 +35,17 @@ class AccountRepo(xa: Transactor):
         .run()
         .headOption
 
+  def findOwnedByLabel(
+      ownerUserId: UserId,
+      label: String
+  ): Option[LuxmedAccountRow] =
+    connect(xa):
+      sql"""select a.* from luxmed_accounts a
+            where a.owner_user_id = ${ownerUserId.value} and a.label = $label"""
+        .query[LuxmedAccountRow]
+        .run()
+        .headOption
+
   def listOwned(ownerUserId: UserId): Seq[LuxmedAccountRow] = connect(xa):
     sql"""select a.* from luxmed_accounts a
           where a.owner_user_id = ${ownerUserId.value}

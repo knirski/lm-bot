@@ -450,6 +450,14 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   rejection, an unexpected challenge-shaped response, malformed JSON, missing
   JWT, persistence failure, and secret redaction.
 - Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated. CI never calls live Luxmed endpoints.
+- Local development defaults to the deterministic loopback Luxmed mock. The
+  `LIVE_LUXMED_API` environment variable selects the boundary: absent or
+  `false` starts the mock and seeds an encrypted sample account after the
+  normal admin bootstrap; `true` uses the real Luxmed endpoints and does not
+  seed fixture accounts. The mock is path-routed so browser dictionary calls
+  may arrive concurrently and in any order. This switch is intended for local
+  development and must never be enabled accidentally by production deployment
+  configuration.
 - Before Plan 3 is declared complete, run one explicit, guided
   mock-conformance exploration against an owned Luxmed account. It previews
   its safety budget and asks for confirmation before login and each later
@@ -477,7 +485,7 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 ## 9. Observability & ops
 
 - Structured logging (slf4j/logback), `/health` endpoint, monitor status visible in the UI. No metrics stack in v1.
-- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty). Device identities are **not** configuration — they are per-account data, generated once and stored (§5.3).
+- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, `LIVE_LUXMED_API` (default `false`), and initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty). Device identities are **not** configuration — they are per-account data, generated once and stored (§5.3).
 - docker-compose: backend container (API + static frontend) + Postgres.
 
 ## 10. Risks

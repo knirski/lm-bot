@@ -1,6 +1,6 @@
 package lmbot.backend
 
-import java.time.OffsetDateTime
+import java.time.{Instant, OffsetDateTime}
 import java.util.UUID
 
 import scala.jdk.CollectionConverters.*
@@ -20,6 +20,7 @@ import lmbot.backend.db.{
   SessionRepo,
   UserRepo
 }
+import lmbot.backend.dev.{MockAccountSeed, MockLuxmedServer}
 import lmbot.backend.http.{
   AccountRoutes,
   AuthRoutes,
@@ -33,6 +34,7 @@ import lmbot.backend.luxmed.LuxmedConfig
 import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.EmbeddedDb
 import lmbot.backend.support.EmbeddedPg
+import lmbot.shared.domain.UserId
 import org.slf4j.LoggerFactory
 
 /** Composition root: everything is wired by hand, in one readable place (spec
@@ -41,6 +43,22 @@ import org.slf4j.LoggerFactory
 object Main:
 
   private val log = LoggerFactory.getLogger(getClass)
+
+  private[backend] def luxmedConfig(
+      config: Config,
+      mockLuxmed: Option[MockLuxmedServer],
+      deviceUuid: UUID
+  ): LuxmedConfig =
+    mockLuxmed match
+      case Some(mock) =>
+        LuxmedConfig(
+          oldApi = mock.oldApi,
+          newApi = mock.newApi,
+          appVersion = config.luxmedAppVersion,
+          deviceUuid = deviceUuid
+        )
+      case None =>
+        LuxmedConfig.production(config.luxmedAppVersion, deviceUuid)
 
   def main(args: Array[String]): Unit =
     Config.fromEnv(System.getenv().asScala.toMap) match
@@ -64,6 +82,10 @@ object Main:
         )
         Database.migrate(ds)
         val xa = Database.transactor(ds)
+
+        val mockLuxmed =
+          if config.liveLuxmedApi then None
+          else Some(MockLuxmedServer.start())
 
         val users = UserRepo(xa)
         val sessions = SessionRepo(xa)
@@ -92,11 +114,18 @@ object Main:
 
         val crypto = AesGcm(config.masterKey)
         val accountRepo = AccountRepo(xa)
-        // `deviceUuid` here is a harmless placeholder: `AccountClientFactory`
-        // always overrides it per-account with the device UUID stored for
-        // that account.
         val luxmedBaseConfig =
-          LuxmedConfig.production(config.luxmedAppVersion, UUID.randomUUID())
+          luxmedConfig(config, mockLuxmed, UUID.randomUUID())
+        if !config.liveLuxmedApi then
+          config.adminUsername
+            .flatMap(users.findByUsername)
+            .foreach: owner =>
+              MockAccountSeed.ensure(
+                UserId(owner.id),
+                accountRepo,
+                crypto,
+                () => Instant.now()
+              )
         val accountClients = AccountClientFactory.production(
           xa,
           accountRepo,
@@ -128,5 +157,6 @@ object Main:
           Thread: () =>
             log.info("Shutting down")
             server.stop(3)
+            mockLuxmed.foreach(_.close())
             ds.close()
         )

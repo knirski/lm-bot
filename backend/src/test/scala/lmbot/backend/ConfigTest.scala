@@ -67,6 +67,24 @@ class ConfigTest extends munit.FunSuite:
     val Right(config) = Config.fromEnv(minimal): @unchecked
     assertEquals(config.luxmedAppVersion.value, "4.44.0")
 
+  test("live Luxmed API is disabled by default"):
+    val Right(config) = Config.fromEnv(minimal): @unchecked
+    assertEquals(config.liveLuxmedApi, false)
+
+  test("live Luxmed API can be enabled explicitly"):
+    val Right(config) =
+      Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "true")): @unchecked
+    assertEquals(config.liveLuxmedApi, true)
+
+  test("live Luxmed API can be explicitly disabled"):
+    val Right(config) =
+      Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "false")): @unchecked
+    assertEquals(config.liveLuxmedApi, false)
+
+  test("an invalid live Luxmed API flag is rejected"):
+    val result = Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "yes"))
+    assert(result.left.exists(_.exists(_.contains("LIVE_LUXMED_API"))))
+
   test("Luxmed app version is configurable without changing the client"):
     val Right(config) =
       Config.fromEnv(
