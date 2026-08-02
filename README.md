@@ -109,7 +109,7 @@ binary from the flake is only a launcher. Build output is centralised under
 
 All variables are read from the environment only. `startDev` (above) supplies
 the "Dev default" column automatically; production must set every variable
-marked **required**, and may rely on the plain "Default" column for the rest.
+marked **required**, including `LIVE_LUXMED_API=true`.
 
 | Variable | Required | Default | Dev default (`startDev`) | Meaning |
 |---|---|---|---|---|
@@ -120,7 +120,7 @@ marked **required**, and may rely on the plain "Default" column for the rest.
 | `HTTP_PORT` | no | `8080` | *(same)* | bind port |
 | `COOKIE_SECURE` | no | `true` | `false` | set `false` only for plain-HTTP local dev |
 | `SESSION_TTL_DAYS` | no | `7` | *(same)* | session lifetime in days; must be at least `1` |
-| `LIVE_LUXMED_API` | no | `false` | `false` | use the real Luxmed API instead of the local mock server |
+| `LIVE_LUXMED_API` | yes | `false` | `false` | use the real Luxmed API instead of the local mock server; production must set this to `true` |
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
 | `LUXMED_APP_VERSION` | no | `4.44.0` | *(same)* | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |
@@ -131,6 +131,6 @@ marked **required**, and may rely on the plain "Default" column for the rest.
 Run behind your own HTTPS reverse proxy; lm-bot does not terminate TLS.
 
 ```bash
-POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
+LIVE_LUXMED_API=true POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
   ADMIN_USERNAME=... ADMIN_PASSWORD=... docker compose up -d
 ```
