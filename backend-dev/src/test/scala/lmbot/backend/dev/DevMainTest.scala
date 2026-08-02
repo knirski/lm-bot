@@ -55,15 +55,17 @@ class DevMainTest extends munit.FunSuite:
     val mockFailure = IllegalStateException("mock shutdown")
     val application = Resource("application", events, Some(applicationFailure))
     val mock = Resource("mock", events, Some(mockFailure))
-    var hook: Thread = null
+    var hook: Option[Thread] = None
 
     DevMain.installShutdownHook(
       application,
       Some(mock),
-      thread => hook = thread
+      thread => hook = Some(thread)
     )
 
-    val thrown = intercept[IllegalStateException](hook.run())
+    val thrown = intercept[IllegalStateException](
+      hook.getOrElse(fail("shutdown hook was not registered")).run()
+    )
 
     assertEquals(thrown, applicationFailure)
     assertEquals(events.toList, List("application", "mock"))
