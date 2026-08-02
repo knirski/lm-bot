@@ -29,14 +29,15 @@ object MockAccountSeed:
       owner,
       label,
       accountId =>
-        val timestamp = now().atOffset(ZoneOffset.UTC)
+        val current = now()
+        val timestamp = current.atOffset(ZoneOffset.UTC)
         val context = (purpose: EncryptionPurpose) =>
           EncryptionContext(owner, accountId, purpose)
         val session = LuxmedSession(
           accessToken = Secret("mock-access-token"),
           tokenType = TokenType.Bearer,
           refreshToken = Secret("mock-refresh-token"),
-          expiresAt = now().plusSeconds(600),
+          expiresAt = current.plusSeconds(600),
           jwtToken = Secret("mock-jwt"),
           cookies = CookieJar("ASP.NET_SessionId" -> Secret("mock-session"))
         )

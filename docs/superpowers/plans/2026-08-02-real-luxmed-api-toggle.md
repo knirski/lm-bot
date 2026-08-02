@@ -8,6 +8,11 @@
 
 **Tech Stack:** Scala 3.8.4, sbt 2, JDK `HttpServer`, embedded PostgreSQL, Flyway, Magnum, AES-256-GCM, sttp Luxmed transport, existing JSON fixtures, MUnit.
 
+> **Implementation note:** This plan records the implementation shipped in PR
+> #43. The final implementation keeps the mock response literals in
+> `MockLuxmedServer` and uses `terms.json` plus an inline XSRF response; it does
+> not introduce a separate response-helper class or additional response files.
+
 ## Global Constraints
 
 - `startDev` must run inside the flake devShell with Temurin 25 and Node 26+.
@@ -78,12 +83,10 @@ git commit -m "feat: add real Luxmed API development toggle"
 
 **Files:**
 - Create: `backend/src/main/scala/lmbot/backend/dev/MockLuxmedServer.scala`
-- Create: `backend/src/main/scala/lmbot/backend/dev/MockLuxmedResponses.scala`
 - Create: `backend/src/main/resources/mock-luxmed/cities.json`
 - Create: `backend/src/main/resources/mock-luxmed/service-variants.json`
 - Create: `backend/src/main/resources/mock-luxmed/facilities-and-doctors.json`
-- Create: `backend/src/main/resources/mock-luxmed/terms-dual-datetime.json`
-- Create: `backend/src/main/resources/mock-luxmed/forgery-token.json`
+- Create: `backend/src/main/resources/mock-luxmed/terms.json`
 - Create: `backend/src/test/scala/lmbot/backend/dev/MockLuxmedServerTest.scala`
 
 **Interfaces:**
@@ -94,7 +97,7 @@ git commit -m "feat: add real Luxmed API development toggle"
 
 - [ ] **Step 1: Write failing route tests**
 
-Start the server in a test, send real sttp requests to the token, bootstrap, cities, service variants, facilities/doctors, terms, and forgery-token paths, and assert status/body shape. Send an unknown path and assert `404`. Send dictionary requests in an arbitrary order to prove routing is path-based rather than queue-based.
+Start the server in a test, exercise authentication, dictionaries, and terms through `LuxmedClient`, and assert decoded DTOs. Send an unknown path with sttp and assert `404`. Request dictionaries in an arbitrary order to prove routing is path-based rather than queue-based.
 
 - [ ] **Step 2: Run the focused test and verify it fails**
 
@@ -106,9 +109,9 @@ sbt "backend/testOnly lmbot.backend.dev.MockLuxmedServerTest"
 
 Expected: compilation failure because the dev mock server does not exist.
 
-- [ ] **Step 3: Implement the mock server and response helpers**
+- [ ] **Step 3: Implement the mock server and responses**
 
-Move only the safe, committed dictionary/terms/XSRF fixtures needed by the browser path into main resources. Implement the JDK `HttpServer` with a virtual-thread executor, read request bodies, route using the raw request path, return literal OAuth/bootstrap responses, and serve fixture resources. Count password and refresh grants for test observability, but expose counts only to tests and never expose token values in logs.
+Move only the safe, committed dictionary/terms/XSRF fixtures needed by the browser path into main resources. Implement the JDK `HttpServer` with a virtual-thread executor, read request bodies, route using the raw request path, return literal OAuth/bootstrap/XSRF responses, and serve fixture resources. Log handler failures without logging request secrets.
 
 - [ ] **Step 4: Run the focused test**
 
@@ -141,7 +144,7 @@ git commit -m "feat: add path-routed mock Luxmed server"
 
 - [ ] **Step 1: Write failing seed tests**
 
-Using the existing `PostgresSuite`, create an owner, run `ensure`, assert one account is visible with active status and a non-null encrypted session, decrypt each value with the existing purpose-bound context, assert the session decodes, run `ensure` again, and assert the row count and ciphertexts are unchanged. Assert that a user-owned account with the reserved label is respected rather than overwritten.
+Using the existing `PostgresSuite`, create an owner, run `ensure`, assert one account is visible with active status and a non-null encrypted session, decrypt each value with the existing purpose-bound context, assert the session decodes, run `ensure` again, and assert the row count and ciphertexts are unchanged. Also exercise concurrent calls and assert that only one reserved-label account is created.
 
 - [ ] **Step 2: Run the focused test and verify it fails**
 
@@ -155,7 +158,7 @@ Expected: compilation failure because the seed and required repository lookup do
 
 - [ ] **Step 3: Implement the seed**
 
-Add an owner-scoped label lookup to `AccountRepo`. Reserve an account id, use fixed non-production mock values, construct a valid `LuxmedSession` with `CookieJar`, `TokenType.Bearer`, and deterministic short-lived tokens, encrypt username/password/device/session with the existing `EncryptionContext` purposes, and insert an active row. Use the injected clock for timestamps and make the existing-label check happen before reserving an id.
+Add an atomic owner/label insert to `AccountRepo` that reserves the account id and inserts the row in one transaction. Use fixed non-production mock values, construct a valid `LuxmedSession` with `CookieJar`, `TokenType.Bearer`, and deterministic short-lived tokens, encrypt username/password/device/session with the existing `EncryptionContext` purposes, and insert an active row. Read the injected clock once for all seed timestamps and session expiry.
 
 - [ ] **Step 4: Run the focused test**
 
@@ -188,7 +191,7 @@ git commit -m "feat: seed encrypted mock Luxmed account"
 
 - [ ] **Step 1: Write failing composition tests**
 
-Add a test-scope composition harness that starts the ordinary HTTP server against an embedded database. Assert the default/mock path exposes the seeded account through `/api/accounts` after login and that dictionary lookup reaches the local mock server. Assert the real-mode path constructs the production URI and does not seed an account; do not make a live network request.
+Add composition tests asserting that mock mode selects loopback endpoints and live mode selects production endpoints without making a live network request.
 
 - [ ] **Step 2: Run the focused test and verify it fails**
 
@@ -202,7 +205,7 @@ Expected: failure because `Main` has no mode-aware composition and does not seed
 
 - [ ] **Step 3: Implement mode-aware composition**
 
-Extract the existing composition wiring into a small private/main-visible function so tests can exercise the same routes/services. Select `MockLuxmedServer` and `LuxmedConfig(mock.oldApi, mock.newApi, ...)` when `config.liveLuxmedApi` is false; otherwise retain `LuxmedConfig.production`. Run `MockAccountSeed.ensure` only in mock mode after migrations and admin bootstrap. Keep `startDev` on `~backend/run`; its existing `Compile / envVars` supplies `LIVE_LUXMED_API=false` unless the caller overrides it, so `LIVE_LUXMED_API=true sbt startDev` selects the live endpoint.
+Expose a small package-visible configuration selector for tests. Select `MockLuxmedServer` and `LuxmedConfig(mock.oldApi, mock.newApi, ...)` in mock mode; otherwise retain `LuxmedConfig.production`. Run `MockAccountSeed.ensure` only when the mock server is selected, after migrations and admin bootstrap. Keep `startDev` on `~backend/run`; its existing `Compile / envVars` supplies `LIVE_LUXMED_API=false` unless the caller overrides it, so `LIVE_LUXMED_API=true sbt startDev` selects the live endpoint.
 
 - [ ] **Step 4: Run focused composition tests**
 
@@ -227,7 +230,6 @@ git commit -m "feat: default startDev to mock Luxmed data"
 **Files:**
 - Modify: `README.md` if command/config wording needs final alignment
 - Modify: `docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md` to amend the Plan 4 testing boundary and configuration section to document `LIVE_LUXMED_API=false` mock mode and `true` live mode
-- Create: `docs/superpowers/reports/2026-08-02-real-luxmed-api-toggle.md`
 
 - [ ] **Step 1: Run the full required checks**
 
@@ -243,7 +245,7 @@ git diff --check
 
 Expected: all checks pass with the full test suites actually executing.
 
-- [ ] **Step 2: Exercise both development modes**
+- [ ] **Step 2: Optional manual development-mode smoke test**
 
 Run the server with the default and inspect the browser/API flow using the mock account. Then stop it and run:
 
@@ -255,11 +257,11 @@ Verify startup selects the production endpoints without logging credentials or s
 
 - [ ] **Step 3: Write the completion report**
 
-Record changed files, exact verification commands/results, skipped checks (if any), and the behavior of both values of `LIVE_LUXMED_API`. Do not claim success for a skipped or zero-test run.
+Record changed files, exact verification commands/results, skipped checks (if any), and the behavior of both values of `LIVE_LUXMED_API` in the PR description. Do not claim success for a skipped or zero-test run.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add README.md docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md docs/superpowers/reports/2026-08-02-real-luxmed-api-toggle.md
+git add README.md docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md
 git commit -m "docs: document local mock Luxmed development mode"
 ```

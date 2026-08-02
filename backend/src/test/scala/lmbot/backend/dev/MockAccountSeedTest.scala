@@ -2,6 +2,7 @@ package lmbot.backend.dev
 
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{Executors, TimeUnit}
 
 import lmbot.backend.auth.Passwords
@@ -114,3 +115,23 @@ class MockAccountSeedTest extends PostgresSuite:
       accounts.listOwned(owner).count(_.label == MockAccountSeed.label),
       1
     )
+
+  test("seeding reads the clock once for a new account"):
+    val owner = UserId(
+      UserRepo(xa)
+        .insert(
+          "single-clock-owner",
+          "Single clock owner",
+          Passwords.hash("password"),
+          Role.User
+        )
+        .id
+    )
+    val calls = AtomicInteger()
+    val clock = () =>
+      calls.incrementAndGet()
+      now()
+
+    MockAccountSeed.ensure(owner, AccountRepo(xa), crypto, clock)
+
+    assertEquals(calls.get(), 1)
