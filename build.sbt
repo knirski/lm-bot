@@ -175,8 +175,10 @@ lazy val backend = project
 
     assembly / mainClass := Some("lmbot.backend.Main"),
     assembly / assemblyMergeStrategy := {
-      case PathList("META-INF", _*)      => MergeStrategy.discard
-      case PathList("module-info.class") => MergeStrategy.discard
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList(parts @ _*)
+          if parts.lastOption.contains("module-info.class") =>
+        MergeStrategy.discard
       case x => (assembly / assemblyMergeStrategy).value(x)
     }
   )
