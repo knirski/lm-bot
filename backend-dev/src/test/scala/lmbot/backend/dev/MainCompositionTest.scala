@@ -27,9 +27,11 @@ class MainCompositionTest extends munit.FunSuite:
     val config =
       Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "true")).toOption.get
     val selected = DevMain.luxmedConfig(config, None, UUID.randomUUID())
-    assert(
-      selected.oldApi.toString.startsWith("https://portalpacjenta.luxmed.pl")
+    assertEquals(
+      selected.oldApi.toString,
+      "https://portalpacjenta.luxmed.pl/PatientPortalMobileAPI/api"
     )
-    assert(
-      selected.newApi.toString.startsWith("https://portalpacjenta.luxmed.pl")
+    assertEquals(
+      selected.newApi.toString,
+      "https://portalpacjenta.luxmed.pl/PatientPortal"
     )
