@@ -32,10 +32,16 @@ class ConfigTest extends munit.FunSuite:
 
   test("environment values override the selected resource"):
     val result = Config.fromEnv(
-      requiredOnly.updated("HTTP_PORT", "9000"),
+      requiredOnly.updated(
+        "DATABASE_URL",
+        "jdbc:postgresql://override.example/lmbot"
+      ),
       "application.conf"
     )
-    assertEquals(result.map(_.httpPort.value), Right(9000))
+    assertEquals(
+      result.map(_.dbUrl),
+      Right("jdbc:postgresql://override.example/lmbot")
+    )
 
   test("a minimal environment yields a config with sensible defaults"):
     Config.fromEnv(minimal) match
@@ -69,23 +75,22 @@ class ConfigTest extends munit.FunSuite:
           s"missing LMBOT_MASTER_KEY error: $errors"
         )
 
-  test("port and secure-cookie flag are overridable"):
+  test("resource-only settings ignore environment values"):
     val env = minimal ++ Map(
       "HTTP_PORT" -> "9000",
       "COOKIE_SECURE" -> "false",
-      "HTTP_HOST" -> "127.0.0.1"
+      "HTTP_HOST" -> "127.0.0.1",
+      "SESSION_TTL_DAYS" -> "30",
+      "LUXMED_APP_VERSION" -> "4.45.1"
     )
     Config.fromEnv(env) match
       case Right(c) =>
-        assertEquals(c.httpPort.value, 9000)
-        assertEquals(c.cookieSecure, false)
-        assertEquals(c.httpHost, "127.0.0.1")
+        assertEquals(c.httpPort.value, 8080)
+        assertEquals(c.cookieSecure, true)
+        assertEquals(c.httpHost, "0.0.0.0")
+        assertEquals(c.sessionTtl, 7.days)
+        assertEquals(c.luxmedAppVersion.value, "4.44.0")
       case Left(errs) => fail(s"expected success, got $errs")
-
-  test("a non-numeric port is rejected"):
-    Config.fromEnv(minimal + ("HTTP_PORT" -> "eighty")) match
-      case Right(c)     => fail(s"expected failure, got $c")
-      case Left(errors) => assert(errors.exists(_.contains("HTTP_PORT")))
 
   test("admin bootstrap credentials are picked up when both are present"):
     val env =
@@ -131,15 +136,8 @@ class ConfigTest extends munit.FunSuite:
     val result = Config.fromEnv(minimal.updated("LIVE_LUXMED_API", ""))
     assert(result.left.exists(_.exists(_.contains("LIVE_LUXMED_API"))))
 
-  test("Luxmed app version is configurable without changing the client"):
-    val Right(config) =
-      Config.fromEnv(
-        minimal.updated("LUXMED_APP_VERSION", "4.45.1")
-      ): @unchecked
-    assertEquals(config.luxmedAppVersion.value, "4.45.1")
-
   test("an empty Luxmed app version is rejected"):
-    val result = Config.fromEnv(minimal.updated("LUXMED_APP_VERSION", ""))
+    val result = Config.fromEnv(minimal, "application-empty-version.conf")
     assert(
       result.left.exists(_.contains("LUXMED_APP_VERSION must not be empty"))
     )
@@ -169,25 +167,19 @@ class ConfigTest extends munit.FunSuite:
     assert(!rendered.contains("hunter2"), s"admin password leaked: $rendered")
 
   test("port outside valid range is rejected"):
-    val result = Config.fromEnv(minimal + ("HTTP_PORT" -> "0"))
+    val result = Config.fromEnv(minimal, "application-invalid-port.conf")
     assert(result.left.exists(_.exists(_.contains("Port"))))
 
   test("zero and negative session TTLs are rejected"):
-    assert(Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "0")).isLeft)
-    assert(
-      Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "-1")).isLeft
-    )
+    val result = Config.fromEnv(minimal, "application-invalid-ttl.conf")
+    assert(result.left.exists(_.exists(_.contains("sessionTtl"))))
 
   test("app version below minimum floor is rejected"):
-    val result = Config.fromEnv(
-      minimal.updated("LUXMED_APP_VERSION", "4.43.0")
-    )
+    val result = Config.fromEnv(minimal, "application-old-version.conf")
     assert(result.left.exists(_.exists(_.contains("AppVersion"))))
 
   test("non-parseable app version is rejected"):
-    val result = Config.fromEnv(
-      minimal.updated("LUXMED_APP_VERSION", "not-a-version")
-    )
+    val result = Config.fromEnv(minimal, "application-invalid-version.conf")
     assert(result.left.exists(_.exists(_.contains("AppVersion"))))
 
   test("master key must decode to exactly 32 bytes"):

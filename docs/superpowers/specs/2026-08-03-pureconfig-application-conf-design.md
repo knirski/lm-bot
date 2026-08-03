@@ -16,11 +16,13 @@ variable contract. Configuration must be readable from a deterministic
   cookies, the development master key, and mock-Luxmed mode.
 - Move the development launcher, mock server, fixtures, and account seeder
   into the backend module's development/runtime package.
-- Keep the existing environment variable names and meanings documented in the
-  README, including `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`,
-  `HTTP_HOST`, `HTTP_PORT`, `COOKIE_SECURE`, `SESSION_TTL_DAYS`,
-  `LIVE_LUXMED_API`, `LMBOT_MASTER_KEY`, `LUXMED_APP_VERSION`,
-  `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `EMBEDDED_PG`.
+- Keep the supported environment variable names and meanings documented in the
+  README: `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`,
+  `LIVE_LUXMED_API`, `EMBEDDED_PG`, `LMBOT_MASTER_KEY`, `ADMIN_USERNAME`, and
+  `ADMIN_PASSWORD`.
+- Keep `httpHost`, `httpPort`, `cookieSecure`, `sessionTtl`, and
+  `luxmedAppVersion` in the selected HOCON resource only; they are not
+  environment-variable overrides.
 - Environment values override values from the selected HOCON resource.
 - Required values remain required. No production secret receives a default.
 - Existing development defaults supplied by `startDev` remain unchanged.
@@ -84,14 +86,11 @@ derive or validate on its own:
 - `MasterKey` reads standard Base64 and requires exactly 32 decoded bytes.
 
 Internally, the HOCON `sessionTtl` field is loaded as a `FiniteDuration` and
-defaults to `7 days`. Its `${?SESSION_TTL_DAYS}` substitution accepts the
-existing whole-day operator value and the custom duration reader turns a bare
-integer into days before PureConfig validates it. The loader then applies the
-existing minimum-one-day validation and reports the failure against
-`SESSION_TTL_DAYS` for compatibility.
+defaults to `7 days`. The resource value is validated with the existing
+minimum-one-day rule.
 
-`FiniteDuration` is an internal session/auth implementation detail. Operators
-continue to configure `SESSION_TTL_DAYS` in whole days; Java APIs that need
+`FiniteDuration` is an internal session/auth implementation detail. Resource
+authors configure `sessionTtl` with HOCON duration syntax; Java APIs that need
 `java.time.Duration` (for example, the JDK HTTP client timeout) remain explicit
 foreign-library adapters and are outside this configuration migration.
 
@@ -125,12 +124,12 @@ Extend the backend configuration suite to pin these behaviors:
 
 1. `application.conf` defaults load successfully when only required values are
    supplied.
-2. Each supported environment variable overrides its corresponding default.
+2. Each supported environment variable overrides its corresponding resource
+   default, while resource-only fields ignore unrelated environment values.
 3. Missing required values produce field-specific failures.
 4. Invalid port, boolean, TTL, app version, and master-key values fail through
    PureConfig with useful paths.
-5. Empty `LIVE_LUXMED_API` and `LUXMED_APP_VERSION` retain their current
-   rejection behavior.
+5. Empty `LIVE_LUXMED_API` retains its current rejection behavior.
 6. Secret values containing substitution-looking text remain literal.
 7. Config rendering never exposes any secret.
 8. Resource selection loads production and development defaults independently.

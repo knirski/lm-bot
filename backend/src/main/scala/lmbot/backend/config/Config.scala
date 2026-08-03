@@ -1,6 +1,6 @@
 package lmbot.backend.config
 
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
@@ -18,20 +18,6 @@ import pureconfig.{
   */
 final case class Secret(value: String):
   override def toString: String = "***"
-
-private given ConfigReader[FiniteDuration] = ConfigReader.fromCursor: cur =>
-  cur.asString.flatMap: raw =>
-    val value = if raw.matches("-?\\d+") then s"$raw days" else raw
-    Duration(value) match
-      case finite: FiniteDuration => Right(finite)
-      case _                      =>
-        cur.failed(
-          CannotConvert(
-            raw,
-            "FiniteDuration",
-            "value must be a finite duration"
-          )
-        )
 
 object Secret:
   given ConfigReader[Secret] = ConfigReader.fromCursor: cur =>
@@ -67,11 +53,6 @@ object Config:
     "dbUrl" -> "DATABASE_URL",
     "dbUser" -> "DATABASE_USER",
     "dbPassword" -> "DATABASE_PASSWORD",
-    "httpHost" -> "HTTP_HOST",
-    "httpPort" -> "HTTP_PORT",
-    "cookieSecure" -> "COOKIE_SECURE",
-    "sessionTtl" -> "SESSION_TTL_DAYS",
-    "luxmedAppVersion" -> "LUXMED_APP_VERSION",
     "adminUsername" -> "ADMIN_USERNAME",
     "adminPassword" -> "ADMIN_PASSWORD",
     "masterKey" -> "LMBOT_MASTER_KEY",
@@ -147,7 +128,7 @@ object Config:
         .filter(value => value != "true" && value != "false")
         .map(_ => "EMBEDDED_PG must be exactly true or false"),
       Option.when(config.sessionTtl < 1.day)(
-        "SESSION_TTL_DAYS must be at least one day"
+        "sessionTtl must be at least one day"
       )
     ).flatten
     Either.cond(errors.isEmpty, config, errors)

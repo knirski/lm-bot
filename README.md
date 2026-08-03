@@ -121,16 +121,22 @@ operator variables; settings without a substitution remain resource-only.
 | `DATABASE_URL` | yes | — | `jdbc:postgresql://localhost:15432/lmbot` | JDBC connection string |
 | `DATABASE_USER` | yes | — | `lmbot` | database user |
 | `DATABASE_PASSWORD` | yes | — | `lmbot` | database password |
-| `HTTP_HOST` | no | `0.0.0.0` | `127.0.0.1` | bind address |
-| `HTTP_PORT` | no | `8080` | *(same)* | bind port |
-| `COOKIE_SECURE` | no | `true` | `false` | set `false` only for plain-HTTP local dev |
-| `SESSION_TTL_DAYS` | no | `7` | *(same)* | session lifetime in days; must be at least `1` |
 | `LIVE_LUXMED_API` | yes | `false` | `false` | opt into the real Luxmed API; `application-dev.conf` defaults to `false`, while production requires `true` |
 | `EMBEDDED_PG` | no | `false` | `true` | controls Zonky embedded PostgreSQL; it defaults to `false` in production, which normally uses the configured external database, while `true` starts Zonky (as `startDev` does on port `15432`) |
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
-| `LUXMED_APP_VERSION` | no | `4.44.0` | *(same)* | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |
 | `ADMIN_PASSWORD` | no | — (bootstrap only) | `admin` | as above |
+
+These settings are resource-only and are not overridden through environment
+variables:
+
+| Setting | Production | Dev default (`startDev`) | Meaning |
+|---|---|---|---|
+| `httpHost` | `0.0.0.0` | `127.0.0.1` | bind address |
+| `httpPort` | `8080` | `8080` | bind port |
+| `cookieSecure` | `true` | `false` | whether browser cookies require HTTPS |
+| `sessionTtl` | `7 days` | `7 days` | session lifetime; must be at least one day |
+| `luxmedAppVersion` | `4.44.0` | `4.44.0` | Luxmed mobile app version reported to their API |
 
 ## Deployment
 

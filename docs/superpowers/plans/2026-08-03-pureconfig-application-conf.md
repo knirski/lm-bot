@@ -10,7 +10,10 @@
 
 ## Global Constraints
 
-- Documented environment substitutions retain their existing names and remain the highest-precedence overrides, including `EMBEDDED_PG`; fields without substitutions remain resource-only.
+- Documented environment substitutions remain the highest-precedence overrides
+  for database settings, secrets, bootstrap credentials, and deployment toggles;
+  `httpHost`, `httpPort`, `cookieSecure`, `sessionTtl`, and
+  `luxmedAppVersion` remain resource-only.
 - Production defaults contain no credentials or encryption keys.
 - Development-only credentials and the fixed development key live only in `application-dev.conf`.
 - `Config` derives `ConfigReader` with `pureconfig.generic.derivation.default`; custom readers are limited to validated domain types.
@@ -53,10 +56,10 @@ test("development resource supplies local defaults"):
 
 test("environment values override the selected resource"):
   val result = Config.fromEnv(
-    requiredOnly.updated("HTTP_PORT", "9000"),
+    requiredOnly.updated("DATABASE_URL", "jdbc:postgresql://override/lmbot"),
     "application.conf"
   )
-  assertEquals(result.map(_.httpPort.value), Right(9000))
+  assertEquals(result.map(_.dbUrl), Right("jdbc:postgresql://override/lmbot"))
 ```
 
 - [ ] **Step 2: Run the focused tests and verify the expected failure**
@@ -103,11 +106,10 @@ def fromEnv(
 
 The selected resource must contain the explicit `${?ENV_VAR}` substitutions for
 the supported variable names. The environment source filters to those
-documented names, preserves empty `LIVE_LUXMED_API` and `LUXMED_APP_VERSION`
-for validation, and uses `ConfigFactory.parseMap` so substitution-looking
-secrets stay literal. The `FiniteDuration` reader interprets a bare
-`SESSION_TTL_DAYS` value as days. The default resource must be loaded only
-through the selected resource name, never through classpath ordering.
+documented names, preserves empty `LIVE_LUXMED_API` for validation, and uses
+`ConfigFactory.parseMap` so substitution-looking secrets stay literal. The
+default resource must be loaded only through the selected resource name, never
+through classpath ordering.
 
 - [ ] **Step 5: Run the focused tests and verify they pass**
 
@@ -152,9 +154,8 @@ test("session TTL is a finite Scala duration"):
   val Right(config) = Config.fromEnv(requiredOnly, "application.conf")
   assertEquals(config.sessionTtl, 7.days)
 
-test("zero and negative session TTLs are rejected"):
-  assert(Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "0")).isLeft)
-  assert(Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "-1")).isLeft)
+test("invalid resource session TTL is rejected"):
+  assert(Config.fromEnv(requiredOnly, "application-invalid-ttl.conf").isLeft)
 ```
 
 Add reader tests for valid and invalid `Secret`, `Port`, `AppVersion`, and
