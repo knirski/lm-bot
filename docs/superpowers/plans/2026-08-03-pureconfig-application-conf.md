@@ -282,7 +282,7 @@ git commit -m "refactor: unify production and development backend launchers"
 - Modify: `docs/superpowers/specs/2026-08-03-pureconfig-application-conf-design.md`
 - Modify: `docs/superpowers/plans/2026-08-03-pureconfig-application-conf.md`
 
-- [ ] **Step 1: Update configuration documentation**
+- [x] **Step 1: Update configuration documentation**
 
 Document that defaults come from the selected HOCON resource, environment
 variables override them, `startDev` selects `application-dev.conf`, and
@@ -290,7 +290,7 @@ production uses `application.conf` with `LIVE_LUXMED_API=true` required.
 Document `FiniteDuration` only as an implementation detail; keep operator
 configuration expressed in days and existing variable names.
 
-- [ ] **Step 2: Format and run the focused checks**
+- [x] **Step 2: Format and run the focused checks**
 
 Run:
 
@@ -303,20 +303,20 @@ git diff --check
 
 Expected: formatting and whitespace checks exit successfully.
 
-- [ ] **Step 3: Run the full backend suite**
+- [x] **Step 3: Run the full backend suite**
 
 Run: `sbt backend/testFull`
 
 Expected: all backend tests pass with the embedded PostgreSQL suites included.
 
-- [ ] **Step 4: Run repository verification**
+- [x] **Step 4: Run repository verification**
 
 Run: `nix flake check`
 
 Expected: formatting, dead-code, statix, typos, shellcheck, actionlint, and
 other configured checks pass without disabling or excluding any suite.
 
-- [ ] **Step 5: Commit documentation and verification updates**
+- [x] **Step 5: Commit documentation and verification updates**
 
 ```bash
 git add README.md docs/superpowers/specs/2026-08-03-pureconfig-application-conf-design.md \

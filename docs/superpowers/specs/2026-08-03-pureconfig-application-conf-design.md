@@ -21,7 +21,7 @@ variable contract. Configuration must be readable from a deterministic
   `HTTP_HOST`, `HTTP_PORT`, `COOKIE_SECURE`, `SESSION_TTL_DAYS`,
   `LIVE_LUXMED_API`, `LMBOT_MASTER_KEY`, `LUXMED_APP_VERSION`,
   `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `EMBEDDED_PG`.
-- Environment values override values from `application.conf`.
+- Environment values override values from the selected HOCON resource.
 - Required values remain required. No production secret receives a default.
 - Existing development defaults supplied by `startDev` remain unchanged.
 - `Config.fromEnv(Map[String, String])` remains available as the pure,
@@ -38,7 +38,7 @@ safe non-secret defaults:
 httpHost = "0.0.0.0"
 httpPort = 8080
 cookieSecure = true
-sessionTtlDays = 7
+sessionTtl = 7 days
 liveLuxmedApi = false
 embeddedPg = false
 luxmedAppVersion = "4.44.0"
@@ -50,15 +50,15 @@ the selected resource source using `withFallback`. Consequently the precedence
 is:
 
 ```text
-environment override > application.conf default > missing required value
+environment override > selected HOCON resource default > missing required value
 ```
 
-The single launcher selects a resource explicitly: production defaults to
-`application.conf`, while `startDev` supplies `application-dev.conf`. The
-loader accepts the resource name as an explicit parameter, so selection is
-testable and never depends on classpath ordering. The old `backendDev/run`
-environment injection is removed so the development resource, not a second
-hand-written defaults table, owns local defaults.
+The single `backend` launcher selects a resource explicitly: production defaults
+to `application.conf`, while `startDev` injects
+`LMBOT_CONFIG_RESOURCE=application-dev.conf`. The loader accepts the resource
+name as an explicit parameter, so selection is testable and never depends on
+classpath ordering. The development resource, not a second hand-written
+defaults table, owns local defaults.
 
 The conversion is explicit rather than a global environment import. This
 keeps the public variable names stable, avoids accidental configuration from
@@ -81,13 +81,14 @@ derive or validate on its own:
 - `AppVersion` reads a string and applies the measured minimum version.
 - `MasterKey` reads standard Base64 and requires exactly 32 decoded bytes.
 
-The HOCON field for `sessionTtl: scala.concurrent.duration.FiniteDuration` is
-`sessionTtl` and defaults to `7 days`. The environment adapter translates the
-legacy `SESSION_TTL_DAYS` variable to a duration value (for example, `7 days`)
-before PureConfig reads it. The loader then applies the existing minimum-one-day
+Internally, the HOCON `sessionTtl` field is loaded as a `FiniteDuration` and
+defaults to `7 days`. The environment adapter translates the legacy
+`SESSION_TTL_DAYS` variable to a duration value (for example, `7 days`) before
+PureConfig reads it. The loader then applies the existing minimum-one-day
 validation and reports the failure against `SESSION_TTL_DAYS` for compatibility.
 
-The session/auth boundary uses `FiniteDuration` end-to-end; Java APIs that need
+`FiniteDuration` is an internal session/auth implementation detail. Operators
+continue to configure `SESSION_TTL_DAYS` in whole days; Java APIs that need
 `java.time.Duration` (for example, the JDK HTTP client timeout) remain explicit
 foreign-library adapters and are outside this configuration migration.
 
