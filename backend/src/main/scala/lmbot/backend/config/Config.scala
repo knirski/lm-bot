@@ -28,7 +28,8 @@ case class Config(
     adminUsername: Option[String],
     adminPassword: Option[Secret],
     masterKey: MasterKey,
-    liveLuxmedApi: Boolean = false
+    liveLuxmedApi: Boolean = false,
+    embeddedPg: Boolean = false
 )
 
 object Config:
@@ -117,6 +118,9 @@ object Config:
         case Some("false") => Right(false)
         case Some(_) => Left("LIVE_LUXMED_API must be exactly true or false")
     parsedLiveLuxmedApi.left.foreach(errors += _)
+    val embeddedPg = env
+      .get("EMBEDDED_PG")
+      .exists(value => value == "true" || value == "1")
 
     val luxmedAppVersionRaw: Either[String, String] =
       readStructural[String]("LUXMED_APP_VERSION") match
@@ -161,6 +165,7 @@ object Config:
           sessionTtl = Duration.ofDays(parsedTtlDays.?.toLong),
           luxmedAppVersion = parsedAppVersion.?,
           liveLuxmedApi = parsedLiveLuxmedApi.?,
+          embeddedPg = embeddedPg,
           adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
           adminPassword =
             env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply),

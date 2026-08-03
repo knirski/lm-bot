@@ -74,7 +74,7 @@ object BackendApplication:
       accountSeeder: AccountSeeder,
       startServer: ServerStarter
   ): BackendApplication =
-    val embeddedDb = startEmbeddedDb()
+    val embeddedDb = startEmbeddedDb(config.embeddedPg)
     val dataSource =
       ApplicationLifecycle.withCleanupOnFailure(embeddedDb.toList):
         Database.dataSource(
@@ -154,8 +154,8 @@ object BackendApplication:
     new AutoCloseable:
       override def close(): Unit = server.stop(3)
 
-  private def startEmbeddedDb(): Option[EmbeddedDb] =
-    if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then
+  private def startEmbeddedDb(enabled: Boolean): Option[EmbeddedDb] =
+    if enabled then
       log.info("Starting embedded database on port 15432")
       Some(EmbeddedPg.startForDev(15432))
     else None
