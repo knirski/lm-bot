@@ -4,12 +4,36 @@ import lmbot.backend.config.{AppVersion, Config, Port, Secret}
 
 class ConfigTest extends munit.FunSuite:
 
-  private val minimal = Map(
+  private val requiredOnly = Map(
     "DATABASE_URL" -> "jdbc:postgresql://localhost:5432/lmbot",
     "DATABASE_USER" -> "lmbot",
     "DATABASE_PASSWORD" -> "secret",
     "LMBOT_MASTER_KEY" -> "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
   )
+
+  private val minimal = requiredOnly
+
+  test("production resource supplies non-secret defaults"):
+    val result = Config.fromEnv(requiredOnly, "application.conf")
+    assertEquals(result.map(_.httpHost), Right("0.0.0.0"))
+    assertEquals(result.map(_.httpPort.value), Right(8080))
+    assertEquals(result.map(_.cookieSecure), Right(true))
+
+  test("development resource supplies local defaults"):
+    val result = Config.fromEnv(Map.empty, "application-dev.conf")
+    assertEquals(
+      result.map(_.dbUrl),
+      Right("jdbc:postgresql://localhost:15432/lmbot")
+    )
+    assertEquals(result.map(_.embeddedPg), Right(true))
+    assertEquals(result.map(_.liveLuxmedApi), Right(false))
+
+  test("environment values override the selected resource"):
+    val result = Config.fromEnv(
+      requiredOnly.updated("HTTP_PORT", "9000"),
+      "application.conf"
+    )
+    assertEquals(result.map(_.httpPort.value), Right(9000))
 
   test("a minimal environment yields a config with sensible defaults"):
     Config.fromEnv(minimal) match
