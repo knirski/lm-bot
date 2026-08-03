@@ -461,13 +461,15 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   single `backend` module with the production application. `application.conf`
   is the production resource and `application-dev.conf` supplies safe local
   defaults; `LMBOT_CONFIG_RESOURCE` selects the resource, and `startDev` sets
-  it to `application-dev.conf`. The production entrypoint accepts only live
-  mode and fails fast if `LIVE_LUXMED_API` is not `true`; the local launcher may
-  select either boundary. Both entrypoints use the same application composition
-  so migrations, admin bootstrap, routes, and shutdown wiring cannot drift.
-  This switch is intended for local development; production deployments must
-  explicitly set `LIVE_LUXMED_API=true`, and mock mode must never run in
-  production.
+  it to `application-dev.conf`. `lmbot.backend.Main` is the single application
+  launcher: with the default production resource it accepts only live mode and
+  fails fast if `LIVE_LUXMED_API` is not `true`; with the development resource
+  it may select either boundary. `DevMain` is composition support, not a second
+  launcher. `startDev` runs `backend/run` with `application-dev.conf`, and all
+  modes use the same application composition so migrations, admin bootstrap,
+  routes, and shutdown wiring cannot drift. This switch is intended for local
+  development; production deployments must explicitly set
+  `LIVE_LUXMED_API=true`, and mock mode must never run in production.
 - Before Plan 3 is declared complete, run one explicit, guided
   mock-conformance exploration against an owned Luxmed account. It previews
   its safety budget and asks for confirmation before login and each later
@@ -508,15 +510,16 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   data, generated once and stored (§5.3).
 - docker-compose: backend container (API + static frontend) + Postgres.
 
-The build has one `backend` module. It contains the production and local
-launchers, shared application composition, transport, persistence, routes,
-static asset serving, loopback mock server, mock fixtures, and encrypted account
-seeder. `application.conf` is selected by default; `startDev` selects
-`application-dev.conf` through `LMBOT_CONFIG_RESOURCE`. The shared composition
-accepts a Luxmed boundary configuration and an optional account-seeding hook:
-production passes the live boundary and no-op hook, while local development
-passes the selected boundary and mock seeder. This is the single wiring path
-for migrations, admin bootstrap, routes, and shutdown.
+The build has one `backend` module. It contains the `lmbot.backend.Main`
+launcher, `DevMain` composition support, shared application composition,
+transport, persistence, routes, static asset serving, loopback mock server,
+mock fixtures, and encrypted account seeder. `application.conf` is selected by
+default; `startDev` runs `backend/run` with `application-dev.conf` through
+`LMBOT_CONFIG_RESOURCE`. The shared composition accepts a Luxmed boundary
+configuration and an optional account-seeding hook: production passes the live
+boundary and no-op hook, while local development passes the selected boundary
+and mock seeder. This is the single wiring path for migrations, admin
+bootstrap, routes, and shutdown.
 
 ## 10. Risks
 
