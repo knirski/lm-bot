@@ -3,6 +3,7 @@ package lmbot.backend
 import java.util.UUID
 
 import scala.jdk.CollectionConverters.*
+import scala.util.{Failure, Success, Try}
 
 import lmbot.backend.config.Config
 import lmbot.backend.dev.{DevMain, MockLuxmedServer}
@@ -17,6 +18,7 @@ object Main:
   private val log = LoggerFactory.getLogger(getClass)
   private val productionResource = "application.conf"
   private val developmentResource = "application-dev.conf"
+  private val supportedResources = Set(productionResource, developmentResource)
 
   private[backend] def configResource(env: Map[String, String]): String =
     env.getOrElse("LMBOT_CONFIG_RESOURCE", productionResource)
@@ -28,6 +30,15 @@ object Main:
       config.liveLuxmedApi,
       (),
       "LIVE_LUXMED_API=true is required in production"
+    )
+
+  private def requireSupportedResource(
+      resourceName: String
+  ): Either[String, Unit] =
+    Either.cond(
+      supportedResources(resourceName),
+      (),
+      s"Unknown configuration resource: $resourceName"
     )
 
   private[backend] def installShutdownHook(
@@ -44,14 +55,15 @@ object Main:
       registerShutdownHook: Thread => Unit
   ): Either[List[String], Unit] =
     val resourceName = configResource(env)
-    Config
-      .fromEnv(env, resourceName)
+    requireSupportedResource(resourceName).left
+      .map(List(_))
+      .flatMap(_ => Config.fromEnv(env, resourceName))
       .flatMap: config =>
         val startupCheck =
           if resourceName == developmentResource then Right(())
           else requireLiveLuxmedApi(config).left.map(List(_))
 
-        startupCheck.map: _ =>
+        startupCheck.flatMap: _ =>
           val mock =
             if config.liveLuxmedApi then None
             else Some(startMock())
@@ -60,27 +72,27 @@ object Main:
             log.info("Starting development backend with mock Luxmed API")
           else log.info("Starting backend with live Luxmed API")
 
-          val application =
-            try
-              startApplication(
-                config,
-                DevMain.luxmedConfig(config, mock, deviceUuid),
-                DevMain.accountSeeder(mock)
-              )
-            catch
-              case error: Throwable =>
-                ApplicationLifecycle.closeAfterFailure(mock.toList, error)
-                throw error
-
-          mock match
-            case None =>
-              installShutdownHook(application, registerShutdownHook)
-            case Some(server) =>
-              DevMain.installShutdownHook(
-                application,
-                Some(server),
-                registerShutdownHook
-              )
+          Try(
+            startApplication(
+              config,
+              DevMain.luxmedConfig(config, mock, deviceUuid),
+              DevMain.accountSeeder(mock)
+            )
+          ) match
+            case Failure(error) =>
+              ApplicationLifecycle.closeAfterFailure(mock.toList, error)
+              Left(List(s"Startup failed: ${error.getMessage}"))
+            case Success(application) =>
+              mock match
+                case None =>
+                  installShutdownHook(application, registerShutdownHook)
+                case Some(server) =>
+                  DevMain.installShutdownHook(
+                    application,
+                    Some(server),
+                    registerShutdownHook
+                  )
+              Right(())
 
   def main(args: Array[String]): Unit =
     run(
@@ -91,6 +103,6 @@ object Main:
       thread => Runtime.getRuntime.addShutdownHook(thread)
     ) match
       case Left(errors) =>
-        errors.foreach(e => log.error(s"Configuration error: $e"))
+        errors.foreach(e => log.error(s"Backend startup error: $e"))
         sys.exit(1)
       case Right(_) => ()

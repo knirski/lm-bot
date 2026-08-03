@@ -66,6 +66,12 @@ object Config:
 
   private val substitutionEnvironmentKeys = environmentPathNames.values.toSet
 
+  private val booleanEnvironmentValues = Set("true", "false")
+  private val embeddedPgEnvironmentValues = booleanEnvironmentValues ++ Set(
+    "0",
+    "1"
+  )
+
   private val productionRequiredEnvironmentKeys = List(
     "DATABASE_URL",
     "DATABASE_USER",
@@ -86,6 +92,10 @@ object Config:
     val values = env
       .filter((key, _) => substitutionEnvironmentKeys(key))
       .filterNot((key, value) => emptyMeansMissing(key) && value.isEmpty)
+      .map:
+        case ("EMBEDDED_PG", "1") => "EMBEDDED_PG" -> "true"
+        case ("EMBEDDED_PG", "0") => "EMBEDDED_PG" -> "false"
+        case other                => other
     ConfigFactory.parseMap(values.asJava)
 
   private def forNativeReader(config: TypesafeConfig): TypesafeConfig =
@@ -121,12 +131,12 @@ object Config:
     val errors = List(
       env
         .get("LIVE_LUXMED_API")
-        .filter(value => value != "true" && value != "false")
+        .filterNot(booleanEnvironmentValues)
         .map(_ => "LIVE_LUXMED_API must be exactly true or false"),
       env
         .get("EMBEDDED_PG")
-        .filter(value => value != "true" && value != "false")
-        .map(_ => "EMBEDDED_PG must be exactly true or false"),
+        .filterNot(embeddedPgEnvironmentValues)
+        .map(_ => "EMBEDDED_PG must be true, false, 1, or 0"),
       Option.when(config.sessionTtl < 1.day)(
         "sessionTtl must be at least one day"
       )

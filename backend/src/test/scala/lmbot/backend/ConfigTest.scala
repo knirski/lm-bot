@@ -118,6 +118,14 @@ class ConfigTest extends munit.FunSuite:
       Config.fromEnv(minimal.updated("EMBEDDED_PG", "true")): @unchecked
     assertEquals(config.embeddedPg, true)
 
+  test("embedded PostgreSQL accepts one and zero"):
+    val enabled =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "1")): @unchecked
+    val disabled =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "0")): @unchecked
+    assertEquals(enabled.map(_.embeddedPg), Right(true))
+    assertEquals(disabled.map(_.embeddedPg), Right(false))
+
   test("live Luxmed API can be enabled explicitly"):
     val Right(config) =
       Config.fromEnv(minimal.updated("LIVE_LUXMED_API", "true")): @unchecked

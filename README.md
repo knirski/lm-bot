@@ -127,6 +127,9 @@ operator variables; settings without a substitution remain resource-only.
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |
 | `ADMIN_PASSWORD` | no | — (bootstrap only) | `admin` | as above |
 
+`LIVE_LUXMED_API` accepts `true` or `false`. `EMBEDDED_PG` accepts `true`,
+`false`, `1`, or `0`.
+
 These settings are resource-only and are not overridden through environment
 variables:
 
