@@ -113,6 +113,8 @@ variables override them. The backend uses `application.conf` by default;
 `startDev` sets `LMBOT_CONFIG_RESOURCE=application-dev.conf` to select the
 local defaults below. Production therefore uses `application.conf` and must
 set every variable marked **required**, including `LIVE_LUXMED_API=true`.
+The selected resource contains `${?VARIABLE}` substitutions for the supported
+operator variables; settings without a substitution remain resource-only.
 
 | Variable | Required | Default | Dev default (`startDev`) | Meaning |
 |---|---|---|---|---|

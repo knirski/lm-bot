@@ -44,10 +44,10 @@ embeddedPg = false
 luxmedAppVersion = "4.44.0"
 ```
 
-The loader converts the allow-listed environment variables to those paths,
-creates an environment `ConfigSource`, and combines it with
-the selected resource source using `withFallback`. Consequently the precedence
-is:
+The selected resource contains optional HOCON substitutions such as
+`dbUrl = ${?DATABASE_URL}`. The loader supplies a filtered environment config
+as the higher-precedence layer, resolves those substitutions, and then lets
+PureConfig derive the typed model. Consequently the precedence is:
 
 ```text
 environment override > selected HOCON resource default > missing required value
@@ -60,10 +60,12 @@ name as an explicit parameter, so selection is testable and never depends on
 classpath ordering. The development resource, not a second hand-written
 defaults table, owns local defaults.
 
-The conversion is explicit rather than a global environment import. This
-keeps the public variable names stable, avoids accidental configuration from
-unrelated process variables, and lets tests inject exactly the variables they
-intend to exercise.
+The environment source is filtered to the documented operator variables rather
+than importing every process variable. This keeps the public variable names
+stable, avoids accidental configuration from unrelated process variables, and
+lets tests inject exactly the variables they intend to exercise. Fields that do
+not need deployment-time overrides remain ordinary resource values with no
+substitution.
 
 ## PureConfig integration
 
@@ -82,10 +84,11 @@ derive or validate on its own:
 - `MasterKey` reads standard Base64 and requires exactly 32 decoded bytes.
 
 Internally, the HOCON `sessionTtl` field is loaded as a `FiniteDuration` and
-defaults to `7 days`. The environment adapter translates the legacy
-`SESSION_TTL_DAYS` variable to a duration value (for example, `7 days`) before
-PureConfig reads it. The loader then applies the existing minimum-one-day
-validation and reports the failure against `SESSION_TTL_DAYS` for compatibility.
+defaults to `7 days`. Its `${?SESSION_TTL_DAYS}` substitution accepts the
+existing whole-day operator value and the custom duration reader turns a bare
+integer into days before PureConfig validates it. The loader then applies the
+existing minimum-one-day validation and reports the failure against
+`SESSION_TTL_DAYS` for compatibility.
 
 `FiniteDuration` is an internal session/auth implementation detail. Operators
 continue to configure `SESSION_TTL_DAYS` in whole days; Java APIs that need
@@ -103,12 +106,12 @@ No `loadOrThrow` call is introduced in the public launcher path.
 
 ## Security
 
-- Secret values are parsed as literal environment values and never evaluated
-  as HOCON substitutions.
+- Secret values are supplied as literal substitution values and are never
+  reparsed as HOCON, so substitution-looking secret text remains literal.
 - `Secret` and the existing `Config` rendering tests continue to prevent
   database, admin, and master-key values from appearing in `toString` output.
-- The environment mapping is an allow-list. New configuration fields must be
-  added deliberately to it.
+- The environment source is an allow-list. New configuration fields need a
+  deliberate `${?ENV_VAR}` substitution before they become operator overrides.
 - Production `application.conf` contains no credentials or encryption keys.
 - Development-only credentials and the fixed development master key may appear
   only in `application-dev.conf`, which is never selected by production.

@@ -1,6 +1,6 @@
 package lmbot.backend.config
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
@@ -18,6 +18,20 @@ import pureconfig.{
   */
 final case class Secret(value: String):
   override def toString: String = "***"
+
+private given ConfigReader[FiniteDuration] = ConfigReader.fromCursor: cur =>
+  cur.asString.flatMap: raw =>
+    val value = if raw.matches("-?\\d+") then s"$raw days" else raw
+    Duration(value) match
+      case finite: FiniteDuration => Right(finite)
+      case _                      =>
+        cur.failed(
+          CannotConvert(
+            raw,
+            "FiniteDuration",
+            "value must be a finite duration"
+          )
+        )
 
 object Secret:
   given ConfigReader[Secret] = ConfigReader.fromCursor: cur =>
@@ -49,42 +63,49 @@ object Config:
 
   private val readerFieldMapping = ConfigFieldMapping(CamelCase, KebabCase)
 
-  private val environmentPaths = Map(
-    "DATABASE_URL" -> "dbUrl",
-    "DATABASE_USER" -> "dbUser",
-    "DATABASE_PASSWORD" -> "dbPassword",
-    "HTTP_HOST" -> "httpHost",
-    "HTTP_PORT" -> "httpPort",
-    "COOKIE_SECURE" -> "cookieSecure",
-    "SESSION_TTL_DAYS" -> "sessionTtl",
-    "LUXMED_APP_VERSION" -> "luxmedAppVersion",
-    "ADMIN_USERNAME" -> "adminUsername",
-    "ADMIN_PASSWORD" -> "adminPassword",
-    "LMBOT_MASTER_KEY" -> "masterKey",
-    "LIVE_LUXMED_API" -> "liveLuxmedApi",
-    "EMBEDDED_PG" -> "embeddedPg"
+  private val environmentPathNames = Map(
+    "dbUrl" -> "DATABASE_URL",
+    "dbUser" -> "DATABASE_USER",
+    "dbPassword" -> "DATABASE_PASSWORD",
+    "httpHost" -> "HTTP_HOST",
+    "httpPort" -> "HTTP_PORT",
+    "cookieSecure" -> "COOKIE_SECURE",
+    "sessionTtl" -> "SESSION_TTL_DAYS",
+    "luxmedAppVersion" -> "LUXMED_APP_VERSION",
+    "adminUsername" -> "ADMIN_USERNAME",
+    "adminPassword" -> "ADMIN_PASSWORD",
+    "masterKey" -> "LMBOT_MASTER_KEY",
+    "liveLuxmedApi" -> "LIVE_LUXMED_API",
+    "embeddedPg" -> "EMBEDDED_PG"
   )
 
-  private val optionalEnvironmentKeys = Set("ADMIN_USERNAME", "ADMIN_PASSWORD")
-
-  private val readerPathToEnvironmentKey = environmentPaths.map:
-    case (environmentKey, modelPath) =>
+  private val readerPathToEnvironmentKey = environmentPathNames.map:
+    case (modelPath, environmentKey) =>
       readerFieldMapping(modelPath) -> environmentKey
 
+  private val substitutionEnvironmentKeys = environmentPathNames.values.toSet
+
+  private val productionRequiredEnvironmentKeys = List(
+    "DATABASE_URL",
+    "DATABASE_USER",
+    "DATABASE_PASSWORD",
+    "LMBOT_MASTER_KEY"
+  )
+
+  private val emptyMeansMissing = Set(
+    "DATABASE_URL",
+    "DATABASE_USER",
+    "DATABASE_PASSWORD",
+    "ADMIN_USERNAME",
+    "ADMIN_PASSWORD",
+    "LMBOT_MASTER_KEY"
+  )
+
   private def environmentConfig(env: Map[String, String]) =
-    val values = environmentPaths.flatMap: (environmentKey, modelPath) =>
-      env
-        .get(environmentKey)
-        .flatMap: value =>
-          if optionalEnvironmentKeys(environmentKey) && value.isEmpty then None
-          else
-            val hoconValue =
-              if environmentKey == "SESSION_TTL_DAYS" then s"$value days"
-              else if environmentKey == "EMBEDDED_PG" && value == "1" then
-                "true"
-              else value
-            Some(modelPath -> hoconValue)
-    ConfigFactory.parseMap(values.asJava).resolve()
+    val values = env
+      .filter((key, _) => substitutionEnvironmentKeys(key))
+      .filterNot((key, value) => emptyMeansMissing(key) && value.isEmpty)
+    ConfigFactory.parseMap(values.asJava)
 
   private def forNativeReader(config: TypesafeConfig): TypesafeConfig =
     config
@@ -100,7 +121,9 @@ object Config:
   ) =
     val description = readerPathToEnvironmentKey.foldLeft(failure.description):
       case (current, (readerPath, environmentKey)) =>
-        current.replace(s"'$readerPath'", s"'$environmentKey'")
+        current
+          .replace(s"'$readerPath'", s"'$environmentKey'")
+          .replace(readerPath, environmentKey)
     if description.contains("LUXMED_APP_VERSION must not be empty") then
       "LUXMED_APP_VERSION must not be empty"
     else
@@ -119,6 +142,10 @@ object Config:
         .get("LIVE_LUXMED_API")
         .filter(value => value != "true" && value != "false")
         .map(_ => "LIVE_LUXMED_API must be exactly true or false"),
+      env
+        .get("EMBEDDED_PG")
+        .filter(value => value != "true" && value != "false")
+        .map(_ => "EMBEDDED_PG must be exactly true or false"),
       Option.when(config.sessionTtl < 1.day)(
         "SESSION_TTL_DAYS must be at least one day"
       )
@@ -129,14 +156,21 @@ object Config:
       env: Map[String, String],
       resourceName: String = "application.conf"
   ): Either[List[String], Config] =
-    val overrides =
-      ConfigSource.fromConfig(forNativeReader(environmentConfig(env)))
-    val defaults = ConfigSource.fromConfig(
-      forNativeReader(ConfigFactory.parseResources(resourceName).resolve())
-    )
-    overrides
-      .withFallback(defaults)
-      .load[Config]
-      .left
-      .map(_.toList.map(operatorDescription))
-      .flatMap(validate(_, env))
+    val missingRequired =
+      if resourceName == "application.conf" then
+        productionRequiredEnvironmentKeys.filterNot(key =>
+          env.get(key).exists(_.nonEmpty)
+        )
+      else Nil
+    if missingRequired.nonEmpty then
+      Left(missingRequired.map(key => s"$key is required"))
+    else
+      val resolved = environmentConfig(env)
+        .withFallback(ConfigFactory.parseResources(resourceName))
+        .resolve()
+      ConfigSource
+        .fromConfig(forNativeReader(resolved))
+        .load[Config]
+        .left
+        .map(_.toList.map(operatorDescription))
+        .flatMap(validate(_, env))

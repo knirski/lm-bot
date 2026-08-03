@@ -4,13 +4,13 @@
 
 **Goal:** Make PureConfig the single typed configuration boundary, add production and development HOCON resources with environment overrides, collapse the runtime into one backend module, and use `FiniteDuration` for session TTLs.
 
-**Architecture:** `Config.load(env, resourceName)` composes an allow-listed environment source over an explicitly selected resource source and derives the configuration product with Scala 3 PureConfig derivation. One backend `Main` owns both production and development composition; a typed configuration choice selects the mock Luxmed boundary and development account seeder, while a production guard rejects non-live startup before side effects.
+**Architecture:** `Config.load(env, resourceName)` resolves the selected HOCON resource's documented environment substitutions against an allow-listed environment source, then derives the configuration product with Scala 3 PureConfig derivation. One backend `Main` owns both production and development composition; a typed configuration choice selects the mock Luxmed boundary and development account seeder, while a production guard rejects non-live startup before side effects.
 
 **Tech Stack:** Scala 3.8.4, sbt 2, PureConfig 0.17.10 `pureconfig-core`, Typesafe Config/HOCON, MUnit, embedded PostgreSQL, existing Tapir/Gears services.
 
 ## Global Constraints
 
-- Environment variables retain their existing names and remain the highest-precedence overrides, including `EMBEDDED_PG`.
+- Documented environment substitutions retain their existing names and remain the highest-precedence overrides, including `EMBEDDED_PG`; fields without substitutions remain resource-only.
 - Production defaults contain no credentials or encryption keys.
 - Development-only credentials and the fixed development key live only in `application-dev.conf`.
 - `Config` derives `ConfigReader` with `pureconfig.generic.derivation.default`; custom readers are limited to validated domain types.
@@ -94,19 +94,20 @@ def fromEnv(
     env: Map[String, String],
     resourceName: String = "application.conf"
 ): Either[List[String], Config] =
-  val overrides = ConfigSource.fromConfig(environmentConfig(env))
-  val defaults = ConfigSource.resources(resourceName)
-  overrides.withFallback(defaults).load[Config]
+  val resolved = environmentConfig(env)
+    .withFallback(ConfigFactory.parseResources(resourceName))
+    .resolve()
+  ConfigSource.fromConfig(resolved).load[Config]
     .left.map(_.toList.map(_.description))
 ```
 
-`environmentConfig` must use an explicit mapping from the existing variable
-names to model paths, filter empty optional values as current behavior requires,
-preserve empty `LIVE_LUXMED_API` and `LUXMED_APP_VERSION` for validation, and
-translate `SESSION_TTL_DAYS=7` to the literal HOCON value `7 days`. Values must
-be inserted with `ConfigFactory.parseMap` so substitution-looking secrets stay
-literal. The default resource must be loaded only through the selected
-resource name, never through classpath ordering.
+The selected resource must contain the explicit `${?ENV_VAR}` substitutions for
+the supported variable names. The environment source filters to those
+documented names, preserves empty `LIVE_LUXMED_API` and `LUXMED_APP_VERSION`
+for validation, and uses `ConfigFactory.parseMap` so substitution-looking
+secrets stay literal. The `FiniteDuration` reader interprets a bare
+`SESSION_TTL_DAYS` value as days. The default resource must be loaded only
+through the selected resource name, never through classpath ordering.
 
 - [ ] **Step 5: Run the focused tests and verify they pass**
 

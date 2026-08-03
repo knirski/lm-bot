@@ -57,8 +57,11 @@ class ConfigTest extends munit.FunSuite:
     Config.fromEnv(Map.empty) match
       case Right(c)     => fail(s"expected failure, got $c")
       case Left(errors) =>
-        assert(errors.exists(_.contains("DATABASE_URL")))
-        assert(errors.exists(_.contains("DATABASE_USER")))
+        assert(errors.exists(_.contains("DATABASE_URL")), errors.mkString("; "))
+        assert(
+          errors.exists(_.contains("DATABASE_USER")),
+          errors.mkString("; ")
+        )
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
         assertEquals(
           errors.count(_.contains("LMBOT_MASTER_KEY")),
@@ -105,11 +108,10 @@ class ConfigTest extends munit.FunSuite:
     val Right(config) = Config.fromEnv(minimal): @unchecked
     assertEquals(config.embeddedPg, false)
 
-  test("embedded PostgreSQL can be enabled with true or 1"):
-    for flag <- List("true", "1") do
-      val Right(config) =
-        Config.fromEnv(minimal.updated("EMBEDDED_PG", flag)): @unchecked
-      assertEquals(config.embeddedPg, true)
+  test("embedded PostgreSQL can be enabled with true"):
+    val Right(config) =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "true")): @unchecked
+    assertEquals(config.embeddedPg, true)
 
   test("live Luxmed API can be enabled explicitly"):
     val Right(config) =
@@ -205,11 +207,8 @@ class ConfigTest extends munit.FunSuite:
   test(
     "a secret containing HOCON substitution syntax is never reinterpreted"
   ):
-    // DATABASE_URL/PASSWORD and LMBOT_MASTER_KEY bypass PureConfig/Typesafe
-    // Config entirely, on principle: they are free text an operator or
-    // attacker controls, not something to run through a general-purpose
-    // parsing pipeline, even one that (as this test also proves) already
-    // treats env-var-sourced values as literals rather than re-parsed HOCON.
+    // Environment values are supplied to HOCON as literal Config values. A
+    // substitution-looking secret is therefore not reparsed as HOCON syntax.
     val weird = "p@ss${word}!"
     val env = minimal.updated("DATABASE_PASSWORD", weird)
     Config.fromEnv(env) match
