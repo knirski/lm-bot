@@ -124,6 +124,7 @@ set every variable marked **required**, including `LIVE_LUXMED_API=true`.
 | `COOKIE_SECURE` | no | `true` | `false` | set `false` only for plain-HTTP local dev |
 | `SESSION_TTL_DAYS` | no | `7` | *(same)* | session lifetime in days; must be at least `1` |
 | `LIVE_LUXMED_API` | yes | `false` | `false` | opt into the real Luxmed API; `application-dev.conf` defaults to `false`, while production requires `true` |
+| `EMBEDDED_PG` | no | `false` | `true` | controls Zonky embedded PostgreSQL; production connects to the configured external database, while `startDev` starts PostgreSQL on port `15432` |
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
 | `LUXMED_APP_VERSION` | no | `4.44.0` | *(same)* | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |

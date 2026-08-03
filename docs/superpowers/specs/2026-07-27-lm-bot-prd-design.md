@@ -119,7 +119,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 | HTTP server | tapir-jdkhttp-server (`Identity` interpreter) on a virtual-thread executor |
 | HTTP client | sttp (backend: Luxmed + Telegram; frontend: Tapir-derived API client) |
 | Frontend UI | Laminar |
-| Database | PostgreSQL (embedded via memgres by default, zonky embedded-postgres opt-in), Flyway migrations; Magnum over blocking JDBC on virtual threads |
+| Database | PostgreSQL (Zonky embedded-postgres for development and tests), Flyway migrations; Magnum over blocking JDBC on virtual threads |
 | JSON | jsoniter-scala (Scala 3-native, cross-compiles to Scala.js) |
 
 **Verified versions** (checked against Maven Central 2026-07-27; all three platforms confirmed published where needed):
@@ -137,8 +137,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 | Magnum | 2.0.0-M3 | milestone only — accepted |
 | Flyway | 11.8.2 | |
 | PostgreSQL JDBC | 42.7.7 | |
-| Memgres | 0.2.4 | in-memory PG-compatible engine (default embedded DB) |
-| Zonky embedded-postgres | 2.2.2 | real PostgreSQL binary (opt-in: `EMBEDDED_DB=zonky`) |
+| Zonky embedded-postgres | 2.2.2 | real PostgreSQL binary (`EMBEDDED_PG=true` for local development/tests) |
 | MUnit | 1.3.4 | |
 | argon2-jvm | 2.12 | |
 | logback-classic | 1.6.0 | |
@@ -152,8 +151,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 ```
 lm-bot/
 ├── shared/      # crossProject JVM+JS: domain types, Tapir endpoints, JSON codecs
-├── backend/     # JVM: production entrypoint, services, persistence, HTTP
-├── backend-dev/ # JVM: local launcher, loopback Luxmed mock, fixture seeding
+├── backend/     # JVM: application, local mock/seeding, persistence, HTTP
 └── frontend/    # Scala.js Wasm: Laminar app, Tapir-derived client
 ```
 
@@ -164,9 +162,9 @@ lm-bot/
   - Luxmed client (§5.4), monitor engine (§5.5).
   - Persistence: repositories via Magnum; Flyway migrations.
   - Serves the built frontend as static assets.
-- **backend-dev** depends on `backend` and contains only the local launcher,
-  loopback Luxmed mock server and fixtures, and encrypted sample-account
-  seeding. It is not packaged in the production backend artifact.
+  - Contains the local launcher, deterministic loopback Luxmed mock and
+    fixtures, and encrypted sample-account seeding alongside the application;
+    configuration selects the local or production boundary.
 - **frontend** pages: login; dashboard (active monitors + lm-bot bookings); monitor wizard; monitor detail/edit; Luxmed accounts; settings (password, Telegram link); admin (users). Structured as Elm-on-Gears (§5.6).
 
 ### 5.3 Domain model & persistence
@@ -455,19 +453,21 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   JWT, persistence failure, and secret redaction.
 - Fixtures are the project's written record of current upstream behaviour; when a decode failure fires in production, the fixture is what gets updated. CI never calls live Luxmed endpoints.
 - Local development defaults to the deterministic loopback Luxmed mock. The
-  `LIVE_LUXMED_API` environment variable selects the boundary: absent or
-  `false` starts the mock and seeds an encrypted sample account after the
-  normal admin bootstrap; `true` uses the real Luxmed endpoints and does not
-  seed fixture accounts. The mock is path-routed so browser dictionary calls
-  may arrive concurrently and in any order. Mock code and fixtures live in a
-  separate `backend-dev` JVM project and are not packaged in the production
-  backend artifact. The production entrypoint accepts only live mode and fails
-  fast if `LIVE_LUXMED_API` is not `true`; the `backend-dev` entrypoint owns the
-  local default and may select either boundary. Both entrypoints delegate to
-  the same shared backend application composition so route and shutdown wiring
-  cannot drift. This switch is intended for local development; production
-  deployments must explicitly set `LIVE_LUXMED_API=true`, and mock mode must
-  never run in production.
+  `LIVE_LUXMED_API` environment variable selects the boundary: `false` starts
+  the mock and seeds an encrypted sample account after the normal admin
+  bootstrap; `true` uses the real Luxmed endpoints and does not seed fixture
+  accounts. The mock is path-routed so browser dictionary calls may arrive
+  concurrently and in any order. It, its fixtures, and the seeder live in the
+  single `backend` module with the production application. `application.conf`
+  is the production resource and `application-dev.conf` supplies safe local
+  defaults; `LMBOT_CONFIG_RESOURCE` selects the resource, and `startDev` sets
+  it to `application-dev.conf`. The production entrypoint accepts only live
+  mode and fails fast if `LIVE_LUXMED_API` is not `true`; the local launcher may
+  select either boundary. Both entrypoints use the same application composition
+  so migrations, admin bootstrap, routes, and shutdown wiring cannot drift.
+  This switch is intended for local development; production deployments must
+  explicitly set `LIVE_LUXMED_API=true`, and mock mode must never run in
+  production.
 - Before Plan 3 is declared complete, run one explicit, guided
   mock-conformance exploration against an owned Luxmed account. It previews
   its safety budget and asks for confirmation before login and each later
@@ -488,25 +488,35 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   login loop. It is opt-in and never runs in CI, but one successful required
   exploration is completion evidence for Plan 3; the optional lock/release
   result is recorded separately.
-- **Backend API:** integration tests with an embedded PostgreSQL-compatible database (memgres by default, zonky embedded-postgres opt-in) against Tapir endpoints in-process.
+- **Backend API:** integration tests with a real PostgreSQL database through
+  Zonky embedded-postgres against Tapir endpoints in-process.
 - **Frontend:** domain logic unit-tested; minimal DOM smoke tests in v1.
 - TDD throughout; CI runs everything on every push.
 
 ## 9. Observability & ops
 
 - Structured logging (slf4j/logback), `/health` endpoint, monitor status visible in the UI. No metrics stack in v1.
-- Configuration via env vars: DB URL, credential master key, Telegram bot token, Luxmed app version string, `LIVE_LUXMED_API` (default `false` for the `backend-dev` local launcher; the production entrypoint requires `true`), and initial admin credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is empty). Device identities are **not** configuration — they are per-account data, generated once and stored (§5.3).
+- Configuration comes from `application.conf` by default or
+  `application-dev.conf` when `LMBOT_CONFIG_RESOURCE` selects it, with
+  recognized environment variables overriding the selected resource: DB URL,
+  credential master key, Telegram bot token, Luxmed app version string,
+  `LIVE_LUXMED_API` (the local resource defaults to `false`; the production
+  entrypoint requires `true`), `EMBEDDED_PG` (the local resource enables Zonky
+  embedded PostgreSQL), and initial admin credentials
+  (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is
+  empty). Device identities are **not** configuration — they are per-account
+  data, generated once and stored (§5.3).
 - docker-compose: backend container (API + static frontend) + Postgres.
 
-The build keeps the production and local-development launchers separate. The
-`backend` project contains the production entrypoint, shared application
-composition, transport, persistence, routes, and static asset serving. The
-`backend-dev` project depends on `backend` and contains only the loopback mock
-server, mock fixtures, encrypted account seeder, and the `startDev` entrypoint.
-The shared composition accepts a Luxmed boundary configuration and an optional
-account-seeding hook; production passes the live boundary and no-op hook, while
-development passes the selected boundary and the mock seeder. This is the
-single wiring path for migrations, admin bootstrap, routes, and shutdown.
+The build has one `backend` module. It contains the production and local
+launchers, shared application composition, transport, persistence, routes,
+static asset serving, loopback mock server, mock fixtures, and encrypted account
+seeder. `application.conf` is selected by default; `startDev` selects
+`application-dev.conf` through `LMBOT_CONFIG_RESOURCE`. The shared composition
+accepts a Luxmed boundary configuration and an optional account-seeding hook:
+production passes the live boundary and no-op hook, while local development
+passes the selected boundary and mock seeder. This is the single wiring path
+for migrations, admin bootstrap, routes, and shutdown.
 
 ## 10. Risks
 
