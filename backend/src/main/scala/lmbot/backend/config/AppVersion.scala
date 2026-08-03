@@ -2,6 +2,9 @@ package lmbot.backend.config
 
 import scala.util.matching.Regex
 
+import pureconfig.ConfigReader
+import pureconfig.error.CannotConvert
+
 /** A validated Luxmed app version string (e.g. "4.44.0").
   *
   * Constructed only via the smart constructor, which enforces the minimum
@@ -12,6 +15,22 @@ import scala.util.matching.Regex
 opaque type AppVersion = String
 
 object AppVersion:
+
+  given ConfigReader[AppVersion] = ConfigReader.fromCursor: cur =>
+    cur.asString.flatMap: value =>
+      if value.isEmpty then
+        cur.failed(
+          CannotConvert(
+            value,
+            "AppVersion",
+            "LUXMED_APP_VERSION must not be empty"
+          )
+        )
+      else
+        fromString(value).fold(
+          error => cur.failed(CannotConvert(value, "AppVersion", error)),
+          Right.apply
+        )
 
   private val pattern: Regex = raw"^(\d+)\.(\d+)\.(\d+)".r
 

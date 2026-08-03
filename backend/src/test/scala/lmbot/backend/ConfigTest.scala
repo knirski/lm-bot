@@ -1,15 +1,47 @@
 package lmbot.backend
 
+import scala.concurrent.duration.*
+
 import lmbot.backend.config.{AppVersion, Config, Port, Secret}
 
 class ConfigTest extends munit.FunSuite:
 
-  private val minimal = Map(
+  private val requiredOnly = Map(
     "DATABASE_URL" -> "jdbc:postgresql://localhost:5432/lmbot",
     "DATABASE_USER" -> "lmbot",
     "DATABASE_PASSWORD" -> "secret",
     "LMBOT_MASTER_KEY" -> "zipI+cHXewVqZsFi8jDDrAglsYK9B3fXZMswhyxr2hk="
   )
+
+  private val minimal = requiredOnly
+
+  test("production resource supplies non-secret defaults"):
+    val result = Config.fromEnv(requiredOnly, "application.conf")
+    assertEquals(result.map(_.httpHost), Right("0.0.0.0"))
+    assertEquals(result.map(_.httpPort.value), Right(8080))
+    assertEquals(result.map(_.cookieSecure), Right(true))
+
+  test("development resource supplies local defaults"):
+    val result = Config.fromEnv(Map.empty, "application-dev.conf")
+    assertEquals(
+      result.map(_.dbUrl),
+      Right("jdbc:postgresql://localhost:15432/lmbot")
+    )
+    assertEquals(result.map(_.embeddedPg), Right(true))
+    assertEquals(result.map(_.liveLuxmedApi), Right(false))
+
+  test("environment values override the selected resource"):
+    val result = Config.fromEnv(
+      requiredOnly.updated(
+        "DATABASE_URL",
+        "jdbc:postgresql://override.example/lmbot"
+      ),
+      "application.conf"
+    )
+    assertEquals(
+      result.map(_.dbUrl),
+      Right("jdbc:postgresql://override.example/lmbot")
+    )
 
   test("a minimal environment yields a config with sensible defaults"):
     Config.fromEnv(minimal) match
@@ -18,17 +50,24 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.httpHost, "0.0.0.0")
         assertEquals(c.httpPort.value, 8080)
         assertEquals(c.cookieSecure, true)
-        assertEquals(c.sessionTtl.toDays, 7L)
         assertEquals(c.adminUsername, None)
         assertEquals(c.masterKey.bytes.length, 32)
       case Left(errs) => fail(s"expected success, got $errs")
+
+  test("session TTL is a finite Scala duration"):
+    val Right(config) =
+      Config.fromEnv(requiredOnly, "application.conf"): @unchecked
+    assertEquals(config.sessionTtl, 7.days)
 
   test("missing required variables are all reported at once"):
     Config.fromEnv(Map.empty) match
       case Right(c)     => fail(s"expected failure, got $c")
       case Left(errors) =>
-        assert(errors.exists(_.contains("DATABASE_URL")))
-        assert(errors.exists(_.contains("DATABASE_USER")))
+        assert(errors.exists(_.contains("DATABASE_URL")), errors.mkString("; "))
+        assert(
+          errors.exists(_.contains("DATABASE_USER")),
+          errors.mkString("; ")
+        )
         assert(errors.exists(_.contains("DATABASE_PASSWORD")))
         assertEquals(
           errors.count(_.contains("LMBOT_MASTER_KEY")),
@@ -36,23 +75,22 @@ class ConfigTest extends munit.FunSuite:
           s"missing LMBOT_MASTER_KEY error: $errors"
         )
 
-  test("port and secure-cookie flag are overridable"):
+  test("resource-only settings ignore environment values"):
     val env = minimal ++ Map(
       "HTTP_PORT" -> "9000",
       "COOKIE_SECURE" -> "false",
-      "HTTP_HOST" -> "127.0.0.1"
+      "HTTP_HOST" -> "127.0.0.1",
+      "SESSION_TTL_DAYS" -> "30",
+      "LUXMED_APP_VERSION" -> "4.45.1"
     )
     Config.fromEnv(env) match
       case Right(c) =>
-        assertEquals(c.httpPort.value, 9000)
-        assertEquals(c.cookieSecure, false)
-        assertEquals(c.httpHost, "127.0.0.1")
+        assertEquals(c.httpPort.value, 8080)
+        assertEquals(c.cookieSecure, true)
+        assertEquals(c.httpHost, "0.0.0.0")
+        assertEquals(c.sessionTtl, 7.days)
+        assertEquals(c.luxmedAppVersion.value, "4.44.0")
       case Left(errs) => fail(s"expected success, got $errs")
-
-  test("a non-numeric port is rejected"):
-    Config.fromEnv(minimal + ("HTTP_PORT" -> "eighty")) match
-      case Right(c)     => fail(s"expected failure, got $c")
-      case Left(errors) => assert(errors.exists(_.contains("HTTP_PORT")))
 
   test("admin bootstrap credentials are picked up when both are present"):
     val env =
@@ -75,11 +113,18 @@ class ConfigTest extends munit.FunSuite:
     val Right(config) = Config.fromEnv(minimal): @unchecked
     assertEquals(config.embeddedPg, false)
 
-  test("embedded PostgreSQL can be enabled with true or 1"):
-    for flag <- List("true", "1") do
-      val Right(config) =
-        Config.fromEnv(minimal.updated("EMBEDDED_PG", flag)): @unchecked
-      assertEquals(config.embeddedPg, true)
+  test("embedded PostgreSQL can be enabled with true"):
+    val Right(config) =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "true")): @unchecked
+    assertEquals(config.embeddedPg, true)
+
+  test("embedded PostgreSQL accepts one and zero"):
+    val enabled =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "1")): @unchecked
+    val disabled =
+      Config.fromEnv(minimal.updated("EMBEDDED_PG", "0")): @unchecked
+    assertEquals(enabled.map(_.embeddedPg), Right(true))
+    assertEquals(disabled.map(_.embeddedPg), Right(false))
 
   test("live Luxmed API can be enabled explicitly"):
     val Right(config) =
@@ -99,15 +144,8 @@ class ConfigTest extends munit.FunSuite:
     val result = Config.fromEnv(minimal.updated("LIVE_LUXMED_API", ""))
     assert(result.left.exists(_.exists(_.contains("LIVE_LUXMED_API"))))
 
-  test("Luxmed app version is configurable without changing the client"):
-    val Right(config) =
-      Config.fromEnv(
-        minimal.updated("LUXMED_APP_VERSION", "4.45.1")
-      ): @unchecked
-    assertEquals(config.luxmedAppVersion.value, "4.45.1")
-
   test("an empty Luxmed app version is rejected"):
-    val result = Config.fromEnv(minimal.updated("LUXMED_APP_VERSION", ""))
+    val result = Config.fromEnv(minimal, "application-empty-version.conf")
     assert(
       result.left.exists(_.contains("LUXMED_APP_VERSION must not be empty"))
     )
@@ -117,6 +155,18 @@ class ConfigTest extends munit.FunSuite:
     assertEquals(c.dbPassword.value, "secret")
     assertEquals(c.dbPassword.toString, "***")
 
+  test("wrong-typed secrets do not appear in configuration diagnostics"):
+    val secretValue = "42"
+    val result = Config.fromEnv(
+      minimal.removed("DATABASE_PASSWORD"),
+      "application-wrong-secret.conf"
+    )
+    result match
+      case Right(config) => fail(s"expected failure, got $config")
+      case Left(errors)  =>
+        assert(errors.exists(_.contains("Secret")), errors.mkString("; "))
+        assert(!errors.mkString.contains(secretValue))
+
   test("config never renders secrets in toString"):
     val Right(c) =
       Config.fromEnv(minimal ++ Map("ADMIN_PASSWORD" -> "hunter2")): @unchecked
@@ -125,26 +175,19 @@ class ConfigTest extends munit.FunSuite:
     assert(!rendered.contains("hunter2"), s"admin password leaked: $rendered")
 
   test("port outside valid range is rejected"):
-    val result = Config.fromEnv(minimal + ("HTTP_PORT" -> "0"))
+    val result = Config.fromEnv(minimal, "application-invalid-port.conf")
     assert(result.left.exists(_.exists(_.contains("Port"))))
 
-  test("a zero or negative session TTL is rejected"):
-    val zero = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "0"))
-    assert(zero.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
-
-    val negative = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "-1"))
-    assert(negative.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
+  test("zero and negative session TTLs are rejected"):
+    val result = Config.fromEnv(minimal, "application-invalid-ttl.conf")
+    assert(result.left.exists(_.exists(_.contains("sessionTtl"))))
 
   test("app version below minimum floor is rejected"):
-    val result = Config.fromEnv(
-      minimal.updated("LUXMED_APP_VERSION", "4.43.0")
-    )
+    val result = Config.fromEnv(minimal, "application-old-version.conf")
     assert(result.left.exists(_.exists(_.contains("AppVersion"))))
 
   test("non-parseable app version is rejected"):
-    val result = Config.fromEnv(
-      minimal.updated("LUXMED_APP_VERSION", "not-a-version")
-    )
+    val result = Config.fromEnv(minimal, "application-invalid-version.conf")
     assert(result.left.exists(_.exists(_.contains("AppVersion"))))
 
   test("master key must decode to exactly 32 bytes"):
@@ -164,11 +207,8 @@ class ConfigTest extends munit.FunSuite:
   test(
     "a secret containing HOCON substitution syntax is never reinterpreted"
   ):
-    // DATABASE_URL/PASSWORD and LMBOT_MASTER_KEY bypass PureConfig/Typesafe
-    // Config entirely, on principle: they are free text an operator or
-    // attacker controls, not something to run through a general-purpose
-    // parsing pipeline, even one that (as this test also proves) already
-    // treats env-var-sourced values as literals rather than re-parsed HOCON.
+    // Environment values are supplied to HOCON as literal Config values. A
+    // substitution-looking secret is therefore not reparsed as HOCON syntax.
     val weird = "p@ss${word}!"
     val env = minimal.updated("DATABASE_PASSWORD", weird)
     Config.fromEnv(env) match

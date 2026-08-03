@@ -1,20 +1,33 @@
 package lmbot.backend.config
 
-import java.time.Duration
-
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
-import com.typesafe.config.ConfigFactory
-import lmbot.backend.support.result
-import lmbot.backend.support.result.?
-import pureconfig.ConfigReader
-import pureconfig.ConfigSource
+import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
+import pureconfig.error.{CannotConvert, ConvertFailure}
+import pureconfig.{
+  CamelCase,
+  ConfigFieldMapping,
+  ConfigReader,
+  ConfigSource,
+  KebabCase
+}
 
-/** Configuration is env-only (spec §9). Secrets are wrapped so that an
-  * accidental interpolation of the config into a log line cannot leak them.
+/** Secrets are wrapped so an accidental interpolation of the configuration into
+  * a log line cannot leak them.
   */
 final case class Secret(value: String):
   override def toString: String = "***"
+
+object Secret:
+  given ConfigReader[Secret] = ConfigReader.fromCursor: cur =>
+    cur.asString.fold(
+      _ =>
+        cur.failed(
+          CannotConvert("redacted", "Secret", "secret values must be strings")
+        ),
+      value => Right(Secret(value))
+    )
 
 case class Config(
     dbUrl: String,
@@ -23,152 +36,132 @@ case class Config(
     httpHost: String,
     httpPort: Port,
     cookieSecure: Boolean,
-    sessionTtl: Duration,
+    sessionTtl: FiniteDuration,
     luxmedAppVersion: AppVersion,
     adminUsername: Option[String],
     adminPassword: Option[Secret],
     masterKey: MasterKey,
     liveLuxmedApi: Boolean = false,
     embeddedPg: Boolean = false
-)
+) derives ConfigReader
 
 object Config:
 
-  /** Env vars that never reach PureConfig/Typesafe Config, because they are
-    * free text an operator or attacker controls (a secret or a connection
-    * string), not something to run through a general-purpose parsing pipeline.
-    * Every other env var is "structural" and visible to `readStructural` below
-    * — a deny-list, so a newly added structural field needs no matching entry
-    * anywhere else to be read; forgetting to list a new *secret* here just
-    * means it takes the (already-verified-safe, see `ConfigTest`) PureConfig
-    * path rather than the direct one.
-    */
-  private val secretKeys = Set(
+  private val readerFieldMapping = ConfigFieldMapping(CamelCase, KebabCase)
+
+  private val environmentPathNames = Map(
+    "dbUrl" -> "DATABASE_URL",
+    "dbUser" -> "DATABASE_USER",
+    "dbPassword" -> "DATABASE_PASSWORD",
+    "adminUsername" -> "ADMIN_USERNAME",
+    "adminPassword" -> "ADMIN_PASSWORD",
+    "masterKey" -> "LMBOT_MASTER_KEY",
+    "liveLuxmedApi" -> "LIVE_LUXMED_API",
+    "embeddedPg" -> "EMBEDDED_PG"
+  )
+
+  private val readerPathToEnvironmentKey = environmentPathNames.map:
+    case (modelPath, environmentKey) =>
+      readerFieldMapping(modelPath) -> environmentKey
+
+  private val substitutionEnvironmentKeys = environmentPathNames.values.toSet
+
+  private val booleanEnvironmentValues = Set("true", "false")
+  private val embeddedPgEnvironmentValues = booleanEnvironmentValues ++ Set(
+    "0",
+    "1"
+  )
+
+  private val productionRequiredEnvironmentKeys = List(
     "DATABASE_URL",
     "DATABASE_USER",
     "DATABASE_PASSWORD",
-    "LMBOT_MASTER_KEY",
-    "ADMIN_USERNAME",
-    "ADMIN_PASSWORD"
+    "LMBOT_MASTER_KEY"
   )
 
-  /** A Typesafe `Config` built from only the non-secret env vars.
-    * `LUXMED_APP_VERSION` is excluded from blanking-to-absent because, unlike
-    * the others, a *present but blank* value is its own error rather than "use
-    * the default" (see `luxmedAppVersionRaw` below).
-    */
-  private def structuralHocon(env: Map[String, String]) =
-    val present = env.view
-      .filterKeys(k => !secretKeys(k))
-      .filter((k, v) => v.nonEmpty || k == "LUXMED_APP_VERSION")
-      .toMap
-    ConfigFactory.parseMap(present.asJava).resolve()
+  private val emptyMeansMissing = Set(
+    "DATABASE_URL",
+    "DATABASE_USER",
+    "DATABASE_PASSWORD",
+    "ADMIN_USERNAME",
+    "ADMIN_PASSWORD",
+    "LMBOT_MASTER_KEY"
+  )
 
-  /** Read one optional structural key. Missing is `Right(None)`; present but
-    * malformed for `A` (e.g. `HTTP_PORT=eighty`) is a `Left` naming the key —
-    * `ConfigReaderFailure.description` does not include the path, so the key is
-    * prefixed on here.
-    *
-    * `ConfigSource.at` fails on a missing path regardless of the target type —
-    * `Option[A]` only short-circuits missing keys inside case-class derivation,
-    * not at a bare cursor — so absence is checked explicitly.
-    */
-  private def readOpt[A: ConfigReader](
-      hocon: com.typesafe.config.Config,
-      key: String
-  ): Either[List[String], Option[A]] =
-    if !hocon.hasPath(key) then Right(None)
+  private def environmentConfig(env: Map[String, String]) =
+    val values = env
+      .filter((key, _) => substitutionEnvironmentKeys(key))
+      .filterNot((key, value) => emptyMeansMissing(key) && value.isEmpty)
+      .map:
+        case ("EMBEDDED_PG", "1") => "EMBEDDED_PG" -> "true"
+        case ("EMBEDDED_PG", "0") => "EMBEDDED_PG" -> "false"
+        case other                => other
+    ConfigFactory.parseMap(values.asJava)
+
+  private def forNativeReader(config: TypesafeConfig): TypesafeConfig =
+    config
+      .root()
+      .entrySet()
+      .asScala
+      .foldLeft(ConfigFactory.empty()):
+        case (mapped, entry) =>
+          mapped.withValue(readerFieldMapping(entry.getKey()), entry.getValue())
+
+  private def operatorDescription(
+      failure: pureconfig.error.ConfigReaderFailure
+  ) =
+    val description = readerPathToEnvironmentKey.foldLeft(failure.description):
+      case (current, (readerPath, environmentKey)) =>
+        current
+          .replace(s"'$readerPath'", s"'$environmentKey'")
+          .replace(readerPath, environmentKey)
+    if description.contains("LUXMED_APP_VERSION must not be empty") then
+      "LUXMED_APP_VERSION must not be empty"
     else
-      ConfigSource
-        .fromConfig(hocon)
-        .at(key)
-        .load[A]
-        .map(Some(_))
-        .left
-        .map(_.toList.map(failure => s"$key: ${failure.description}"))
+      failure match
+        case convert: ConvertFailure =>
+          readerPathToEnvironmentKey
+            .get(convert.path)
+            .fold(description)(environmentKey =>
+              s"$environmentKey: $description"
+            )
+        case _ => description
 
-  def fromEnv(env: Map[String, String]): Either[List[String], Config] =
-    val errors = List.newBuilder[String]
-
-    def required(key: String): String =
-      env.get(key).filter(_.nonEmpty) match
-        case Some(v) => v
-        case None    => errors += s"$key is required"; ""
-
-    val dbUrl = required("DATABASE_URL")
-    val dbUser = required("DATABASE_USER")
-    val dbPassword = required("DATABASE_PASSWORD")
-
-    val hocon = structuralHocon(env)
-
-    def readStructural[A: ConfigReader](key: String): Option[A] =
-      readOpt[A](hocon, key) match
-        case Left(readErrors) => errors ++= readErrors; None
-        case Right(value)     => value
-
-    val host = readStructural[String]("HTTP_HOST").getOrElse("0.0.0.0")
-    val portRaw = readStructural[Int]("HTTP_PORT").getOrElse(8080)
-    val secure = readStructural[Boolean]("COOKIE_SECURE").getOrElse(true)
-    val ttlDays = readStructural[Int]("SESSION_TTL_DAYS").getOrElse(7)
-    val liveLuxmedApiRaw = env.get("LIVE_LUXMED_API")
-    val parsedLiveLuxmedApi: Either[String, Boolean] =
-      liveLuxmedApiRaw match
-        case None          => Right(false)
-        case Some("true")  => Right(true)
-        case Some("false") => Right(false)
-        case Some(_) => Left("LIVE_LUXMED_API must be exactly true or false")
-    parsedLiveLuxmedApi.left.foreach(errors += _)
-    val embeddedPg = env
-      .get("EMBEDDED_PG")
-      .exists(value => value == "true" || value == "1")
-
-    val luxmedAppVersionRaw: Either[String, String] =
-      readStructural[String]("LUXMED_APP_VERSION") match
-        case None                          => Right("4.44.0")
-        case Some(value) if value.nonEmpty => Right(value)
-        case Some(_) => Left("LUXMED_APP_VERSION must not be empty")
-
-    // Parse each fallible value exactly once, both to validate it and to build
-    // the `Config` from — no `.get`/`.toOption.get` invariant to keep in sync.
-    val parsedPort: Either[String, Port] = Port.fromInt(portRaw)
-    parsedPort.left.foreach(errors += _)
-
-    val parsedTtlDays: Either[String, Int] =
-      if ttlDays >= 1 then Right(ttlDays)
-      else Left("SESSION_TTL_DAYS must be at least 1")
-    parsedTtlDays.left.foreach(errors += _)
-
-    val parsedAppVersion: Either[String, AppVersion] =
-      luxmedAppVersionRaw.flatMap(
-        AppVersion.fromString(_).left.map(msg => s"LUXMED_APP_VERSION: $msg")
+  private def validate(config: Config, env: Map[String, String]) =
+    val errors = List(
+      env
+        .get("LIVE_LUXMED_API")
+        .filterNot(booleanEnvironmentValues)
+        .map(_ => "LIVE_LUXMED_API must be exactly true or false"),
+      env
+        .get("EMBEDDED_PG")
+        .filterNot(embeddedPgEnvironmentValues)
+        .map(_ => "EMBEDDED_PG must be true, false, 1, or 0"),
+      Option.when(config.sessionTtl < 1.day)(
+        "sessionTtl must be at least one day"
       )
-    parsedAppVersion.left.foreach(errors += _)
+    ).flatten
+    Either.cond(errors.isEmpty, config, errors)
 
-    val masterKeyRaw = env.get("LMBOT_MASTER_KEY").filter(_.nonEmpty)
-    val parsedMasterKey: Either[String, MasterKey] =
-      masterKeyRaw match
-        case None      => Left("LMBOT_MASTER_KEY is required")
-        case Some(raw) => MasterKey.fromBase64(raw)
-    parsedMasterKey.left.foreach(errors += _)
-
-    val built = errors.result()
-    if built.nonEmpty then Left(built)
-    else
-      val config = result: // the `.?`s cannot fail: `built` is empty
-        Config(
-          dbUrl = dbUrl,
-          dbUser = dbUser,
-          dbPassword = Secret(dbPassword),
-          httpHost = host,
-          httpPort = parsedPort.?,
-          cookieSecure = secure,
-          sessionTtl = Duration.ofDays(parsedTtlDays.?.toLong),
-          luxmedAppVersion = parsedAppVersion.?,
-          liveLuxmedApi = parsedLiveLuxmedApi.?,
-          embeddedPg = embeddedPg,
-          adminUsername = env.get("ADMIN_USERNAME").filter(_.nonEmpty),
-          adminPassword =
-            env.get("ADMIN_PASSWORD").filter(_.nonEmpty).map(Secret.apply),
-          masterKey = parsedMasterKey.?
+  def fromEnv(
+      env: Map[String, String],
+      resourceName: String = "application.conf"
+  ): Either[List[String], Config] =
+    val missingRequired =
+      if resourceName == "application.conf" then
+        productionRequiredEnvironmentKeys.filterNot(key =>
+          env.get(key).exists(_.nonEmpty)
         )
-      config.left.map(List(_))
+      else Nil
+    if missingRequired.nonEmpty then
+      Left(missingRequired.map(key => s"$key is required"))
+    else
+      val resolved = environmentConfig(env)
+        .withFallback(ConfigFactory.parseResources(resourceName))
+        .resolve()
+      ConfigSource
+        .fromConfig(forNativeReader(resolved))
+        .load[Config]
+        .left
+        .map(_.toList.map(operatorDescription))
+        .flatMap(validate(_, env))

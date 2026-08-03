@@ -2,6 +2,9 @@ package lmbot.backend.config
 
 import java.util.Base64
 
+import pureconfig.ConfigReader
+import pureconfig.error.CannotConvert
+
 /** A validated 32-byte AES key, parsed from standard Base64.
   *
   * Construction is fallible: `fromBase64` validates length and encoding, and
@@ -13,6 +16,13 @@ final class MasterKey private[config] (private val raw: Array[Byte]):
   override def toString: String = "***"
 
 object MasterKey:
+
+  given ConfigReader[MasterKey] = ConfigReader.fromCursor: cur =>
+    cur.asString.flatMap: value =>
+      fromBase64(value).fold(
+        error => cur.failed(CannotConvert("redacted", "MasterKey", error)),
+        Right.apply
+      )
 
   /** Parse a standard-Base64-encoded key. Succeeds only when the decoded bytes
     * are exactly 32 bytes (256 bits). Error messages name the variable and

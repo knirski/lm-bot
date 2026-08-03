@@ -3,8 +3,10 @@ package lmbot.backend
 import java.util.UUID
 
 import scala.jdk.CollectionConverters.*
+import scala.util.{Failure, Success, Try}
 
 import lmbot.backend.config.Config
+import lmbot.backend.dev.{DevMain, MockLuxmedServer}
 import lmbot.backend.luxmed.LuxmedConfig
 import org.slf4j.LoggerFactory
 
@@ -14,6 +16,12 @@ import org.slf4j.LoggerFactory
 object Main:
 
   private val log = LoggerFactory.getLogger(getClass)
+  private val productionResource = "application.conf"
+  private val developmentResource = "application-dev.conf"
+  private val supportedResources = Set(productionResource, developmentResource)
+
+  private[backend] def configResource(env: Map[String, String]): String =
+    env.getOrElse("LMBOT_CONFIG_RESOURCE", productionResource)
 
   private[backend] def requireLiveLuxmedApi(
       config: Config
@@ -24,34 +32,77 @@ object Main:
       "LIVE_LUXMED_API=true is required in production"
     )
 
+  private def requireSupportedResource(
+      resourceName: String
+  ): Either[String, Unit] =
+    Either.cond(
+      supportedResources(resourceName),
+      (),
+      s"Unknown configuration resource: $resourceName"
+    )
+
   private[backend] def installShutdownHook(
       application: AutoCloseable,
       register: Thread => Unit
   ): Unit =
     ApplicationLifecycle.installShutdownHook(List(application), register)
 
-  def main(args: Array[String]): Unit =
-    Config.fromEnv(System.getenv().asScala.toMap) match
-      case Left(errors) =>
-        errors.foreach(e => log.error(s"Configuration error: $e"))
-        sys.exit(1)
+  private[backend] def run(
+      env: Map[String, String],
+      deviceUuid: => UUID,
+      startMock: () => MockLuxmedServer,
+      startApplication: (Config, LuxmedConfig, AccountSeeder) => AutoCloseable,
+      registerShutdownHook: Thread => Unit
+  ): Either[List[String], Unit] =
+    val resourceName = configResource(env)
+    requireSupportedResource(resourceName).left
+      .map(List(_))
+      .flatMap(_ => Config.fromEnv(env, resourceName))
+      .flatMap: config =>
+        val startupCheck =
+          if resourceName == developmentResource then Right(())
+          else requireLiveLuxmedApi(config).left.map(List(_))
 
-      case Right(config) =>
-        requireLiveLuxmedApi(config) match
-          case Left(error) =>
-            log.error(error)
-            sys.exit(1)
-          case Right(_) =>
-            val application = BackendApplication.start(
+        startupCheck.flatMap: _ =>
+          val mock =
+            if config.liveLuxmedApi then None
+            else Some(startMock())
+
+          if mock.isDefined then
+            log.info("Starting development backend with mock Luxmed API")
+          else log.info("Starting backend with live Luxmed API")
+
+          Try(
+            startApplication(
               config,
-              LuxmedConfig.production(
-                config.luxmedAppVersion,
-                UUID.randomUUID()
-              ),
-              AccountSeeder.noop
+              DevMain.luxmedConfig(config, mock, deviceUuid),
+              DevMain.accountSeeder(mock)
             )
+          ) match
+            case Failure(error) =>
+              ApplicationLifecycle.closeAfterFailure(mock.toList, error)
+              Left(List(s"Startup failed: ${error.getMessage}"))
+            case Success(application) =>
+              mock match
+                case None =>
+                  installShutdownHook(application, registerShutdownHook)
+                case Some(server) =>
+                  DevMain.installShutdownHook(
+                    application,
+                    Some(server),
+                    registerShutdownHook
+                  )
+              Right(())
 
-            installShutdownHook(
-              application,
-              thread => Runtime.getRuntime.addShutdownHook(thread)
-            )
+  def main(args: Array[String]): Unit =
+    run(
+      System.getenv().asScala.toMap,
+      UUID.randomUUID(),
+      () => MockLuxmedServer.start(),
+      BackendApplication.start,
+      thread => Runtime.getRuntime.addShutdownHook(thread)
+    ) match
+      case Left(errors) =>
+        errors.foreach(e => log.error(s"Backend startup error: $e"))
+        sys.exit(1)
+      case Right(_) => ()

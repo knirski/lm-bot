@@ -1,5 +1,8 @@
 package lmbot.backend.config
 
+import pureconfig.ConfigReader
+import pureconfig.error.CannotConvert
+
 /** A validated TCP port number (1–65535).
   *
   * Constructed only via the smart constructor, which validates at
@@ -9,6 +12,13 @@ package lmbot.backend.config
 opaque type Port = Int
 
 object Port:
+
+  given ConfigReader[Port] = ConfigReader.fromCursor: cur =>
+    cur.asInt.flatMap: value =>
+      fromInt(value).fold(
+        error => cur.failed(CannotConvert(value.toString, "Port", error)),
+        Right.apply
+      )
 
   def fromInt(i: Int): Either[String, Port] =
     if i >= 1 && i <= 65535 then Right(i)

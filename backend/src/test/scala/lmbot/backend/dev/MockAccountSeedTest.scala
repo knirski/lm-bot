@@ -18,6 +18,7 @@ import lmbot.backend.luxmed.SessionCodec
 import lmbot.backend.support.PostgresSuite
 import lmbot.shared.domain.{AccountId, Role, UserId}
 
+/** Integration coverage for development account seeding. */
 class MockAccountSeedTest extends PostgresSuite:
 
   private val crypto =

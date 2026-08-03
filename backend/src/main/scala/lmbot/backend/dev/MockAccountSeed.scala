@@ -11,7 +11,7 @@ import lmbot.backend.luxmed.model.{LuxmedSession, TokenType}
 import lmbot.backend.luxmed.{CookieJar, SessionCodec}
 import lmbot.shared.domain.{AccountStatus, UserId}
 
-/** Idempotently creates the safe account shown by the local mock API. */
+/** Idempotently creates the safe account exposed by the local mock API. */
 object MockAccountSeed extends AccountSeeder:
 
   val label = "Mock Luxmed"

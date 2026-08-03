@@ -1,6 +1,6 @@
 package lmbot.backend.http
 
-import java.time.Duration
+import scala.concurrent.duration.FiniteDuration
 
 import lmbot.backend.auth.AuthService
 import lmbot.shared.api.AuthEndpoints
@@ -11,7 +11,7 @@ import sttp.tapir.server.ServerEndpoint
 class AuthRoutes(
     auth: AuthService,
     cookieSecure: Boolean,
-    sessionTtl: Duration
+    sessionTtl: FiniteDuration
 ):
 
   private val loginRoute: ServerEndpoint[Any, Identity] =

@@ -4,6 +4,7 @@ import scala.collection.mutable.ListBuffer
 
 import lmbot.backend.AccountSeeder
 
+/** Lifecycle coverage retained for the unified launcher. */
 class DevMainTest extends munit.FunSuite:
 
   final private class Resource(

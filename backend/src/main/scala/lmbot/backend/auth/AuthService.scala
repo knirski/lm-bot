@@ -1,6 +1,8 @@
 package lmbot.backend.auth
 
-import java.time.{Duration, OffsetDateTime}
+import java.time.OffsetDateTime
+
+import scala.concurrent.duration.FiniteDuration
 
 import lmbot.backend.db.{SessionRepo, UserRepo, UserRow}
 import lmbot.shared.api.ApiError
@@ -22,7 +24,7 @@ case class AuthedUser(
 class AuthService(
     users: UserRepo,
     sessions: SessionRepo,
-    sessionTtl: Duration,
+    sessionTtl: FiniteDuration,
     now: () => OffsetDateTime
 ):
 
@@ -61,7 +63,11 @@ class AuthService(
       user <- toAuthed(row)
     yield
       val token = Tokens.generate()
-      sessions.insert(Tokens.hash(token), user.id, now().plus(sessionTtl))
+      sessions.insert(
+        Tokens.hash(token),
+        user.id,
+        now().plusNanos(sessionTtl.toNanos)
+      )
       (user.toView, token)
 
   def authenticate(token: Option[String]): Either[ApiError, AuthedUser] =

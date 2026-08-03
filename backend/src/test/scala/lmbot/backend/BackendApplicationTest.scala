@@ -1,11 +1,11 @@
 package lmbot.backend
 
-import java.time.Duration
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
 import scala.collection.mutable.ListBuffer
+import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 import lmbot.backend.config.{AppVersion, Config, MasterKey, Port, Secret}
@@ -109,7 +109,7 @@ class BackendApplicationTest extends munit.FunSuite:
         .fromInt(8080)
         .fold(error => throw IllegalStateException(error), identity),
       cookieSecure = false,
-      sessionTtl = Duration.ofDays(7),
+      sessionTtl = 7.days,
       luxmedAppVersion = AppVersion.unsafeFromString("4.44.0"),
       adminUsername = Some(adminUsername),
       adminPassword = Some(Secret("application-test-password")),

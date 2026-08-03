@@ -10,7 +10,7 @@ import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import org.slf4j.LoggerFactory
 import sttp.model.Uri
 
-/** A deterministic loopback stand-in for the Luxmed HTTP boundary.
+/** Deterministic loopback stand-in for the Luxmed HTTP boundary.
   *
   * It is deliberately path-routed rather than FIFO-driven: browser requests for
   * dictionaries can arrive concurrently and in a different order after a
@@ -19,6 +19,7 @@ import sttp.model.Uri
 final class MockLuxmedServer private (host: String) extends AutoCloseable:
 
   private val log = LoggerFactory.getLogger(getClass)
+  private var closed = false
   private val server = HttpServer.create(InetSocketAddress(host, 0), 0)
   private val executor = Executors.newVirtualThreadPerTaskExecutor()
   server.setExecutor(executor)
@@ -54,9 +55,13 @@ final class MockLuxmedServer private (host: String) extends AutoCloseable:
     s"http://$host:${server.getAddress.getPort}/PatientPortal"
   )
 
-  override def close(): Unit =
-    server.stop(0)
-    executor.close()
+  private[backend] def isClosed: Boolean = synchronized(closed)
+
+  override def close(): Unit = synchronized:
+    if !closed then
+      closed = true
+      server.stop(0)
+      executor.close()
 
   final private case class Response(
       status: Int,
