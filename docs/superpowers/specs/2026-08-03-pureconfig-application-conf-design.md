@@ -3,8 +3,8 @@
 ## Goal
 
 Make PureConfig the single configuration boundary for the backend while adding
-an `application.conf` defaults layer and preserving the current environment
-variable contract. Configuration must be readable from a deterministic
+an `application.conf` defaults layer and an explicit operator environment
+contract. Configuration must be readable from a deterministic
 `Map[String, String]` in tests and from the process environment in launchers.
 
 ## Scope and compatibility
