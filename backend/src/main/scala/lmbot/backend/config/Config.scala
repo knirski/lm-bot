@@ -108,7 +108,9 @@ object Config:
         case convert: ConvertFailure =>
           readerPathToEnvironmentKey
             .get(convert.path)
-            .fold(description)(environmentKey => s"$environmentKey: $description")
+            .fold(description)(environmentKey =>
+              s"$environmentKey: $description"
+            )
         case _ => description
 
   private def validate(config: Config, env: Map[String, String]) =

@@ -155,7 +155,7 @@ class ConfigTest extends munit.FunSuite:
     )
     result match
       case Right(config) => fail(s"expected failure, got $config")
-      case Left(errors) =>
+      case Left(errors)  =>
         assert(errors.exists(_.contains("Secret")), errors.mkString("; "))
         assert(!errors.mkString.contains(secretValue))
 

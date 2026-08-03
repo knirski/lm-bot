@@ -10,7 +10,7 @@ import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import org.slf4j.LoggerFactory
 import sttp.model.Uri
 
-/** A deterministic loopback stand-in for the Luxmed HTTP boundary.
+/** Deterministic loopback stand-in for the Luxmed HTTP boundary.
   *
   * It is deliberately path-routed rather than FIFO-driven: browser requests for
   * dictionaries can arrive concurrently and in a different order after a

@@ -33,6 +33,17 @@ class MainTest extends munit.FunSuite:
       Right(())
     )
 
+  test(
+    "configuration resource defaults to production and selects development explicitly"
+  ):
+    assertEquals(Main.configResource(Map.empty), "application.conf")
+    assertEquals(
+      Main.configResource(
+        Map("LMBOT_CONFIG_RESOURCE" -> "application-dev.conf")
+      ),
+      "application-dev.conf"
+    )
+
   test("failed hook registration closes the production application"):
     val events = ListBuffer.empty[String]
     val cleanupFailure = IllegalStateException("application cleanup")

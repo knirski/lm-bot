@@ -11,6 +11,7 @@ import sttp.client3.HttpClientSyncBackend
 import sttp.client3.basicRequest
 import sttp.model.StatusCode
 
+/** HTTP boundary coverage for the development mock server. */
 class MockLuxmedServerTest extends munit.FunSuite with GearsTest:
 
   private val http = HttpClientSyncBackend()
