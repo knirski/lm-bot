@@ -1,5 +1,7 @@
 package lmbot.backend
 
+import scala.concurrent.duration.*
+
 import lmbot.backend.config.{AppVersion, Config, Port, Secret}
 
 class ConfigTest extends munit.FunSuite:
@@ -42,10 +44,14 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.httpHost, "0.0.0.0")
         assertEquals(c.httpPort.value, 8080)
         assertEquals(c.cookieSecure, true)
-        assertEquals(c.sessionTtl.toDays, 7L)
         assertEquals(c.adminUsername, None)
         assertEquals(c.masterKey.bytes.length, 32)
       case Left(errs) => fail(s"expected success, got $errs")
+
+  test("session TTL is a finite Scala duration"):
+    val Right(config) =
+      Config.fromEnv(requiredOnly, "application.conf"): @unchecked
+    assertEquals(config.sessionTtl, 7.days)
 
   test("missing required variables are all reported at once"):
     Config.fromEnv(Map.empty) match
@@ -152,12 +158,11 @@ class ConfigTest extends munit.FunSuite:
     val result = Config.fromEnv(minimal + ("HTTP_PORT" -> "0"))
     assert(result.left.exists(_.exists(_.contains("Port"))))
 
-  test("a zero or negative session TTL is rejected"):
-    val zero = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "0"))
-    assert(zero.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
-
-    val negative = Config.fromEnv(minimal + ("SESSION_TTL_DAYS" -> "-1"))
-    assert(negative.left.exists(_.exists(_.contains("SESSION_TTL_DAYS"))))
+  test("zero and negative session TTLs are rejected"):
+    assert(Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "0")).isLeft)
+    assert(
+      Config.fromEnv(requiredOnly.updated("SESSION_TTL_DAYS", "-1")).isLeft
+    )
 
   test("app version below minimum floor is rejected"):
     val result = Config.fromEnv(

@@ -5,6 +5,7 @@ import java.time.{Duration, Instant, LocalDate, LocalTime, OffsetDateTime}
 import java.util.{Base64, UUID}
 
 import scala.compiletime.uninitialized
+import scala.concurrent.duration.*
 
 import com.sun.net.httpserver.HttpServer
 import lmbot.backend.account.{AccountClientFactory, AccountService}
@@ -37,7 +38,7 @@ import sttp.model.{StatusCode, Uri}
   */
 class AccountHttpApiTest extends PostgresSuite:
 
-  private val ttl = Duration.ofDays(7)
+  private val ttl = 7.days
   private val fixedInstant = Instant.parse("2026-07-30T08:00:00Z")
   private val fixedOffset = OffsetDateTime.parse("2026-07-30T10:00:00+02:00")
   private val key = MasterKey

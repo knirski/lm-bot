@@ -1,19 +1,27 @@
 package lmbot.backend.config
 
-import java.time.Duration
-
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
-import com.typesafe.config.ConfigFactory
-import pureconfig.ConfigReader
-import pureconfig.ConfigSource
-import pureconfig.error.UserValidationFailed
+import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
+import pureconfig.error.ConvertFailure
+import pureconfig.{
+  CamelCase,
+  ConfigFieldMapping,
+  ConfigReader,
+  ConfigSource,
+  KebabCase
+}
 
 /** Secrets are wrapped so an accidental interpolation of the configuration into
   * a log line cannot leak them.
   */
 final case class Secret(value: String):
   override def toString: String = "***"
+
+object Secret:
+  given ConfigReader[Secret] = ConfigReader.fromCursor: cur =>
+    cur.asString.map(Secret.apply)
 
 case class Config(
     dbUrl: String,
@@ -22,16 +30,18 @@ case class Config(
     httpHost: String,
     httpPort: Port,
     cookieSecure: Boolean,
-    sessionTtl: Duration,
+    sessionTtl: FiniteDuration,
     luxmedAppVersion: AppVersion,
     adminUsername: Option[String],
     adminPassword: Option[Secret],
     masterKey: MasterKey,
     liveLuxmedApi: Boolean = false,
     embeddedPg: Boolean = false
-)
+) derives ConfigReader
 
 object Config:
+
+  private val readerFieldMapping = ConfigFieldMapping(CamelCase, KebabCase)
 
   private val environmentPaths = Map(
     "DATABASE_URL" -> "dbUrl",
@@ -51,6 +61,10 @@ object Config:
 
   private val optionalEnvironmentKeys = Set("ADMIN_USERNAME", "ADMIN_PASSWORD")
 
+  private val readerPathToEnvironmentKey = environmentPaths.map:
+    case (environmentKey, modelPath) =>
+      readerFieldMapping(modelPath) -> environmentKey
+
   private def environmentConfig(env: Map[String, String]) =
     val values = environmentPaths.flatMap: (environmentKey, modelPath) =>
       env
@@ -59,54 +73,62 @@ object Config:
           if optionalEnvironmentKeys(environmentKey) && value.isEmpty then None
           else
             val hoconValue =
-              if environmentKey == "SESSION_TTL_DAYS" then s"P${value}D"
+              if environmentKey == "SESSION_TTL_DAYS" then s"$value days"
               else if environmentKey == "EMBEDDED_PG" && value == "1" then
                 "true"
               else value
             Some(modelPath -> hoconValue)
     ConfigFactory.parseMap(values.asJava).resolve()
 
-  private given ConfigReader[Secret] = ConfigReader[String].map(Secret.apply)
+  private def forNativeReader(config: TypesafeConfig): TypesafeConfig =
+    config
+      .root()
+      .entrySet()
+      .asScala
+      .foldLeft(ConfigFactory.empty()):
+        case (mapped, entry) =>
+          mapped.withValue(readerFieldMapping(entry.getKey()), entry.getValue())
 
-  private given ConfigReader[Port] =
-    ConfigReader[Int].emap: value =>
-      Port.fromInt(value).left.map(UserValidationFailed.apply)
+  private def operatorDescription(
+      failure: pureconfig.error.ConfigReaderFailure
+  ) =
+    val description = readerPathToEnvironmentKey.foldLeft(failure.description):
+      case (current, (readerPath, environmentKey)) =>
+        current.replace(s"'$readerPath'", s"'$environmentKey'")
+    if description.contains("LUXMED_APP_VERSION must not be empty") then
+      "LUXMED_APP_VERSION must not be empty"
+    else
+      failure match
+        case convert: ConvertFailure =>
+          readerPathToEnvironmentKey
+            .get(convert.path)
+            .fold(description)(environmentKey => s"$environmentKey: $description")
+        case _ => description
 
-  private given ConfigReader[AppVersion] =
-    ConfigReader[String].emap: value =>
-      AppVersion.fromString(value).left.map(UserValidationFailed.apply)
-
-  private given ConfigReader[MasterKey] =
-    ConfigReader[String].emap: value =>
-      MasterKey.fromBase64(value).left.map(UserValidationFailed.apply)
-
-  // Task 2 will replace this bridge reader with product derivation once the
-  // validated domain readers live beside their domain types, and migrate the
-  // Java duration to PureConfig's Scala finite-duration reader.
-  private given ConfigReader[Config] = ConfigReader.forProduct13(
-    "dbUrl",
-    "dbUser",
-    "dbPassword",
-    "httpHost",
-    "httpPort",
-    "cookieSecure",
-    "sessionTtl",
-    "luxmedAppVersion",
-    "adminUsername",
-    "adminPassword",
-    "masterKey",
-    "liveLuxmedApi",
-    "embeddedPg"
-  )(Config.apply)
+  private def validate(config: Config, env: Map[String, String]) =
+    val errors = List(
+      env
+        .get("LIVE_LUXMED_API")
+        .filter(value => value != "true" && value != "false")
+        .map(_ => "LIVE_LUXMED_API must be exactly true or false"),
+      Option.when(config.sessionTtl < 1.day)(
+        "SESSION_TTL_DAYS must be at least one day"
+      )
+    ).flatten
+    Either.cond(errors.isEmpty, config, errors)
 
   def fromEnv(
       env: Map[String, String],
       resourceName: String = "application.conf"
   ): Either[List[String], Config] =
-    val overrides = ConfigSource.fromConfig(environmentConfig(env))
-    val defaults = ConfigSource.resources(resourceName)
+    val overrides =
+      ConfigSource.fromConfig(forNativeReader(environmentConfig(env)))
+    val defaults = ConfigSource.fromConfig(
+      forNativeReader(ConfigFactory.parseResources(resourceName).resolve())
+    )
     overrides
       .withFallback(defaults)
       .load[Config]
       .left
-      .map(_.toList.map(_.description))
+      .map(_.toList.map(operatorDescription))
+      .flatMap(validate(_, env))

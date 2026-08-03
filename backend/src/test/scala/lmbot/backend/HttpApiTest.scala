@@ -1,8 +1,9 @@
 package lmbot.backend
 
-import java.time.{Duration, OffsetDateTime}
+import java.time.OffsetDateTime
 
 import scala.compiletime.uninitialized
+import scala.concurrent.duration.*
 
 import com.augustnagro.magnum.{sql, transact}
 import com.sun.net.httpserver.HttpServer
@@ -17,7 +18,7 @@ import sttp.model.{StatusCode, Uri}
 /** Drives the real server over real HTTP against real Postgres. */
 class HttpApiTest extends PostgresSuite:
 
-  private val ttl = Duration.ofDays(7)
+  private val ttl = 7.days
   private var server: HttpServer = uninitialized
   private var baseUri: Uri = uninitialized
   private val http = HttpClientSyncBackend()

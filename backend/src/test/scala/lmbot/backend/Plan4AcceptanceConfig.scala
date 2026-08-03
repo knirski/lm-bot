@@ -6,6 +6,7 @@ import java.util.Base64
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
 
+import scala.concurrent.duration.*
 import scala.io.{Codec, Source}
 import scala.jdk.CollectionConverters.*
 
@@ -90,7 +91,7 @@ object Plan4AcceptanceConfig:
       // The acceptance server speaks plain HTTP on loopback, so a Secure
       // cookie would never be sent back.
       cookieSecure = false,
-      sessionTtl = Duration.ofDays(7),
+      sessionTtl = 7.days,
       luxmedAppVersion = AppVersion.unsafeFromString("4.44.0"),
       adminUsername = Some(adminUsername),
       adminPassword = Some(Secret(adminPassword)),

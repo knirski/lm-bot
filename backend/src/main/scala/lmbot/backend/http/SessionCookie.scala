@@ -1,6 +1,6 @@
 package lmbot.backend.http
 
-import java.time.Duration
+import scala.concurrent.duration.FiniteDuration
 
 import sttp.model.headers.Cookie.SameSite
 import sttp.model.headers.CookieValueWithMeta
@@ -14,7 +14,7 @@ object SessionCookie:
   def issue(
       token: String,
       secure: Boolean,
-      ttl: Duration
+      ttl: FiniteDuration
   ): CookieValueWithMeta =
     CookieValueWithMeta.unsafeApply(
       value = token,

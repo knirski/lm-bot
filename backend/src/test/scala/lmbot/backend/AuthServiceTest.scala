@@ -1,6 +1,8 @@
 package lmbot.backend
 
-import java.time.{Duration, OffsetDateTime}
+import java.time.OffsetDateTime
+
+import scala.concurrent.duration.*
 
 import com.augustnagro.magnum.{sql, transact}
 import lmbot.backend.auth.{AuthService, Passwords, Tokens}
@@ -11,7 +13,7 @@ import lmbot.shared.domain.Role
 
 class AuthServiceTest extends PostgresSuite:
 
-  private val ttl = Duration.ofDays(7)
+  private val ttl = 7.days
 
   private def service(
       now: () => OffsetDateTime = () => OffsetDateTime.now()
@@ -98,7 +100,7 @@ class AuthServiceTest extends PostgresSuite:
       UserRepo(xa),
       SessionRepo(xa),
       ttl,
-      () => issued.plus(ttl).plusMinutes(1)
+      () => issued.plusNanos(ttl.toNanos).plusMinutes(1)
     )
     assertEquals(later.authenticate(Some(token)), Left(ApiError.Unauthorized))
     assertEquals(SessionRepo(xa).find(Tokens.hash(token)), None)
