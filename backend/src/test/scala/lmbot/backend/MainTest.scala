@@ -1,5 +1,7 @@
 package lmbot.backend
 
+import java.util.UUID
+
 import scala.collection.mutable.ListBuffer
 
 import lmbot.backend.config.Config
@@ -32,6 +34,25 @@ class MainTest extends munit.FunSuite:
       Main.requireLiveLuxmedApi(configWith(liveLuxmedApi = true)),
       Right(())
     )
+
+  test("production rejection does not generate a device identity"):
+    var generated = false
+
+    val result = Main.run(
+      minimal.updated("LIVE_LUXMED_API", "false"), {
+        generated = true
+        UUID.fromString("00000000-0000-4000-8000-000000000010")
+      },
+      () => fail("rejected production configuration must not start a mock"),
+      (_, _, _) => fail("rejected production configuration must not start"),
+      _ => fail("rejected production configuration must not register a hook")
+    )
+
+    assertEquals(
+      result,
+      Left(List("LIVE_LUXMED_API=true is required in production"))
+    )
+    assert(!generated)
 
   test(
     "configuration resource defaults to production and selects development explicitly"

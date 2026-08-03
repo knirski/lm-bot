@@ -38,7 +38,7 @@ object Main:
 
   private[backend] def run(
       env: Map[String, String],
-      deviceUuid: UUID,
+      deviceUuid: => UUID,
       startMock: () => MockLuxmedServer,
       startApplication: (Config, LuxmedConfig, AccountSeeder) => AutoCloseable,
       registerShutdownHook: Thread => Unit
