@@ -35,16 +35,6 @@ object DevMain:
   ): AccountSeeder =
     mock.fold(AccountSeeder.noop)(_ => MockAccountSeed)
 
-  private[dev] def closeAfterFailure(
-      application: Option[AutoCloseable],
-      mock: Option[AutoCloseable],
-      primary: Throwable
-  ): Unit =
-    ApplicationLifecycle.closeAfterFailure(
-      application.toList ++ mock.toList,
-      primary
-    )
-
   private[dev] def installShutdownHook(
       application: AutoCloseable,
       mock: Option[AutoCloseable],
@@ -81,7 +71,7 @@ object DevMain:
             )
           catch
             case error: Throwable =>
-              closeAfterFailure(None, mock, error)
+              ApplicationLifecycle.closeAfterFailure(mock.toList, error)
               throw error
 
         installShutdownHook(
