@@ -151,9 +151,10 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 
 ```
 lm-bot/
-├── shared/    # crossProject JVM+JS: domain types, Tapir endpoints, JSON codecs
-├── backend/   # JVM: services, Luxmed client, monitor engine, persistence, HTTP
-└── frontend/  # Scala.js Wasm: Laminar app, Tapir-derived client
+├── shared/      # crossProject JVM+JS: domain types, Tapir endpoints, JSON codecs
+├── backend/     # JVM: production entrypoint, services, persistence, HTTP
+├── backend-dev/ # JVM: local launcher, loopback Luxmed mock, fixture seeding
+└── frontend/    # Scala.js Wasm: Laminar app, Tapir-derived client
 ```
 
 - **shared** is the single source of truth for the API: domain model (`User`, `LuxmedAccount`, `Monitor`, `BookingSlot`, …), every REST endpoint as a Tapir endpoint (path, auth, request/response/error types), JSON codecs.
@@ -163,6 +164,9 @@ lm-bot/
   - Luxmed client (§5.4), monitor engine (§5.5).
   - Persistence: repositories via Magnum; Flyway migrations.
   - Serves the built frontend as static assets.
+- **backend-dev** depends on `backend` and contains only the local launcher,
+  loopback Luxmed mock server and fixtures, and encrypted sample-account
+  seeding. It is not packaged in the production backend artifact.
 - **frontend** pages: login; dashboard (active monitors + lm-bot bookings); monitor wizard; monitor detail/edit; Luxmed accounts; settings (password, Telegram link); admin (users). Structured as Elm-on-Gears (§5.6).
 
 ### 5.3 Domain model & persistence

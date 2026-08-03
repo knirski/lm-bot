@@ -6,7 +6,7 @@ import scala.jdk.CollectionConverters.*
 
 import lmbot.backend.config.Config
 import lmbot.backend.luxmed.LuxmedConfig
-import lmbot.backend.{AccountSeeder, BackendApplication}
+import lmbot.backend.{AccountSeeder, ApplicationLifecycle, BackendApplication}
 import org.slf4j.LoggerFactory
 
 /** Development composition root with an optional loopback Luxmed boundary. */
@@ -40,30 +40,20 @@ object DevMain:
       mock: Option[AutoCloseable],
       primary: Throwable
   ): Unit =
-    (application.toList ++ mock.toList).foreach: resource =>
-      try resource.close()
-      catch
-        case cleanup: Throwable =>
-          if cleanup ne primary then primary.addSuppressed(cleanup)
+    ApplicationLifecycle.closeAfterFailure(
+      application.toList ++ mock.toList,
+      primary
+    )
 
   private[dev] def installShutdownHook(
       application: AutoCloseable,
       mock: Option[AutoCloseable],
       register: Thread => Unit
   ): Unit =
-    val hook = Thread: () =>
-      try application.close()
-      catch
-        case error: Throwable =>
-          closeAfterFailure(None, mock, error)
-          throw error
-      mock.foreach(_.close())
-
-    try register(hook)
-    catch
-      case error: Throwable =>
-        closeAfterFailure(Some(application), mock, error)
-        throw error
+    ApplicationLifecycle.installShutdownHook(
+      application :: mock.toList,
+      register
+    )
 
   def main(args: Array[String]): Unit =
     Config.fromEnv(System.getenv().asScala.toMap) match

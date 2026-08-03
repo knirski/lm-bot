@@ -3,7 +3,6 @@ package lmbot.backend
 import java.time.OffsetDateTime
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.zaxxer.hikari.HikariDataSource
 import lmbot.backend.account.{
   AccountClientFactory,
   AccountService,
@@ -33,24 +32,27 @@ import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.{EmbeddedDb, EmbeddedPg}
 import lmbot.shared.domain.UserId
 import org.slf4j.LoggerFactory
+import sttp.shared.Identity
+import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.jdkhttp.HttpServer
 
-final class BackendApplication private (
-    server: HttpServer,
-    dataSource: HikariDataSource,
-    embeddedDb: Option[EmbeddedDb]
+final class BackendApplication private[backend] (
+    resources: List[AutoCloseable]
 ) extends AutoCloseable:
 
   private val closed = AtomicBoolean(false)
 
   override def close(): Unit =
     if closed.compareAndSet(false, true) then
-      try server.stop(3)
-      finally
-        try dataSource.close()
-        finally embeddedDb.foreach(_.close())
+      ApplicationLifecycle.closeAll(resources)
 
 object BackendApplication:
+
+  private[backend] type ServerStarter = (
+      String,
+      Int,
+      List[ServerEndpoint[Any, Identity]]
+  ) => HttpServer
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -59,20 +61,31 @@ object BackendApplication:
       luxmedConfig: LuxmedConfig,
       accountSeeder: AccountSeeder
   ): BackendApplication =
+    start(
+      config,
+      luxmedConfig,
+      accountSeeder,
+      (host, port, endpoints) => Server.start(host, port, endpoints)
+    )
+
+  private[backend] def start(
+      config: Config,
+      luxmedConfig: LuxmedConfig,
+      accountSeeder: AccountSeeder,
+      startServer: ServerStarter
+  ): BackendApplication =
     val embeddedDb = startEmbeddedDb()
     val dataSource =
-      try
+      ApplicationLifecycle.withCleanupOnFailure(embeddedDb.toList):
         Database.dataSource(
           config.dbUrl,
           config.dbUser,
           config.dbPassword.value
         )
-      catch
-        case t: Throwable =>
-          embeddedDb.foreach(_.close())
-          throw t
 
-    try
+    val server = ApplicationLifecycle.withCleanupOnFailure(
+      dataSource :: embeddedDb.toList
+    ):
       Database.migrate(dataSource)
       val xa = Database.transactor(dataSource)
       val users = UserRepo(xa)
@@ -122,7 +135,7 @@ object BackendApplication:
       val monitorService = MonitorService(monitorRepo, accountRepo)
       val monitorRoutes = MonitorRoutes(auth, monitorService)
 
-      val server = Server.start(
+      startServer(
         config.httpHost,
         config.httpPort.value,
         HealthRoutes.endpoints ++ authRoutes.endpoints ++
@@ -130,15 +143,16 @@ object BackendApplication:
           monitorRoutes.endpoints ++ StaticRoutes.endpoints
       )
 
+    val resources = serverResource(server) :: dataSource :: embeddedDb.toList
+    ApplicationLifecycle.withCleanupOnFailure(resources):
       log.info(
         s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}"
       )
-      new BackendApplication(server, dataSource, embeddedDb)
-    catch
-      case t: Throwable =>
-        try dataSource.close()
-        finally embeddedDb.foreach(_.close())
-        throw t
+      new BackendApplication(resources)
+
+  private def serverResource(server: HttpServer): AutoCloseable =
+    new AutoCloseable:
+      override def close(): Unit = server.stop(3)
 
   private def startEmbeddedDb(): Option[EmbeddedDb] =
     if sys.env.get("EMBEDDED_PG").exists(v => v == "true" || v == "1") then

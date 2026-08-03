@@ -24,6 +24,12 @@ object Main:
       "LIVE_LUXMED_API=true is required in production"
     )
 
+  private[backend] def installShutdownHook(
+      application: AutoCloseable,
+      register: Thread => Unit
+  ): Unit =
+    ApplicationLifecycle.installShutdownHook(List(application), register)
+
   def main(args: Array[String]): Unit =
     Config.fromEnv(System.getenv().asScala.toMap) match
       case Left(errors) =>
@@ -45,8 +51,7 @@ object Main:
               AccountSeeder.noop
             )
 
-            Runtime.getRuntime.addShutdownHook(
-              Thread: () =>
-                log.info("Shutting down")
-                application.close()
+            installShutdownHook(
+              application,
+              thread => Runtime.getRuntime.addShutdownHook(thread)
             )

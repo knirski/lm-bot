@@ -1,21 +1,50 @@
 package lmbot.backend
 
-import java.net.ServerSocket
 import java.time.Duration
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 
 import lmbot.backend.config.{AppVersion, Config, MasterKey, Port, Secret}
 import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{AccountRepo, Database, UserRepo}
+import lmbot.backend.http.Server
 import lmbot.backend.luxmed.LuxmedConfig
 import lmbot.backend.support.EmbeddedPg
 import lmbot.shared.domain.UserId
 
 class BackendApplicationTest extends munit.FunSuite:
+
+  final private class Resource(
+      name: String,
+      events: ListBuffer[String],
+      failure: Option[Throwable]
+  ) extends AutoCloseable:
+    override def close(): Unit =
+      events += name
+      failure.foreach(error => throw error)
+
+  test("close preserves the primary failure and closes every resource"):
+    val events = ListBuffer.empty[String]
+    val serverFailure = IllegalStateException("server cleanup")
+    val dataSourceFailure = IllegalStateException("data source cleanup")
+    val application = new BackendApplication(
+      List(
+        Resource("server", events, Some(serverFailure)),
+        Resource("dataSource", events, Some(dataSourceFailure)),
+        Resource("embeddedDb", events, None)
+      )
+    )
+
+    val thrown = intercept[IllegalStateException](application.close())
+    application.close()
+
+    assertEquals(thrown, serverFailure)
+    assertEquals(events.toList, List("server", "dataSource", "embeddedDb"))
+    assertEquals(thrown.getSuppressed.toList, List(dataSourceFailure))
 
   test("runs the supplied account seeder after admin bootstrap"):
     val pg = EmbeddedPg.startForTest(port = 0)
@@ -42,7 +71,8 @@ class BackendApplicationTest extends munit.FunSuite:
         config,
         LuxmedConfig
           .production(AppVersion.unsafeFromString("4.44.0"), UUID.randomUUID()),
-        seeder
+        seeder,
+        (host, _, endpoints) => Server.start(host, 0, endpoints)
       )
     try
       inspectionUsers.findByUsername(adminUsername) match
@@ -76,7 +106,7 @@ class BackendApplicationTest extends munit.FunSuite:
       dbPassword = Secret(dbPassword),
       httpHost = "127.0.0.1",
       httpPort = Port
-        .fromInt(freePort())
+        .fromInt(8080)
         .fold(error => throw IllegalStateException(error), identity),
       cookieSecure = false,
       sessionTtl = Duration.ofDays(7),
@@ -87,8 +117,3 @@ class BackendApplicationTest extends munit.FunSuite:
         .fromBase64(Base64.getEncoder.encodeToString(Array.fill[Byte](32)(7)))
         .fold(error => throw IllegalStateException(error), identity)
     )
-
-  private def freePort(): Int =
-    val socket = ServerSocket(0)
-    try socket.getLocalPort
-    finally socket.close()

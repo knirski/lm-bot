@@ -115,6 +115,25 @@
         # Treefmt formatting check (same treefmt config used by the formatter
         # below and the pre-commit hook above).
         formatting = (perSystem pkgs).treefmt-eval.config.build.check self;
+
+        # Compose must pass the operator's explicit live-mode choice through to
+        # the production backend. Parsing the YAML keeps this check static and
+        # daemon-free while still validating the effective configuration key.
+        docker-compose-live-luxmed =
+          pkgs.runCommand "docker-compose-live-luxmed"
+            {
+              nativeBuildInputs = [ pkgs.yq-go ];
+              src = self;
+            }
+            ''
+              actual="$(yq -r '.services.backend.environment.LIVE_LUXMED_API' "$src/docker-compose.yml")"
+              expected="$(printf '%s%s' '$' '{LIVE_LUXMED_API:?set LIVE_LUXMED_API=true}')"
+              if [ "$actual" != "$expected" ]; then
+                echo "backend LIVE_LUXMED_API must be required and propagated, got: $actual" >&2
+                exit 1
+              fi
+              touch "$out"
+            '';
       });
 
       # -- dev shell ---------------------------------------------------------
