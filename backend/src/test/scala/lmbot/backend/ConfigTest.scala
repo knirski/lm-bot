@@ -147,6 +147,18 @@ class ConfigTest extends munit.FunSuite:
     assertEquals(c.dbPassword.value, "secret")
     assertEquals(c.dbPassword.toString, "***")
 
+  test("wrong-typed secrets do not appear in configuration diagnostics"):
+    val secretValue = "42"
+    val result = Config.fromEnv(
+      minimal.removed("DATABASE_PASSWORD"),
+      "application-wrong-secret.conf"
+    )
+    result match
+      case Right(config) => fail(s"expected failure, got $config")
+      case Left(errors) =>
+        assert(errors.exists(_.contains("Secret")), errors.mkString("; "))
+        assert(!errors.mkString.contains(secretValue))
+
   test("config never renders secrets in toString"):
     val Right(c) =
       Config.fromEnv(minimal ++ Map("ADMIN_PASSWORD" -> "hunter2")): @unchecked

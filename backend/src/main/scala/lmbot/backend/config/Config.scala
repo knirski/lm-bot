@@ -4,7 +4,7 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
-import pureconfig.error.ConvertFailure
+import pureconfig.error.{CannotConvert, ConvertFailure}
 import pureconfig.{
   CamelCase,
   ConfigFieldMapping,
@@ -21,7 +21,13 @@ final case class Secret(value: String):
 
 object Secret:
   given ConfigReader[Secret] = ConfigReader.fromCursor: cur =>
-    cur.asString.map(Secret.apply)
+    cur.asString.fold(
+      _ =>
+        cur.failed(
+          CannotConvert("redacted", "Secret", "secret values must be strings")
+        ),
+      value => Right(Secret(value))
+    )
 
 case class Config(
     dbUrl: String,
