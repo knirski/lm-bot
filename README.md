@@ -64,13 +64,21 @@ working local server:
 
 ```bash
 direnv allow              # one-time (or `nix develop`)
-sbt startDev              # starts embedded PG on 15432, links frontend, runs backend
+sbt startDev              # starts embedded PG on 15432, links frontend, runs backend-dev
 ```
 
 Override any variable from the shell — the forked JVM inherits it:
 
 ```bash
 ADMIN_PASSWORD=hunter2 sbt startDev
+```
+
+`startDev` runs the separate `backend-dev` launcher with
+`LIVE_LUXMED_API=false` by default, using deterministic local Luxmed data. Set
+`LIVE_LUXMED_API=true` to opt into the real Luxmed API:
+
+```bash
+LIVE_LUXMED_API=true sbt startDev
 ```
 
 ### Full hot reload (two terminals)
@@ -82,8 +90,8 @@ the watches separately:
 # Terminal 1: frontend
 sbt ~frontend/fastLinkJS
 
-# Terminal 2: backend
-sbt ~backend/run
+# Terminal 2: backend-dev
+sbt ~backendDev/run
 ```
 
 Changes to any source file now trigger the relevant re-link or restart.
@@ -100,9 +108,10 @@ binary from the flake is only a launcher. Build output is centralised under
 
 ## Configuration
 
-All variables are read from the environment only. `startDev` (above) supplies
-the "Dev default" column automatically; production must set every variable
-marked **required**, and may rely on the plain "Default" column for the rest.
+All variables are read from the environment only. The `backend-dev` launcher
+used by `startDev` (above) supplies the "Dev default" column automatically.
+Production deployment runs the production `backend` launcher and must set every
+variable marked **required**, including `LIVE_LUXMED_API=true`.
 
 | Variable | Required | Default | Dev default (`startDev`) | Meaning |
 |---|---|---|---|---|
@@ -113,6 +122,7 @@ marked **required**, and may rely on the plain "Default" column for the rest.
 | `HTTP_PORT` | no | `8080` | *(same)* | bind port |
 | `COOKIE_SECURE` | no | `true` | `false` | set `false` only for plain-HTTP local dev |
 | `SESSION_TTL_DAYS` | no | `7` | *(same)* | session lifetime in days; must be at least `1` |
+| `LIVE_LUXMED_API` | yes | `false` | `false` | opt into the real Luxmed API; the `backend-dev` launcher defaults to `false`, while production requires `true` |
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
 | `LUXMED_APP_VERSION` | no | `4.44.0` | *(same)* | Luxmed mobile app version reported to their API; must be at or above the measured refresh-compatible floor |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |
@@ -123,6 +133,6 @@ marked **required**, and may rely on the plain "Default" column for the rest.
 Run behind your own HTTPS reverse proxy; lm-bot does not terminate TLS.
 
 ```bash
-POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
+LIVE_LUXMED_API=true POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
   ADMIN_USERNAME=... ADMIN_PASSWORD=... docker compose up -d
 ```

@@ -1,0 +1,37 @@
+{
+  "correlationId": "mock-terms",
+  "termsForService": {
+    "additionalData": {
+      "isPreparationRequired": false,
+      "preparationItems": []
+    },
+    "termsForDays": [
+      {
+        "day": "2026-08-03T00:00:00",
+        "terms": [
+          {
+            "clinic": "Mock Clinic",
+            "clinicId": 100,
+            "clinicGroupId": 101,
+            "dateTimeFrom": "2026-08-03T09:00:00",
+            "dateTimeTo": "2026-08-03T09:15:00",
+            "doctor": {
+              "academicTitle": "dr",
+              "firstName": "Mock",
+              "genderId": 1,
+              "id": 200,
+              "lastName": "Doctor"
+            },
+            "impedimentText": null,
+            "isAdditional": false,
+            "isImpediment": false,
+            "isTelemedicine": false,
+            "roomId": 300,
+            "scheduleId": 400,
+            "serviceId": 4502
+          }
+        ]
+      }
+    ]
+  }
+}
