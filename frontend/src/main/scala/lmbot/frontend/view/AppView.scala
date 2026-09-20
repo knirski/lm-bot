@@ -75,5 +75,6 @@ object AppView:
         onClick.mapTo(Msg.LogoutRequested) --> (m => rt.dispatch(m))
       ),
       AccountsView(rt),
-      MonitorsView(rt)
+      MonitorsView(rt),
+      SettingsView(rt)
     )

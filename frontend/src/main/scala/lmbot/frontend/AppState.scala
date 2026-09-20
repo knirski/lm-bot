@@ -2,6 +2,7 @@ package lmbot.frontend
 
 import java.time.{DayOfWeek, LocalDate, LocalTime}
 
+import lmbot.shared.api.{TelegramLinkCodeView, TelegramSettingsView}
 import lmbot.shared.domain.{
   AccountId,
   AccountView,
@@ -9,6 +10,7 @@ import lmbot.shared.domain.{
   DictionaryService,
   FacilitiesDoctorsResponse,
   MonitorDraft,
+  MonitorEventView,
   MonitorId,
   MonitorState,
   MonitorView,
@@ -271,6 +273,27 @@ case class MonitorAction(
     error: Option[String] = None
 )
 
+/** The monitor whose detail view is open, and the event log being loaded for
+  * it. The monitor itself is shown immediately from the list; the events are
+  * fetched, which is why they carry their own `LoadState`.
+  */
+case class MonitorDetail(
+    monitor: MonitorView,
+    events: LoadState[List[MonitorEventView]] = LoadState.NotAsked
+)
+
+/** The Telegram section of the dashboard: whether the boundary is configured,
+  * whether this user has linked a chat, and the one-time link code currently on
+  * screen. `submitting` covers both link and unlink, so a second click cannot
+  * race the first.
+  */
+case class TelegramSettings(
+    status: LoadState[TelegramSettingsView] = LoadState.NotAsked,
+    link: LoadState[TelegramLinkCodeView] = LoadState.NotAsked,
+    submitting: Boolean = false,
+    error: Option[String] = None
+)
+
 /** `booting` is true until the app has asked the server whether the browser
   * already holds a valid session, so the login form is not flashed at a user
   * who is in fact already signed in.
@@ -287,6 +310,8 @@ case class AppState(
     monitorForm: Option[MonitorForm] = None,
     monitorAction: Option[MonitorAction] = None,
     monitorDeleteConfirmation: Option[MonitorDeleteConfirmation] = None,
+    monitorDetail: Option[MonitorDetail] = None,
+    telegram: TelegramSettings = TelegramSettings(),
     // Bumped whenever a stale list response must be told apart from the most
     // recent request for that same list — dashboardGeneration on every login
     // (so a response from a previous, logged-out session can never land on a

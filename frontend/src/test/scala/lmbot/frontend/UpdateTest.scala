@@ -3,7 +3,7 @@ package lmbot.frontend
 import java.time.{DayOfWeek, Instant, LocalDate, LocalTime}
 
 import lmbot.frontend.api.ApiClient
-import lmbot.shared.api.ApiError
+import lmbot.shared.api.{ApiError, TelegramLinkCodeView, TelegramSettingsView}
 import lmbot.shared.domain.{
   AccountId,
   AccountStatus,
@@ -13,6 +13,9 @@ import lmbot.shared.domain.{
   DictionaryFacility,
   DictionaryService,
   FacilitiesDoctorsResponse,
+  MonitorEventId,
+  MonitorEventKind,
+  MonitorEventView,
   MonitorId,
   MonitorState,
   MonitorView,
@@ -112,6 +115,27 @@ class UpdateTest extends munit.FunSuite:
     name = "Skin",
     state = MonitorState.Paused,
     service = dermatologist
+  )
+
+  private val telegramAvailable =
+    TelegramSettingsView(
+      available = true,
+      linked = false,
+      botUsername = Some("lm_bot")
+    )
+  private val telegramLinked = telegramAvailable.copy(linked = true)
+  private val linkCode = TelegramLinkCodeView(
+    code = "ABCDEFGHJK",
+    deepLink = "https://t.me/lm_bot?start=ABCDEFGHJK",
+    expiresAt = Instant.parse("2026-08-10T07:15:00Z")
+  )
+  private val slotEvent = MonitorEventView(
+    id = MonitorEventId(1L),
+    monitorId = monitor1.id,
+    kind = MonitorEventKind.SlotFound,
+    slot = None,
+    detail = None,
+    createdAt = Instant.EPOCH
   )
 
   /** Builds the `AccountsLoaded` that `state`'s own most recent
@@ -367,17 +391,20 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(t.state.screen, Screen.Dashboard)
     assertEquals(t.state.accounts, LoadState.Loading)
     assertEquals(t.state.monitors, LoadState.Loading)
+    assertEquals(t.state.telegram.status, LoadState.Loading)
     assertEquals(
       t.effects.size,
-      2,
-      "the dashboard needs both lists, so neither request may be dropped"
+      3,
+      "the dashboard needs both lists and the Telegram status, so no " +
+        "request may be dropped"
     )
 
   test("a restored session also starts loading accounts and monitors"):
     val t = update(AppState.initial, Msg.SessionRestored(alice))
     assertEquals(t.state.accounts, LoadState.Loading)
     assertEquals(t.state.monitors, LoadState.Loading)
-    assertEquals(t.effects.size, 2)
+    assertEquals(t.state.telegram.status, LoadState.Loading)
+    assertEquals(t.effects.size, 3)
 
   test("loading accounts successfully stores the list, status reason included"):
     val loading = update(AppState.initial, Msg.AccountsRequested).state
@@ -1360,3 +1387,171 @@ class UpdateTest extends munit.FunSuite:
       None,
       "a pause/resume in flight for the deleted monitor must clear too"
     )
+
+  // --- Monitor detail (Plan 5) ---
+
+  test("opening a monitor's detail loads it and its events"):
+    val t = update(dashboardState, Msg.MonitorDetailRequested(monitor1.id))
+
+    val open = t.state.monitorDetail.getOrElse(fail("no detail is open"))
+    assertEquals(open.monitor, monitor1)
+    assertEquals(open.events, LoadState.Loading)
+    assertEquals(t.effects.size, 1)
+
+    val loaded =
+      update(t.state, Msg.MonitorDetailLoaded(monitor1, List(slotEvent))).state
+    assertEquals(
+      loaded.monitorDetail.map(_.events),
+      Some(LoadState.Loaded(List(slotEvent)))
+    )
+
+  test("a detail response for a different monitor is dropped"):
+    val opened =
+      update(dashboardState, Msg.MonitorDetailRequested(monitor1.id)).state
+
+    val s = update(opened, Msg.MonitorDetailLoaded(monitor2, Nil)).state
+
+    assertEquals(
+      s.monitorDetail.map(_.monitor.id),
+      Some(monitor1.id),
+      "the answer must not replace the monitor the user is looking at"
+    )
+    assertEquals(s.monitorDetail.map(_.events), Some(LoadState.Loading))
+
+  test("a failed detail load surfaces the error without closing the view"):
+    val opened =
+      update(dashboardState, Msg.MonitorDetailRequested(monitor1.id)).state
+
+    val s = update(
+      opened,
+      Msg.MonitorDetailLoadFailed(monitor1.id, ApiError.NotFound)
+    ).state
+
+    assertEquals(
+      s.monitorDetail.map(_.events),
+      Some(LoadState.Failed(ApiError.NotFound.message))
+    )
+
+  test("closing the detail clears it"):
+    val opened =
+      update(dashboardState, Msg.MonitorDetailRequested(monitor1.id)).state
+
+    assertEquals(
+      update(opened, Msg.MonitorDetailClosed).state.monitorDetail,
+      None
+    )
+
+  test("deleting the open monitor closes its detail"):
+    val opened =
+      update(dashboardState, Msg.MonitorDetailRequested(monitor1.id)).state
+
+    val s = update(opened, Msg.MonitorDeleted(monitor1.id)).state
+
+    assertEquals(s.monitorDetail, None)
+
+  test("pausing updates the open detail's monitor too"):
+    val opened =
+      update(dashboardState, Msg.MonitorDetailRequested(monitor1.id)).state
+
+    val s = update(
+      opened,
+      Msg.MonitorStateChanged(monitor1.id, MonitorState.Paused)
+    ).state
+
+    assertEquals(
+      s.monitorDetail.map(_.monitor.state),
+      Some(MonitorState.Paused)
+    )
+
+  test("a detail request for an unlisted monitor is ignored"):
+    val t = update(dashboardState, Msg.MonitorDetailRequested(MonitorId(99L)))
+
+    assertEquals(t.state.monitorDetail, None)
+    assertEquals(t.effects, Nil)
+
+  // --- Telegram settings (Plan 5) ---
+
+  test("the Telegram status is stored and its failure surfaces"):
+    val loading =
+      update(dashboardState, Msg.TelegramStatusRequested).state
+    val loaded =
+      update(loading, Msg.TelegramStatusLoaded(telegramAvailable)).state
+    assertEquals(loaded.telegram.status, LoadState.Loaded(telegramAvailable))
+
+    val failed = update(
+      loading,
+      Msg.TelegramStatusLoadFailed(ApiError.Unexpected("offline"))
+    ).state
+    assertEquals(
+      failed.telegram.status,
+      LoadState.Failed("Something went wrong: offline")
+    )
+
+  test("requesting a link code shows it once the server answers"):
+    val t = update(dashboardState, Msg.TelegramLinkRequested)
+
+    assertEquals(t.state.telegram.link, LoadState.Loading)
+    assertEquals(t.state.telegram.submitting, true)
+    assertEquals(t.effects.size, 1)
+
+    val s = update(t.state, Msg.TelegramLinkLoaded(linkCode)).state
+    assertEquals(s.telegram.link, LoadState.Loaded(linkCode))
+    assertEquals(s.telegram.submitting, false)
+
+  test("a second link request while one is in flight is ignored"):
+    val first = update(dashboardState, Msg.TelegramLinkRequested).state
+
+    val t = update(first, Msg.TelegramLinkRequested)
+
+    assertEquals(t.effects, Nil)
+
+  test("a failed link request clears the busy flag and explains"):
+    val requested = update(dashboardState, Msg.TelegramLinkRequested).state
+
+    val s = update(
+      requested,
+      Msg.TelegramLinkFailed(
+        ApiError.Conflict("Telegram notifications are not configured.")
+      )
+    ).state
+
+    assertEquals(s.telegram.link, LoadState.NotAsked)
+    assertEquals(s.telegram.submitting, false)
+    assertEquals(
+      s.telegram.error,
+      Some("Telegram notifications are not configured.")
+    )
+
+  test("unlinking clears the linked flag without a refetch"):
+    val loaded = update(
+      dashboardState,
+      Msg.TelegramStatusLoaded(telegramLinked)
+    ).state
+
+    val requested = update(loaded, Msg.TelegramUnlinkRequested)
+    assertEquals(requested.state.telegram.submitting, true)
+    assertEquals(requested.effects.size, 1)
+
+    val s = update(requested.state, Msg.TelegramUnlinked).state
+    assertEquals(
+      s.telegram.status,
+      LoadState.Loaded(telegramLinked.copy(linked = false))
+    )
+    assertEquals(s.telegram.submitting, false)
+    assertEquals(s.telegram.link, LoadState.NotAsked)
+
+  test("a failed unlink keeps the linked status and explains"):
+    val loaded = update(
+      dashboardState,
+      Msg.TelegramStatusLoaded(telegramLinked)
+    ).state
+    val requested = update(loaded, Msg.TelegramUnlinkRequested).state
+
+    val s = update(
+      requested,
+      Msg.TelegramUnlinkFailed(ApiError.Unexpected("offline"))
+    ).state
+
+    assertEquals(s.telegram.status, LoadState.Loaded(telegramLinked))
+    assertEquals(s.telegram.submitting, false)
+    assertEquals(s.telegram.error, Some("Something went wrong: offline"))

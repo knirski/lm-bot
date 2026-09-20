@@ -402,7 +402,15 @@ class Update(api: ApiClient):
         if existing.exists(_.id == monitor.id) then
           existing.map(m => if m.id == monitor.id then monitor else m)
         else existing :+ monitor
-      val saved = state.copy(monitors = updated, monitorForm = None)
+      val detail = state.monitorDetail.map: open =>
+        if open.monitor.id == monitor.id then open.copy(monitor = monitor)
+        else open
+      val saved =
+        state.copy(
+          monitors = updated,
+          monitorForm = None,
+          monitorDetail = detail
+        )
       state.monitors match
         case LoadState.Loaded(_) => Transition(saved, Nil)
         // The list never loaded (or failed to), so this one monitor is not the
@@ -516,13 +524,24 @@ class Update(api: ApiClient):
 
     case Msg.MonitorStateChanged(monitorId, monitorState) =>
       // Only the state changes here. Pause and resume answer with no body, and
-      // inventing a fresh `updatedAt` or a last-check time would be fiction —
-      // monitors do not run until Plan 5.
+      // inventing a fresh `updatedAt` or a last-check time would be fiction:
+      // the engine writes those on its own schedule.
       val updated = mapMonitors(state):
         _.map(m =>
           if m.id == monitorId then m.copy(state = monitorState) else m
         )
-      Transition(state.copy(monitors = updated, monitorAction = None), Nil)
+      val detail = state.monitorDetail.map: open =>
+        if open.monitor.id == monitorId then
+          open.copy(monitor = open.monitor.copy(state = monitorState))
+        else open
+      Transition(
+        state.copy(
+          monitors = updated,
+          monitorAction = None,
+          monitorDetail = detail
+        ),
+        Nil
+      )
 
     case Msg.MonitorStateChangeFailed(monitorId, err) =>
       val updated = state.monitorAction match
@@ -585,7 +604,9 @@ class Update(api: ApiClient):
             state.monitorAction.filterNot(_.monitorId == monitorId),
           monitorDeleteConfirmation =
             if confirmationMatches then None
-            else state.monitorDeleteConfirmation
+            else state.monitorDeleteConfirmation,
+          monitorDetail =
+            state.monitorDetail.filterNot(_.monitor.id == monitorId)
         ),
         Nil
       )
@@ -599,6 +620,171 @@ class Update(api: ApiClient):
         case other => other
       Transition(state.copy(monitorDeleteConfirmation = updated), Nil)
 
+    case Msg.MonitorDetailRequested(monitorId) =>
+      state.monitors match
+        case LoadState.Loaded(monitors) if monitors.exists(_.id == monitorId) =>
+          val monitor = monitors.find(_.id == monitorId).get
+          val effect = new Effect[Msg]:
+            def run(using Async): Option[Msg] = Some:
+              (api.getMonitor(monitorId), api.monitorEvents(monitorId)) match
+                case (Right(refreshed), Right(events)) =>
+                  Msg.MonitorDetailLoaded(refreshed, events)
+                case (Left(err), _) =>
+                  Msg.MonitorDetailLoadFailed(monitorId, err)
+                case (_, Left(err)) =>
+                  Msg.MonitorDetailLoadFailed(monitorId, err)
+          // The detail replaces the list, like the form does, so anything left
+          // open there would reappear behind it.
+          Transition(
+            state.copy(
+              monitorDetail = Some(MonitorDetail(monitor, LoadState.Loading)),
+              monitorForm = None,
+              monitorAction = None,
+              monitorDeleteConfirmation = None
+            ),
+            List(effect)
+          )
+        case _ => Transition(state, Nil)
+
+    case Msg.MonitorDetailLoaded(monitor, events) =>
+      state.monitorDetail match
+        case Some(open) if open.monitor.id == monitor.id =>
+          Transition(
+            state.copy(monitorDetail =
+              Some(MonitorDetail(monitor, LoadState.Loaded(events)))
+            ),
+            Nil
+          )
+        case _ => Transition(state, Nil)
+
+    case Msg.MonitorDetailLoadFailed(monitorId, err) =>
+      state.monitorDetail match
+        case Some(open) if open.monitor.id == monitorId =>
+          Transition(
+            state.copy(monitorDetail =
+              Some(open.copy(events = LoadState.Failed(explain(err))))
+            ),
+            Nil
+          )
+        case _ => Transition(state, Nil)
+
+    case Msg.MonitorDetailClosed =>
+      Transition(state.copy(monitorDetail = None), Nil)
+
+    case Msg.TelegramStatusRequested =>
+      val effect = new Effect[Msg]:
+        def run(using Async): Option[Msg] = Some:
+          api.telegramStatus() match
+            case Right(status) => Msg.TelegramStatusLoaded(status)
+            case Left(err)     => Msg.TelegramStatusLoadFailed(err)
+      Transition(
+        state.copy(telegram = state.telegram.copy(status = LoadState.Loading)),
+        List(effect)
+      )
+
+    case Msg.TelegramStatusLoaded(status) =>
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(status = LoadState.Loaded(status))
+        ),
+        Nil
+      )
+
+    case Msg.TelegramStatusLoadFailed(err) =>
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(status = LoadState.Failed(explain(err)))
+        ),
+        Nil
+      )
+
+    case Msg.TelegramLinkRequested =>
+      if state.telegram.submitting then Transition(state, Nil)
+      else
+        val effect = new Effect[Msg]:
+          def run(using Async): Option[Msg] = Some:
+            api.telegramLinkCode() match
+              case Right(link) => Msg.TelegramLinkLoaded(link)
+              case Left(err)   => Msg.TelegramLinkFailed(err)
+        Transition(
+          state.copy(telegram =
+            state.telegram.copy(
+              link = LoadState.Loading,
+              submitting = true,
+              error = None
+            )
+          ),
+          List(effect)
+        )
+
+    case Msg.TelegramLinkLoaded(link) =>
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(
+            link = LoadState.Loaded(link),
+            submitting = false
+          )
+        ),
+        Nil
+      )
+
+    case Msg.TelegramLinkFailed(err) =>
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(
+            link = LoadState.NotAsked,
+            submitting = false,
+            error = Some(explain(err))
+          )
+        ),
+        Nil
+      )
+
+    case Msg.TelegramUnlinkRequested =>
+      if state.telegram.submitting then Transition(state, Nil)
+      else
+        val effect = new Effect[Msg]:
+          def run(using Async): Option[Msg] = Some:
+            api.telegramUnlink() match
+              case Right(()) => Msg.TelegramUnlinked
+              case Left(err) => Msg.TelegramUnlinkFailed(err)
+        Transition(
+          state.copy(telegram =
+            state.telegram.copy(submitting = true, error = None)
+          ),
+          List(effect)
+        )
+
+    case Msg.TelegramUnlinked =>
+      // The server answered with no body; the only fact that changed is the
+      // linkage, so the loaded status is adjusted in place rather than
+      // refetched.
+      val refreshed = state.telegram.status match
+        case LoadState.Loaded(status) =>
+          LoadState.Loaded(status.copy(linked = false))
+        case other => other
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(
+            status = refreshed,
+            link = LoadState.NotAsked,
+            submitting = false
+          )
+        ),
+        Nil
+      )
+
+    case Msg.TelegramUnlinkFailed(err) =>
+      Transition(
+        state.copy(telegram =
+          state.telegram.copy(
+            submitting = false,
+            error = Some(explain(err))
+          )
+        ),
+        Nil
+      )
+
   /** Both ways onto the dashboard need both lists. `apply` delegates to one
     * message at a time, so the two sub-transitions are combined rather than one
     * of them silently winning.
@@ -606,9 +792,10 @@ class Update(api: ApiClient):
   private def loadDashboard(arrived: AppState): Transition[AppState, Msg] =
     val withAccounts = apply(arrived, Msg.AccountsRequested)
     val withMonitors = apply(withAccounts.state, Msg.MonitorsRequested)
+    val withTelegram = apply(withMonitors.state, Msg.TelegramStatusRequested)
     Transition(
-      withMonitors.state,
-      withAccounts.effects ++ withMonitors.effects
+      withTelegram.state,
+      withAccounts.effects ++ withMonitors.effects ++ withTelegram.effects
     )
 
   /** True when a list response still answers the most recent request for that
