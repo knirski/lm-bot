@@ -3,16 +3,19 @@ package lmbot.backend.db
 import java.lang.reflect.Array as ReflectArray
 import java.sql.Types
 import java.sql.{PreparedStatement, ResultSet}
+import java.time.LocalDateTime
 
 import scala.IArray
 
 import com.augustnagro.magnum.DbCodec
 
-/** Custom Magnum `DbCodec` instances for `List[Long]`/`List[String]` Postgres
-  * array columns, which Magnum's auto-derivation for `PostgresDbType` does not
-  * cover.
+/** Custom Magnum `DbCodec` instances that Magnum's auto-derivation does not
+  * cover:
   *
-  * Reads use PostgreSQL's JDBC-native `getArray` path.
+  *   - `List[Long]`/`List[String]` for Postgres array columns, read through
+  *     PostgreSQL's JDBC-native `getArray` path.
+  *   - `LocalDateTime` for `timestamp` (without time zone) columns, which store
+  *     Warsaw-local wall-clock values.
   */
 
 private def readArrayText(rs: ResultSet, pos: Int): List[String] =
@@ -51,3 +54,17 @@ given longListCodec: DbCodec[List[Long]] =
 
 given stringListCodec: DbCodec[List[String]] =
   arrayCodec("text", identity, identity)
+
+/** `timestamp` without time zone ↔ Warsaw-local `LocalDateTime`. */
+given localDateTimeCodec: DbCodec[LocalDateTime] =
+  new DbCodec[LocalDateTime]:
+    def queryRepr: String = "?"
+    def cols: IArray[Int] = IArray(Types.TIMESTAMP)
+    def readSingle(rs: ResultSet, pos: Int): LocalDateTime =
+      rs.getObject(pos, classOf[LocalDateTime])
+    def writeSingle(
+        value: LocalDateTime,
+        ps: PreparedStatement,
+        pos: Int
+    ): Unit =
+      ps.setObject(pos, value)

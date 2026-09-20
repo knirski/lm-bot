@@ -2,6 +2,7 @@ package lmbot.backend
 
 import java.sql.{Date => SqlDate, Time => SqlTime}
 import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 
 import lmbot.backend.db.{
   AccountRepo,
@@ -240,3 +241,83 @@ class MonitorRepoTest extends PostgresSuite:
     accountRepo.deleteOwned(AccountId(accountId), ownerId)
 
     assertEquals(monRepo.findOwned(MonitorId(mid), ownerId), None)
+
+  // -- Engine operations (Plan 5) --
+
+  test("findById finds a monitor without an owner scope"):
+    val repo = MonitorRepo(xa)
+    val accountId = anAccount(anOwner())
+    val mid = repo.reserveId()
+    repo.insert(aMonitor(accountId, mid))
+
+    assertEquals(repo.findById(MonitorId(mid)).map(_.id), Some(mid))
+    assertEquals(repo.findById(MonitorId(mid + 1)), None)
+
+  test("listActive returns only active monitors, across owners"):
+    val repo = MonitorRepo(xa)
+    val a1 = anAccount(anOwner())
+    val a2 = anAccount(anOwner())
+    val active1 = repo.reserveId()
+    val active2 = repo.reserveId()
+    val paused = repo.reserveId()
+    repo.insert(aMonitor(a1, active1, "active"))
+    repo.insert(aMonitor(a1, paused, "paused"))
+    repo.insert(aMonitor(a2, active2, "active"))
+
+    assertEquals(repo.listActive().map(_.id).toSet, Set(active1, active2))
+
+  test("recordCheck writes the last-check fields without touching updated_at"):
+    val repo = MonitorRepo(xa)
+    val accountId = anAccount(anOwner())
+    val mid = repo.reserveId()
+    repo.insert(aMonitor(accountId, mid))
+    val before = repo.findById(MonitorId(mid)).get.updatedAt
+    val checkedAt = now.plusMinutes(5).truncatedTo(ChronoUnit.MICROS)
+
+    repo.recordCheck(MonitorId(mid), checkedAt, "Found 2 new slots")
+
+    val after = repo.findById(MonitorId(mid)).get
+    assertEquals(after.lastCheckAt.map(_.toInstant), Some(checkedAt.toInstant))
+    assertEquals(after.lastCheckSummary, Some("Found 2 new slots"))
+    assertEquals(after.updatedAt.toInstant, before.toInstant)
+
+  test("complete transitions only from active"):
+    val repo = MonitorRepo(xa)
+    val accountId = anAccount(anOwner())
+    val mid = repo.reserveId()
+    repo.insert(aMonitor(accountId, mid, "active"))
+
+    assertEquals(repo.complete(MonitorId(mid)).map(_.state), Some("completed"))
+    assertEquals(repo.complete(MonitorId(mid)), None)
+
+  test("fail transitions only from active"):
+    val repo = MonitorRepo(xa)
+    val accountId = anAccount(anOwner())
+    val active = repo.reserveId()
+    val alreadyFailed = repo.reserveId()
+    repo.insert(aMonitor(accountId, active, "active"))
+    repo.insert(aMonitor(accountId, alreadyFailed, "failed"))
+
+    assertEquals(repo.fail(MonitorId(active)).map(_.state), Some("failed"))
+    assertEquals(repo.fail(MonitorId(active)), None)
+    assertEquals(repo.fail(MonitorId(alreadyFailed)), None)
+
+  test("pauseAllForAccount pauses exactly that account's active monitors"):
+    val repo = MonitorRepo(xa)
+    val a1 = anAccount(anOwner())
+    val a2 = anAccount(anOwner())
+    val m1 = repo.reserveId()
+    val m2 = repo.reserveId()
+    val alreadyPaused = repo.reserveId()
+    val other = repo.reserveId()
+    repo.insert(aMonitor(a1, m1, "active"))
+    repo.insert(aMonitor(a1, m2, "active"))
+    repo.insert(aMonitor(a1, alreadyPaused, "paused"))
+    repo.insert(aMonitor(a2, other, "active"))
+
+    val affected = repo.pauseAllForAccount(AccountId(a1))
+
+    assertEquals(affected.map(_.id).toSet, Set(m1, m2))
+    assertEquals(repo.findById(MonitorId(m1)).map(_.state), Some("paused"))
+    assertEquals(repo.findById(MonitorId(m2)).map(_.state), Some("paused"))
+    assertEquals(repo.findById(MonitorId(other)).map(_.state), Some("active"))

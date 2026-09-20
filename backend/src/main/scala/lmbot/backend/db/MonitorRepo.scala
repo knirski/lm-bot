@@ -1,5 +1,7 @@
 package lmbot.backend.db
 
+import java.time.OffsetDateTime
+
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
 import lmbot.shared.domain.{AccountId, MonitorId, MonitorState, UserId}
 
@@ -39,6 +41,57 @@ class MonitorRepo(xa: Transactor):
         .query[MonitorRow]
         .run()
         .headOption
+
+  /** Engine lookup: no owner scope, because the engine already owns the row's
+    * account relationship.
+    */
+  def findById(id: MonitorId): Option[MonitorRow] = connect(xa):
+    sql"select * from monitors where id = ${id.value}"
+      .query[MonitorRow]
+      .run()
+      .headOption
+
+  /** Every active monitor, across owners — the engine's reconcile query. */
+  def listActive(): Seq[MonitorRow] = connect(xa):
+    sql"select * from monitors where state = 'active'"
+      .query[MonitorRow]
+      .run()
+
+  /** Records the outcome of one check. Deliberately does not touch
+    * `updated_at`: that column means "the user last changed the definition",
+    * while last-check fields are machine-written.
+    */
+  def recordCheck(
+      id: MonitorId,
+      at: OffsetDateTime,
+      summary: String
+  ): Unit = transact(xa):
+    sql"""update monitors
+          set last_check_at = $at, last_check_summary = $summary
+          where id = ${id.value}""".update.run()
+    ()
+
+  /** active → completed. Returns None when the row was not active, which is the
+    * engine's guard against double-completing.
+    */
+  def complete(id: MonitorId): Option[MonitorRow] = transact(xa):
+    sql"""update monitors set state = 'completed', updated_at = now()
+          where id = ${id.value} and state = 'active'
+          returning *""".query[MonitorRow].run().headOption
+
+  /** active → failed, with the same atomic guard as [[complete]]. */
+  def fail(id: MonitorId): Option[MonitorRow] = transact(xa):
+    sql"""update monitors set state = 'failed', updated_at = now()
+          where id = ${id.value} and state = 'active'
+          returning *""".query[MonitorRow].run().headOption
+
+  /** Pauses every active monitor of one account, returning the rows that
+    * changed — the engine records an event for each.
+    */
+  def pauseAllForAccount(accountId: AccountId): Seq[MonitorRow] = transact(xa):
+    sql"""update monitors set state = 'paused', updated_at = now()
+          where luxmed_account_id = ${accountId.value} and state = 'active'
+          returning *""".query[MonitorRow].run()
 
   def listOwned(ownerUserId: UserId): Seq[MonitorRow] = connect(xa):
     sql"""select m.* from monitors m

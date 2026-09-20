@@ -19,6 +19,7 @@ import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{
   AccountRepo,
   Database,
+  MonitorEventRepo,
   MonitorRepo,
   SessionRepo,
   UserRepo
@@ -186,7 +187,8 @@ object Plan4AcceptanceApp:
     val accountRoutes = AccountRoutes(auth, accountService)
     val dictionaryRoutes =
       DictionaryRoutes(auth, DictionaryService(accountClients))
-    val monitorService = MonitorService(MonitorRepo(xa), accountRepo)
+    val monitorService =
+      MonitorService(MonitorRepo(xa), accountRepo, MonitorEventRepo(xa))
     val monitorRoutes = MonitorRoutes(auth, monitorService)
 
     val server = Server.start(

@@ -1,6 +1,7 @@
 package lmbot.backend
 
 import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 
 import lmbot.backend.db.{AccountRepo, LuxmedAccountRow, UserRepo}
 import lmbot.backend.support.PostgresSuite
@@ -247,3 +248,62 @@ class AccountRepoTest extends PostgresSuite:
     )
     assertEquals(repo.listOwned(o1).size, 1)
     assertEquals(repo.listOwned(o2).size, 1)
+
+  // -- Engine operations (Plan 5) --
+
+  private def anAccount(
+      ownerId: UserId,
+      status: String = "active"
+  ): AccountId =
+    val repo = AccountRepo(xa)
+    val id = repo.reserveId()
+    repo.insert(
+      LuxmedAccountRow(
+        id.value,
+        ownerId.value,
+        "My Luxmed",
+        "user@example.com",
+        "enc-pass",
+        "enc-device",
+        None,
+        status,
+        None,
+        None,
+        now,
+        now
+      )
+    )
+    id
+
+  test("findById finds an account without an owner scope"):
+    val repo = AccountRepo(xa)
+    val id = anAccount(anOwner())
+
+    assertEquals(repo.findById(id).map(_.id), Some(id.value))
+    assertEquals(repo.findById(AccountId(id.value + 1)), None)
+
+  test(
+    "markAuthFailed flips an active account and reports only the first change"
+  ):
+    val repo = AccountRepo(xa)
+    val id = anAccount(anOwner())
+    val at = now.plusMinutes(1).truncatedTo(ChronoUnit.MICROS)
+
+    assert(repo.markAuthFailed(id, "Luxmed rejected these credentials.", at))
+
+    val stored = repo.findById(id).get
+    assertEquals(stored.status, "auth_failed")
+    assertEquals(
+      stored.statusReason,
+      Some("Luxmed rejected these credentials.")
+    )
+    assertEquals(stored.updatedAt.toInstant, at.toInstant)
+    assert(!repo.markAuthFailed(id, "again", at))
+
+  test("markAuthFailed never overwrites a disabled account"):
+    val repo = AccountRepo(xa)
+    val id = anAccount(anOwner(), status = "disabled")
+
+    assert(!repo.markAuthFailed(id, "rejected", now))
+
+    assertEquals(repo.findById(id).map(_.status), Some("disabled"))

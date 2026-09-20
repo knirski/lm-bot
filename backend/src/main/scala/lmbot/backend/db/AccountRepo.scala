@@ -1,5 +1,7 @@
 package lmbot.backend.db
 
+import java.time.OffsetDateTime
+
 import com.augustnagro.magnum.{Transactor, connect, sql, transact}
 import lmbot.shared.domain.{AccountId, UserId}
 
@@ -65,6 +67,28 @@ class AccountRepo(xa: Transactor):
         .query[LuxmedAccountRow]
         .run()
         .headOption
+
+  /** Engine lookup: no owner scope, because the engine reaches the account
+    * through a monitor it already owns.
+    */
+  def findById(id: AccountId): Option[LuxmedAccountRow] = connect(xa):
+    sql"select * from luxmed_accounts where id = ${id.value}"
+      .query[LuxmedAccountRow]
+      .run()
+      .headOption
+
+  /** Marks an active account `auth_failed` with a reason. Returns true only
+    * when the status actually changed, which is the engine's once-per-episode
+    * notification guard. A `disabled` account is never overwritten.
+    */
+  def markAuthFailed(
+      id: AccountId,
+      reason: String,
+      at: OffsetDateTime
+  ): Boolean = transact(xa):
+    sql"""update luxmed_accounts
+          set status = 'auth_failed', status_reason = $reason, updated_at = $at
+          where id = ${id.value} and status = 'active'""".update.run() > 0
 
   def listOwned(ownerUserId: UserId): Seq[LuxmedAccountRow] = connect(xa):
     sql"""select a.* from luxmed_accounts a

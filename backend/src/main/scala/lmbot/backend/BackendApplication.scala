@@ -14,6 +14,7 @@ import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{
   AccountRepo,
   Database,
+  MonitorEventRepo,
   MonitorRepo,
   SessionRepo,
   UserRepo
@@ -132,7 +133,8 @@ object BackendApplication:
       val dictionaryService = DictionaryService(accountClients)
       val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
       val monitorRepo = MonitorRepo(xa)
-      val monitorService = MonitorService(monitorRepo, accountRepo)
+      val monitorService =
+        MonitorService(monitorRepo, accountRepo, MonitorEventRepo(xa))
       val monitorRoutes = MonitorRoutes(auth, monitorService)
 
       startServer(
