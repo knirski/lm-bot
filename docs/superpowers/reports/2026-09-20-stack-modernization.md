@@ -69,8 +69,19 @@ All run in the flake devShell on this branch:
 - **Existing deployments with a `postgres:17` data volume** need a dump/restore
   (or `pg_upgrade`) before running the `postgres:18` image; PostgreSQL does not
   accept in-place major version reuse of the data directory.
-- The Docker base tag `..._7_2.x` is rolling (as is the runtime
-  `eclipse-temurin:25-jre`); the project build version remains pinned by
-  `project/build.properties`.
+- The runtime base tag `eclipse-temurin:25-jre` is rolling; the sbt version
+  remains pinned by `project/build.properties`.
 - The browser smoke test used Chromium 153 from nixpkgs (the agent-browser
   bundle lacks system libraries on this Nix host).
+
+---
+
+## Addendum (same day): the Docker image became packaging-only
+
+The Dockerfile no longer runs an sbt build stage. sbt-assembly now produces
+the deployable jar itself — `assembly / assemblyJarName := "lm-bot.jar"`, and
+`assembly / assemblyOutputPath` switches to the repository root (the Docker
+build context) when `useFastLinkForAssets` is false, which the
+`stageDockerJar` command sets. The image is a single `COPY` of that prebuilt
+artifact, so the `sbtscala/scala-sbt` build-image row above no longer applies;
+the runtime base remains `eclipse-temurin:25-jre`.

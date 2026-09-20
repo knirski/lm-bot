@@ -1,9 +1,4 @@
-target/
-*/target/
-project/target/
-project/project/
-.git/
-.metals/
-.bloop/
-.bsp/
-node_modules/
+# The Dockerfile only copies the prebuilt fat jar (sbt stageDockerJar); keep
+# the build context to that one file. The Dockerfile itself is always sent.
+*
+!lm-bot.jar

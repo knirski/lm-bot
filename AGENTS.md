@@ -76,9 +76,13 @@ Every commit on `main` triggers a release via semantic-release. PR title must be
 
 ```bash
 nix flake check           # pre-commit hooks + Nix formatting
-sbt testFull              # everything (96 tests)
+sbt testFull              # everything (469 tests)
 sbt backend/testFull      # one module
 sbt frontend/fastLinkJS   # link frontend to Wasm
+
+# Docker artifact: production (full-link) Wasm frontend bundled into the fat
+# jar at ./lm-bot.jar, which the packaging Dockerfile copies
+sbt stageDockerJar
 
 # Code coverage (run tests with scoverage instrumentation)
 sbt coverage testFull coverageReport    # Run tests with coverage

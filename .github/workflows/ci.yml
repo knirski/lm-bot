@@ -76,6 +76,9 @@ jobs:
               - '**/*.sql'
               - '**/resources/**'
               - '.scalafmt.conf'
+            docker:
+              - 'Dockerfile'
+              - '.dockerignore'
 
       # ── Format gates (fast; gate before slow compilation) ─────────────────
       - name: Nix flake check (pre-commit hooks, formatting, Nix lint)
@@ -117,9 +120,16 @@ jobs:
             **/coverage.*.xml
           if-no-files-found: ignore
 
-      # ── Validate Docker image builds (main only) ─────────────────────────
+      # ── Package the runtime image from the prebuilt jar ──────────────────
+      # The image does not compile Scala: the jar (with the full-link Wasm
+      # frontend) comes from the same sbt build the earlier steps ran, and the
+      # Dockerfile is a single COPY. Runs on PRs too, since it is now cheap.
+      - name: Stage Docker jar
+        if: steps.changes.outputs.sbt == 'true' || steps.changes.outputs.docker == 'true'
+        run: nix develop --command sbt stageDockerJar
+
       - name: Build Docker image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.changes.outputs.sbt == 'true' || steps.changes.outputs.docker == 'true'
         run: docker build -t lm-bot:ci .
 
       # ── Push devShell closure to Cachix (main only) ──────────────────────
