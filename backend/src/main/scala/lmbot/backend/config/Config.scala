@@ -93,7 +93,8 @@ object Config:
     "ADMIN_PASSWORD",
     "LMBOT_MASTER_KEY",
     "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_BOT_USERNAME"
+    "TELEGRAM_BOT_USERNAME",
+    "TELEGRAM_API_BASE"
   )
 
   private def environmentConfig(env: Map[String, String]) =

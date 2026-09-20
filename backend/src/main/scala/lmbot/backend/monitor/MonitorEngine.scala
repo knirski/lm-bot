@@ -1,15 +1,16 @@
 package lmbot.backend.monitor
 
 import java.time.{OffsetDateTime, ZoneId}
-import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{CancellationException, ConcurrentHashMap}
 
-import scala.collection.mutable
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 import scala.jdk.DurationConverters.*
+import scala.util.Failure
 import scala.util.control.NonFatal
 
-import gears.async.{Async, Future, ReadableChannel}
+import gears.async.{Async, Future, Listener, ReadableChannel}
 import lmbot.backend.account.AccountStatusReason
 import lmbot.backend.db.{AccountRepo, MonitorEventRepo, MonitorRepo, MonitorRow}
 import lmbot.backend.notify.NotificationService
@@ -21,6 +22,7 @@ import lmbot.shared.domain.{
   MonitorState,
   UserId
 }
+import org.slf4j.LoggerFactory
 
 /** The Gears supervisor: reconciles the active set from Postgres and runs one
   * cancellable fiber per active monitor (spec §5.5).
@@ -42,18 +44,19 @@ final class MonitorEngine(
     warsaw: ZoneId = ZoneId.of("Europe/Warsaw"),
     reconcileInterval: FiniteDuration = 15.seconds
 ):
+  private val log = LoggerFactory.getLogger(getClass)
   private val versionNotified = new AtomicBoolean(false)
 
   def run(stop: ReadableChannel[Unit])(using Async.Spawn): Unit =
     Async.spawning.use: engine =>
-      val loops = mutable.Map.empty[MonitorId, Future[Unit]]
+      val loops = ConcurrentHashMap[MonitorId, Future[Unit]]()
       val reconciler =
         Future(reconcileLoop(loops, engine))(using engine, engine)
       stop.read()
       reconciler.cancel()
 
   private def reconcileLoop(
-      loops: mutable.Map[MonitorId, Future[Unit]],
+      loops: ConcurrentHashMap[MonitorId, Future[Unit]],
       engine: Async.Spawn
   )(using Async.Spawn): Unit =
     while true do
@@ -61,19 +64,48 @@ final class MonitorEngine(
       sleeper.sleep(reconcileInterval.toJava)
 
   private def reconcile(
-      loops: mutable.Map[MonitorId, Future[Unit]],
+      loops: ConcurrentHashMap[MonitorId, Future[Unit]],
       engine: Async.Spawn
   ): Unit =
     val active = monitors.listActive().map(row => MonitorId(row.id)).toSet
-    loops.keys
+    loops
+      .keySet()
+      .asScala
       .filterNot(active)
       .toList
       .foreach: id =>
-        loops.remove(id).foreach(_.cancel())
+        Option(loops.remove(id)).foreach(_.cancel())
     active
-      .filterNot(loops.contains)
+      .filterNot(id => loops.containsKey(id))
       .foreach: id =>
-        loops.update(id, Future(monitorLoop(id))(using engine, engine))
+        spawnLoop(id, loops, engine)
+
+  /** Spawns one monitor loop and removes its entry when the loop ends — whether
+    * it returned or died. Removing on completion is what lets reconciliation
+    * restart a monitor whose loop crashed outside the per-check guard (a
+    * database blip in `recordCheck`, say) instead of leaving it silently dead
+    * while its row still says `active`.
+    */
+  private def spawnLoop(
+      id: MonitorId,
+      loops: ConcurrentHashMap[MonitorId, Future[Unit]],
+      engine: Async.Spawn
+  ): Unit =
+    val loop = Future(monitorLoop(id))(using engine, engine)
+    // Put first, then listen: `onComplete` fires immediately for an already
+    // completed source, so an instantly-finished loop cannot linger in the map.
+    loops.put(id, loop)
+    loop.onComplete(Listener { (result, _) =>
+      loops.remove(id)
+      result match
+        case Failure(_: CancellationException) => ()
+        case Failure(error)                    =>
+          log.warn(
+            s"Monitor ${id.value} loop died; reconciliation will restart it",
+            error
+          )
+        case _ => ()
+    })
 
   private def monitorLoop(monitorId: MonitorId)(using Async.Spawn): Unit =
     var persistentFailures = 0
@@ -167,6 +199,9 @@ final class MonitorEngine(
   ): Unit =
     monitors.complete(MonitorId(monitor.id)) match
       case Some(completed) =>
+        log.info(
+          s"Monitor ${monitor.id} completed: its date range has passed"
+        )
         events.append(
           MonitorId(monitor.id),
           MonitorEventKind.MonitorCompleted,
@@ -185,6 +220,7 @@ final class MonitorEngine(
     val detail = failureDetail(failure)
     monitors.fail(MonitorId(monitor.id)) match
       case Some(failed) =>
+        log.warn(s"Monitor ${monitor.id} failed: $detail")
         events.append(
           MonitorId(monitor.id),
           MonitorEventKind.MonitorFailed,
@@ -215,6 +251,10 @@ final class MonitorEngine(
           now()
         )
     if firstFailure then
+      log.warn(
+        s"Luxmed account ${accountId.value} needs attention: ${reason.value}; " +
+          "its monitors are paused"
+      )
       notifier.notifyAccountAuthFailure(ownerId, accountLabel, reason)
 
   private def recordCheck(monitor: MonitorRow, summary: String): Unit =

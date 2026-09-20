@@ -129,9 +129,13 @@ final class TelegramBot private (
           )
     catch
       case error: Exception =>
+        // Never use the exception message: sttp's SttpClientException embeds
+        // the request URI, and this request's URI contains the bot token. The
+        // detail is persisted into notification_failed events and shown in the
+        // UI, so it must not carry the secret.
         Left(
           NotificationError.Transient(
-            Option(error.getMessage).getOrElse("Telegram is unreachable")
+            s"Telegram is unreachable (${error.getClass.getSimpleName})"
           )
         )
 

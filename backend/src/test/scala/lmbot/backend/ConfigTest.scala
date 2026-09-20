@@ -267,3 +267,18 @@ class ConfigTest extends munit.FunSuite:
       "application.conf"
     )
     assert(usernameOnly.isLeft, "a username without a token must be rejected")
+
+  test("an empty TELEGRAM_API_BASE falls back to the default"):
+    val result = Config.fromEnv(
+      requiredOnly ++ Map(
+        "TELEGRAM_BOT_TOKEN" -> "123:abc",
+        "TELEGRAM_BOT_USERNAME" -> "lm_bot",
+        "TELEGRAM_API_BASE" -> ""
+      ),
+      "application.conf"
+    )
+
+    assertEquals(
+      result.map(_.telegramApiBase),
+      Right("https://api.telegram.org")
+    )

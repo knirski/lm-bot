@@ -111,6 +111,22 @@ class TelegramBotTest extends munit.FunSuite with GearsTest:
           assert(!detail.contains("TOKEN"), s"token leaked: $detail")
         case other => fail(s"expected Transient, got $other")
 
+  test("a transport failure is Transient and never leaks the token"):
+    // sttp's SttpClientException message embeds the request URI, and this
+    // request's URI contains the token; the detail must not carry it.
+    val bot = TelegramBot.production(
+      Secret("TOKEN"),
+      Uri.unsafeParse("http://127.0.0.1:1")
+    )
+
+    val result = runAsync(bot.sendMessage(1L, "hi"))
+
+    result match
+      case Left(NotificationError.Transient(detail)) =>
+        assert(!detail.contains("TOKEN"), s"token leaked: $detail")
+        assert(!detail.contains("127.0.0.1"), s"URI leaked: $detail")
+      case other => fail(s"expected Transient, got $other")
+
   test("malformed JSON is Rejected, not an exception"):
     withServer(_ => (200, "not json")): (base, _) =>
       assertEquals(

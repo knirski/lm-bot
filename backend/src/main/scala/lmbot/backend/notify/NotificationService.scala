@@ -7,6 +7,7 @@ import gears.async.Async
 import lmbot.backend.account.AccountStatusReason
 import lmbot.backend.db.{MonitorEventRepo, MonitorRow, UserRepo}
 import lmbot.shared.domain.{FoundSlot, MonitorEventKind, MonitorId, UserId}
+import org.slf4j.LoggerFactory
 
 /** Turns engine events into messages on the configured channel.
   *
@@ -24,6 +25,7 @@ final class NotificationService(
 
   private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
   private val endFormat = DateTimeFormatter.ofPattern("HH:mm")
+  private val log = LoggerFactory.getLogger(getClass)
 
   def notifySlot(
       ownerId: UserId,
@@ -42,6 +44,9 @@ final class NotificationService(
             now()
           )
         case Left(error) =>
+          log.warn(
+            s"Notification delivery failed for monitor ${monitor.id}: ${detail(error)}"
+          )
           events.append(
             MonitorId(monitor.id),
             MonitorEventKind.NotificationFailed,
@@ -59,7 +64,7 @@ final class NotificationService(
       val text =
         s"Luxmed account '$accountLabel' needs attention: ${reason.value} " +
           "Its monitors are paused."
-      deliver(channel, chatId, text)
+      logFailure(deliver(channel, chatId, text), "account auth failure")
 
   def notifyMonitorFailed(
       ownerId: UserId,
@@ -70,7 +75,10 @@ final class NotificationService(
       val text =
         s"Monitor '${monitor.name}' stopped after repeated errors: $reason " +
           "Resume it from the dashboard once the cause is fixed."
-      deliver(channel, chatId, text)
+      logFailure(
+        deliver(channel, chatId, text),
+        s"monitor ${monitor.id} failed"
+      )
 
   def notifyMonitorCompleted(ownerId: UserId, monitor: MonitorRow)(using
       Async
@@ -78,7 +86,10 @@ final class NotificationService(
     withChannel(ownerId): (channel, chatId) =>
       val text =
         s"Monitor '${monitor.name}' completed: its date range has passed."
-      deliver(channel, chatId, text)
+      logFailure(
+        deliver(channel, chatId, text),
+        s"monitor ${monitor.id} completed"
+      )
 
   /** Ops notification for a rejected Luxmed app version (spec §5.5). Every
     * enabled admin with a linked chat gets one message; admins without one are
@@ -110,6 +121,18 @@ final class NotificationService(
       text: String
   )(using Async): Either[NotificationError, Unit] =
     channel.send(chatId, text)
+
+  /** Non-slot notifications have no event to record a failure in, so at least
+    * make it visible in the logs; the state transition itself is already
+    * persisted.
+    */
+  private def logFailure(
+      result: Either[NotificationError, Unit],
+      context: String
+  ): Unit = result match
+    case Left(error) =>
+      log.warn(s"Notification delivery failed ($context): ${detail(error)}")
+    case Right(()) => ()
 
   private def detail(error: NotificationError): String = error match
     case NotificationError.Transient(detail) => detail

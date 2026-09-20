@@ -1,6 +1,6 @@
 package lmbot.backend.monitor
 
-import java.time.{Duration, LocalDate}
+import java.time.{Duration, LocalDate, OffsetDateTime}
 import java.util.concurrent.CancellationException
 
 import scala.collection.mutable
@@ -34,10 +34,11 @@ class MonitorEngineTest extends MonitorFixtures:
   private def engine(
       search: SlotSearch,
       channel: Option[RecordingChannel],
-      sleeper: Sleeper = ImmediateSleeper()
+      sleeper: Sleeper = ImmediateSleeper(),
+      monitors: MonitorRepo = MonitorRepo(xa)
   ): MonitorEngine =
     MonitorEngine(
-      MonitorRepo(xa),
+      monitors,
       AccountRepo(xa),
       MonitorCheck(
         search,
@@ -234,4 +235,62 @@ class MonitorEngineTest extends MonitorFixtures:
     assert(
       second.exists(m => search.searched.contains(m.id)),
       s"newly created monitor was never picked up: ${search.searched.toList}"
+    )
+
+  test("a crashing check is a counted persistent failure, not a dead fiber"):
+    val ownerId = anOwner()
+    val monitor = aMonitor(anAccount(ownerId))
+    val search = new SlotSearch:
+      def search(monitor: MonitorRow)(using
+          Async
+      ): Either[CheckFailure, List[FoundSlot]] =
+        throw IllegalStateException("boom")
+    val subject = engine(search, Some(RecordingChannel()))
+
+    assertEquals(
+      runAsync(subject.iterate(monitor, ownerId, "Main", 0, 0)),
+      Iteration.Continue(1.minute, 1, 1)
+    )
+
+    assertEquals(storedMonitor(monitor.id).state, "active")
+    assertEquals(
+      storedMonitor(monitor.id).lastCheckSummary,
+      Some("Check failed: The check crashed: IllegalStateException")
+    )
+
+  test("a loop that dies outside the check guard is restarted"):
+    val ownerId = anOwner()
+    val accountId = anAccount(ownerId)
+    aMonitor(accountId)
+    var recordChecks = 0
+    // A database blip in `recordCheck` happens outside `guardedCheck`, so the
+    // loop dies; reconciliation must notice and start a fresh one.
+    val flaky = new MonitorRepo(xa):
+      override def recordCheck(
+          id: MonitorId,
+          at: OffsetDateTime,
+          summary: String
+      ): Unit =
+        recordChecks += 1
+        if recordChecks == 1 then throw IllegalStateException("db blip")
+        super.recordCheck(id, at, summary)
+    val stop = UnboundedChannel[Unit]()
+    val search = ScriptedSearch(mutable.Queue.empty)
+    val sleeper = new Sleeper:
+      private var sleeps = 0
+      def sleep(duration: Duration)(using Async): Unit =
+        if summon[Async].group.isCancelled then
+          throw new CancellationException()
+        sleeps += 1
+        if search.searched.size >= 2 || sleeps >= 200 then stop.close()
+
+    runAsync(engine(search, None, sleeper, flaky).run(stop))
+
+    assert(
+      recordChecks >= 2,
+      s"the loop was not restarted after the crash: $recordChecks recordCheck calls"
+    )
+    assert(
+      search.searched.size >= 2,
+      s"the restarted loop never searched: ${search.searched.toList}"
     )
