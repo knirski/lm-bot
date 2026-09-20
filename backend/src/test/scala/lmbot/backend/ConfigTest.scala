@@ -214,3 +214,56 @@ class ConfigTest extends munit.FunSuite:
     Config.fromEnv(env) match
       case Right(c)   => assertEquals(c.dbPassword.value, weird)
       case Left(errs) => fail(s"expected success, got $errs")
+
+  test("Telegram settings are optional"):
+    val result = Config.fromEnv(requiredOnly, "application.conf")
+
+    assertEquals(result.map(_.telegramBotToken), Right(None))
+    assertEquals(result.map(_.telegramBotUsername), Right(None))
+    assertEquals(
+      result.map(_.telegramApiBase),
+      Right("https://api.telegram.org")
+    )
+
+  test("Telegram settings come from the environment as a pair"):
+    val result = Config.fromEnv(
+      requiredOnly ++ Map(
+        "TELEGRAM_BOT_TOKEN" -> "123:abc",
+        "TELEGRAM_BOT_USERNAME" -> "lm_bot",
+        "TELEGRAM_API_BASE" -> "http://127.0.0.1:9999"
+      ),
+      "application.conf"
+    )
+
+    assertEquals(
+      result.map(_.telegramBotToken.map(_.value)),
+      Right(Some("123:abc"))
+    )
+    assertEquals(result.map(_.telegramBotUsername), Right(Some("lm_bot")))
+    assertEquals(
+      result.map(_.telegramApiBase),
+      Right("http://127.0.0.1:9999")
+    )
+
+  test("a Telegram token without a username is rejected, and vice versa"):
+    val tokenOnly = Config.fromEnv(
+      requiredOnly + ("TELEGRAM_BOT_TOKEN" -> "123:abc"),
+      "application.conf"
+    )
+    tokenOnly match
+      case Left(errors) =>
+        assert(
+          errors.exists(
+            _.contains(
+              "TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME must be set together"
+            )
+          ),
+          s"unexpected errors: $errors"
+        )
+      case Right(config) => fail(s"expected a validation error, got $config")
+
+    val usernameOnly = Config.fromEnv(
+      requiredOnly + ("TELEGRAM_BOT_USERNAME" -> "lm_bot"),
+      "application.conf"
+    )
+    assert(usernameOnly.isLeft, "a username without a token must be rejected")

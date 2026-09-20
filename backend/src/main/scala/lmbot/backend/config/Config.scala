@@ -42,7 +42,10 @@ case class Config(
     adminPassword: Option[Secret],
     masterKey: MasterKey,
     liveLuxmedApi: Boolean = false,
-    embeddedPg: Boolean = false
+    embeddedPg: Boolean = false,
+    telegramBotToken: Option[Secret] = None,
+    telegramBotUsername: Option[String] = None,
+    telegramApiBase: String = "https://api.telegram.org"
 ) derives ConfigReader
 
 object Config:
@@ -57,7 +60,10 @@ object Config:
     "adminPassword" -> "ADMIN_PASSWORD",
     "masterKey" -> "LMBOT_MASTER_KEY",
     "liveLuxmedApi" -> "LIVE_LUXMED_API",
-    "embeddedPg" -> "EMBEDDED_PG"
+    "embeddedPg" -> "EMBEDDED_PG",
+    "telegramBotToken" -> "TELEGRAM_BOT_TOKEN",
+    "telegramBotUsername" -> "TELEGRAM_BOT_USERNAME",
+    "telegramApiBase" -> "TELEGRAM_API_BASE"
   )
 
   private val readerPathToEnvironmentKey = environmentPathNames.map:
@@ -85,7 +91,9 @@ object Config:
     "DATABASE_PASSWORD",
     "ADMIN_USERNAME",
     "ADMIN_PASSWORD",
-    "LMBOT_MASTER_KEY"
+    "LMBOT_MASTER_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_BOT_USERNAME"
   )
 
   private def environmentConfig(env: Map[String, String]) =
@@ -139,7 +147,10 @@ object Config:
         .map(_ => "EMBEDDED_PG must be true, false, 1, or 0"),
       Option.when(config.sessionTtl < 1.day)(
         "sessionTtl must be at least one day"
-      )
+      ),
+      Option.when(
+        config.telegramBotToken.isDefined != config.telegramBotUsername.isDefined
+      )("TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME must be set together")
     ).flatten
     Either.cond(errors.isEmpty, config, errors)
 
