@@ -3,6 +3,9 @@ package lmbot.backend
 import java.time.OffsetDateTime
 import java.util.concurrent.atomic.AtomicBoolean
 
+import scala.util.Random
+
+import gears.async.{Async, Future}
 import lmbot.backend.account.{
   AccountClientFactory,
   AccountClientRegistry,
@@ -30,10 +33,23 @@ import lmbot.backend.http.{
   StaticRoutes
 }
 import lmbot.backend.luxmed.LuxmedConfig
-import lmbot.backend.monitor.MonitorService
-import lmbot.backend.support.{EmbeddedDb, EmbeddedPg}
+import lmbot.backend.monitor.{
+  LuxmedSlotSearch,
+  MonitorCheck,
+  MonitorEngine,
+  MonitorService
+}
+import lmbot.backend.notify.{
+  NotificationService,
+  TelegramBot,
+  TelegramLinkPoller,
+  TelegramLinkService,
+  TelegramNotificationChannel
+}
+import lmbot.backend.support.{EmbeddedDb, EmbeddedPg, Sleeper}
 import lmbot.shared.domain.UserId
 import org.slf4j.LoggerFactory
+import sttp.model.Uri
 import sttp.shared.Identity
 import sttp.tapir.server.ServerEndpoint
 import sttp.tapir.server.jdkhttp.HttpServer
@@ -85,75 +101,126 @@ object BackendApplication:
           config.dbPassword.value
         )
 
-    val server = ApplicationLifecycle.withCleanupOnFailure(
-      dataSource :: embeddedDb.toList
-    ):
-      Database.migrate(dataSource)
-      val xa = Database.transactor(dataSource)
-      val users = UserRepo(xa)
-      val sessions = SessionRepo(xa)
+    val (server, engine, telegramPoller) =
+      ApplicationLifecycle.withCleanupOnFailure(
+        dataSource :: embeddedDb.toList
+      ):
+        Database.migrate(dataSource)
+        val xa = Database.transactor(dataSource)
+        val users = UserRepo(xa)
+        val sessions = SessionRepo(xa)
 
-      AdminBootstrap(users).run(
-        config.adminUsername,
-        config.adminPassword.map(_.value)
-      ) match
-        case AdminBootstrap.Outcome.Created(username) =>
-          log.info(s"Created initial admin account '$username'")
-        case AdminBootstrap.Outcome.SkippedUsersExist =>
-          log.info("Users already exist; skipping admin bootstrap")
-        case AdminBootstrap.Outcome.MissingCredentials =>
-          log.warn(
-            "No users exist and ADMIN_USERNAME/ADMIN_PASSWORD are not both set — " +
-              "nobody can log in. Set them and restart."
+        AdminBootstrap(users).run(
+          config.adminUsername,
+          config.adminPassword.map(_.value)
+        ) match
+          case AdminBootstrap.Outcome.Created(username) =>
+            log.info(s"Created initial admin account '$username'")
+          case AdminBootstrap.Outcome.SkippedUsersExist =>
+            log.info("Users already exist; skipping admin bootstrap")
+          case AdminBootstrap.Outcome.MissingCredentials =>
+            log.warn(
+              "No users exist and ADMIN_USERNAME/ADMIN_PASSWORD are not both set — " +
+                "nobody can log in. Set them and restart."
+            )
+
+        val crypto = AesGcm(config.masterKey)
+        val accountRepo = AccountRepo(xa)
+        config.adminUsername
+          .flatMap(users.findByUsername)
+          .map(owner => UserId(owner.id))
+          .foreach(accountSeeder.ensure(_, accountRepo, crypto))
+
+        val auth = AuthService(
+          users,
+          sessions,
+          config.sessionTtl,
+          () => OffsetDateTime.now()
+        )
+        val authRoutes =
+          AuthRoutes(auth, config.cookieSecure, config.sessionTtl)
+        val accountClients = AccountClientFactory.production(
+          xa,
+          accountRepo,
+          luxmedConfig,
+          crypto
+        )
+        val accountClientRegistry =
+          AccountClientRegistry.production(accountRepo, accountClients)
+        val accountService =
+          AccountService(accountRepo, accountClients, crypto)
+        val accountRoutes = AccountRoutes(auth, accountService)
+        val dictionaryService = DictionaryService(accountClientRegistry)
+        val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
+        val monitorRepo = MonitorRepo(xa)
+        val eventRepo = MonitorEventRepo(xa)
+        val monitorService =
+          MonitorService(monitorRepo, accountRepo, eventRepo)
+        val monitorRoutes = MonitorRoutes(auth, monitorService)
+
+        val now = () => OffsetDateTime.now()
+        val telegramBot = config.telegramBotToken
+          .zip(config.telegramBotUsername)
+          .map: (token, _) =>
+            TelegramBot.production(
+              token,
+              Uri.unsafeParse(config.telegramApiBase)
+            )
+        val notifier = NotificationService(
+          users,
+          telegramBot.map(TelegramNotificationChannel(_)),
+          eventRepo,
+          now
+        )
+        val engine = MonitorEngine(
+          monitorRepo,
+          accountRepo,
+          MonitorCheck(
+            LuxmedSlotSearch(accountClientRegistry.forAccount),
+            eventRepo,
+            notifier,
+            now
+          ),
+          notifier,
+          eventRepo,
+          Sleeper.Default,
+          () => Random.nextDouble(),
+          now
+        )
+        val telegramPoller = telegramBot.map: bot =>
+          TelegramLinkPoller(
+            bot,
+            TelegramLinkService(users, config.telegramBotUsername, now),
+            users,
+            Sleeper.Default
           )
 
-      val crypto = AesGcm(config.masterKey)
-      val accountRepo = AccountRepo(xa)
-      config.adminUsername
-        .flatMap(users.findByUsername)
-        .map(owner => UserId(owner.id))
-        .foreach(accountSeeder.ensure(_, accountRepo, crypto))
+        val server = startServer(
+          config.httpHost,
+          config.httpPort.value,
+          HealthRoutes.endpoints ++ authRoutes.endpoints ++
+            accountRoutes.endpoints ++ dictionaryRoutes.endpoints ++
+            monitorRoutes.endpoints ++ StaticRoutes.endpoints
+        )
+        (server, engine, telegramPoller)
 
-      val auth = AuthService(
-        users,
-        sessions,
-        config.sessionTtl,
-        () => OffsetDateTime.now()
-      )
-      val authRoutes =
-        AuthRoutes(auth, config.cookieSecure, config.sessionTtl)
-      val accountClients = AccountClientFactory.production(
-        xa,
-        accountRepo,
-        luxmedConfig,
-        crypto
-      )
-      val accountClientRegistry =
-        AccountClientRegistry.production(accountRepo, accountClients)
-      val accountService =
-        AccountService(accountRepo, accountClients, crypto)
-      val accountRoutes = AccountRoutes(auth, accountService)
-      val dictionaryService = DictionaryService(accountClientRegistry)
-      val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
-      val monitorRepo = MonitorRepo(xa)
-      val monitorService =
-        MonitorService(monitorRepo, accountRepo, MonitorEventRepo(xa))
-      val monitorRoutes = MonitorRoutes(auth, monitorService)
-
-      startServer(
-        config.httpHost,
-        config.httpPort.value,
-        HealthRoutes.endpoints ++ authRoutes.endpoints ++
-          accountRoutes.endpoints ++ dictionaryRoutes.endpoints ++
-          monitorRoutes.endpoints ++ StaticRoutes.endpoints
-      )
-
-    val resources = serverResource(server) :: dataSource :: embeddedDb.toList
-    ApplicationLifecycle.withCleanupOnFailure(resources):
-      log.info(
-        s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}"
-      )
-      new BackendApplication(resources)
+    val serverCleanup = serverResource(server)
+    ApplicationLifecycle.withCleanupOnFailure(
+      serverCleanup :: dataSource :: embeddedDb.toList
+    ):
+      val worker =
+        BackgroundWorker.start("lm-bot-background")(stop ?=>
+          Async.group:
+            telegramPoller.foreach(poller => Future(poller.run(stop)))
+            engine.run(stop)
+        )
+      val resources =
+        worker :: serverCleanup :: dataSource :: embeddedDb.toList
+      ApplicationLifecycle.withCleanupOnFailure(resources):
+        log.info(
+          s"lm-bot listening on ${config.httpHost}:${server.getAddress.getPort}"
+        )
+        new BackendApplication(resources)
 
   private def serverResource(server: HttpServer): AutoCloseable =
     new AutoCloseable:

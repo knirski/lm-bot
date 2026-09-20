@@ -61,6 +61,14 @@ trait TelegramApi:
       Async
   ): Either[NotificationError, List[TelegramUpdate]]
 
+/** The Bot API as the notification boundary sees it. */
+final class TelegramNotificationChannel(api: TelegramApi)
+    extends NotificationChannel:
+  def send(chatId: Long, text: String)(using
+      Async
+  ): Either[NotificationError, Unit] =
+    api.sendMessage(chatId, text)
+
 /** Plain sttp Bot API calls — no bot framework dependency (spec §3.5).
   *
   * The token is part of the URL path, so it never appears in an error value:
