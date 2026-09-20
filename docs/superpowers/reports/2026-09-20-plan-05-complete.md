@@ -11,10 +11,9 @@ application wiring, and HTTP surface (PR #60); the frontend detail/settings
 work, the acceptance harness (`Plan5AcceptanceApp`, `FakeTelegramServer`, the
 stub's `terms/index` route), this report, `README.md`, and the roadmap (PR #61).
 A full file list is in each PR.
-**verification-run:** `sbt testFull` (589 passed before the frontend work; the
-final run is recorded below), `sbt frontend/fastLinkJS`, `nix flake check`,
-`git diff --check`, and a seven-scenario real-browser run against
-`Plan5AcceptanceApp` in Chromium 152.
+**verification-run:** `sbt testFull` — 48 + 48 + 110 + 396 = **602 passed, 0
+failed**; `sbt frontend/fastLinkJS`; `nix flake check`; `git diff --check`; and a
+seven-scenario real-browser run against `Plan5AcceptanceApp` in Chromium 152.
 **skipped-checks:** none. No test was excluded, renamed, or skipped.
 **branch:** `feat/plan-05-frontend` (Tasks 9–10); Tasks 1–8 merged on `main`.
 **pr:** #58, #59, #60 merged; #61 for Tasks 9–10.
