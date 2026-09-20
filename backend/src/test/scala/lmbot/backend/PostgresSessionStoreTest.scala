@@ -4,6 +4,8 @@ import java.time.{Instant, OffsetDateTime}
 import java.util.Base64
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import scala.concurrent.duration.{Duration, DurationInt}
+
 import com.augustnagro.magnum.{sql, transact}
 import lmbot.backend.config.{MasterKey, Secret}
 import lmbot.backend.crypto.AesGcm
@@ -14,6 +16,12 @@ import lmbot.backend.support.PostgresSuite
 import lmbot.shared.domain.{AccountId, Role, UserId}
 
 class PostgresSessionStoreTest extends PostgresSuite:
+
+  // The concurrent CAS test rendezvous on latches. With every suite running
+  // in parallel — each with its own embedded PostgreSQL — a thread can be
+  // starved past munit's 30 s default, so the suite gets headroom while the
+  // test body still bounds each wait with an explicit assertion.
+  override def munitTimeout: Duration = 2.minutes
 
   private val key = MasterKey
     .fromBase64(Base64.getEncoder.encodeToString(Array.fill[Byte](32)(7)))
@@ -152,12 +160,17 @@ class PostgresSessionStoreTest extends PostgresSuite:
     val initialStore = store(ownerId, accountId)
     assertEquals(initialStore.replace(None, first), Right(()))
 
+    // Both attempts read the stored row, then park here until the test thread
+    // releases them, so they race the compare-and-set against the same value.
+    // The workers' waits are deliberately untimed: only the test thread can
+    // release them, and a short timeout here previously turned pure
+    // scheduling delay into a spurious failure. `shutdownNow` interrupts a
+    // worker if the test aborts before releasing them.
     val arrived = new CountDownLatch(2)
     val release = new CountDownLatch(1)
     val barrier = () =>
       arrived.countDown()
-      assert(arrived.await(10, TimeUnit.SECONDS))
-      assert(release.await(10, TimeUnit.SECONDS))
+      release.await()
 
     val executor = Executors.newFixedThreadPool(2)
     try
@@ -166,10 +179,13 @@ class PostgresSessionStoreTest extends PostgresSuite:
           store(ownerId, accountId, barrier)
             .replace(Some(first.refreshToken), updated)
         )
-      assert(arrived.await(10, TimeUnit.SECONDS))
+      assert(
+        arrived.await(30, TimeUnit.SECONDS),
+        "both CAS attempts should reach the barrier"
+      )
       release.countDown()
       val results = attempts.map: (updated, future) =>
-        updated -> future.get(10, TimeUnit.SECONDS)
+        updated -> future.get(30, TimeUnit.SECONDS)
       assertEquals(results.count(_._2 == Right(())), 1)
       assertEquals(
         results.count(_._2 == Left(SessionStoreError.ConcurrentModification)),
