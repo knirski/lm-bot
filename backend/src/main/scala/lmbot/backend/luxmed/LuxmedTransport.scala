@@ -98,7 +98,7 @@ final class LuxmedTransport private (
   /** GET on the old API (PatientPortalMobileAPI). */
   def oldApiGet(
       endpoint: LuxmedEndpoint,
-      params: Map[String, String] = Map.empty
+      params: Seq[(String, String)] = Seq.empty
   )(using
       a: Async,
       p: RequestPermit
@@ -119,7 +119,7 @@ final class LuxmedTransport private (
   ): Either[LuxmedError, TransportResponse[String]] =
     run(a, p, tolerateRedirects = false)(
       mkRequest
-        .post(uri(config.oldApi, endpoint, Map.empty))
+        .post(uri(config.oldApi, endpoint, Seq.empty))
         .headers(oldApiHeaders)
         .body(body)
     )
@@ -127,7 +127,7 @@ final class LuxmedTransport private (
   /** GET on the new Portal API with an authenticated session. */
   def newApiGet(
       endpoint: LuxmedEndpoint,
-      params: Map[String, String] = Map.empty,
+      params: Seq[(String, String)] = Seq.empty,
       session: LuxmedSession
   )(using
       a: Async,
@@ -146,7 +146,7 @@ final class LuxmedTransport private (
       endpoint: LuxmedEndpoint,
       accessToken: Secret,
       cookies: CookieJar,
-      params: Map[String, String] = Map.empty
+      params: Seq[(String, String)] = Seq.empty
   )(using
       a: Async,
       p: RequestPermit
@@ -167,7 +167,7 @@ final class LuxmedTransport private (
       session: LuxmedSession,
       xsrfToken: Option[Secret] = None,
       extraCookies: CookieJar = CookieJar.empty,
-      params: Map[String, String] = Map.empty
+      params: Seq[(String, String)] = Seq.empty
   )(using
       a: Async,
       p: RequestPermit
@@ -191,7 +191,7 @@ final class LuxmedTransport private (
       session: LuxmedSession,
       xsrfToken: Option[Secret] = None,
       extraCookies: CookieJar = CookieJar.empty,
-      params: Map[String, String] = Map.empty
+      params: Seq[(String, String)] = Seq.empty
   )(using
       a: Async,
       p: RequestPermit
@@ -214,9 +214,9 @@ final class LuxmedTransport private (
   private def uri(
       base: Uri,
       ep: LuxmedEndpoint,
-      params: Map[String, String]
+      params: Seq[(String, String)]
   ): Uri =
-    base.addPath(ep.path.split('/').toSeq).addParams(params)
+    base.addPath(ep.path.split('/').toSeq).addParams(params*)
 
   private def run(
       async: Async,

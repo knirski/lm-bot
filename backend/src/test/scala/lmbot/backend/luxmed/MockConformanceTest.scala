@@ -124,8 +124,8 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
         searchDateFrom = LocalDate.parse("2026-08-03"),
         searchDateTo = LocalDate.parse("2026-08-10"),
         processId = processUuid,
-        facilityIds = Some(FacilityId(78)),
-        doctorIds = Some(DoctorId(111111))
+        facilityIds = List(FacilityId(78)),
+        doctorIds = List(DoctorId(111111))
       )
       mock.enqueue(
         status = 200,

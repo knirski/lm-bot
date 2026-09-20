@@ -257,8 +257,8 @@ object GuidedContractExplorer:
       searchDateFrom = LocalDate.parse(fromDate),
       searchDateTo = LocalDate.parse(toDate),
       processId = processUuid,
-      facilityIds = maybeFacilityId.map(FacilityId(_)),
-      doctorIds = maybeDoctorId.map(DoctorId(_))
+      facilityIds = maybeFacilityId.map(FacilityId(_)).toList,
+      doctorIds = maybeDoctorId.map(DoctorId(_)).toList
     )
     val termsResult = client.searchTerms(termsQuery)
     termsResult match

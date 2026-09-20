@@ -147,8 +147,8 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         searchDateFrom = LocalDate.parse("2026-08-03"),
         searchDateTo = LocalDate.parse("2026-08-10"),
         processId = UUID.fromString("00000000-0000-0000-0000-000000000123"),
-        facilityIds = Some(FacilityId(78)),
-        doctorIds = Some(DoctorId(111111))
+        facilityIds = List(FacilityId(78)),
+        doctorIds = List(DoctorId(111111))
       )
       stub.enqueue(
         status = 200,
@@ -193,8 +193,8 @@ class DictionaryAndTermsTest extends munit.FunSuite with GearsTest:
         searchDateFrom = LocalDate.parse("2026-08-03"),
         searchDateTo = LocalDate.parse("2026-08-10"),
         processId = UUID.fromString("00000000-0000-0000-0000-000000000123"),
-        facilityIds = None,
-        doctorIds = None
+        facilityIds = Nil,
+        doctorIds = Nil
       )
       stub.enqueue(
         status = 200,
