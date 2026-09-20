@@ -32,7 +32,7 @@ class WireContractTest extends munit.FunSuite with GearsTest:
       val config = LuxmedConfig(
         oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
         newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = AppVersion.unsafeFromString("4.44.0"),
+        appVersion = AppVersion.unsafeFromString("5.8.0"),
         deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
       )
       val transport = LuxmedTransport.production(config)
@@ -123,7 +123,7 @@ class WireContractTest extends munit.FunSuite with GearsTest:
     val config = LuxmedConfig(
       oldApi = Uri.unsafeParse("http://localhost:1/PatientPortalMobileAPI/api"),
       newApi = Uri.unsafeParse("http://localhost:1/PatientPortal"),
-      appVersion = AppVersion.unsafeFromString("4.44.0"),
+      appVersion = AppVersion.unsafeFromString("5.8.0"),
       deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
     )
     val transport = LuxmedTransport.production(config)

@@ -70,7 +70,7 @@ class BackendApplicationTest extends munit.FunSuite:
       BackendApplication.start(
         config,
         LuxmedConfig
-          .production(AppVersion.unsafeFromString("4.44.0"), UUID.randomUUID()),
+          .production(AppVersion.unsafeFromString("5.8.0"), UUID.randomUUID()),
         seeder,
         (host, _, endpoints) => Server.start(host, 0, endpoints)
       )
@@ -110,7 +110,7 @@ class BackendApplicationTest extends munit.FunSuite:
         .fold(error => throw IllegalStateException(error), identity),
       cookieSecure = false,
       sessionTtl = 7.days,
-      luxmedAppVersion = AppVersion.unsafeFromString("4.44.0"),
+      luxmedAppVersion = AppVersion.unsafeFromString("5.8.0"),
       adminUsername = Some(adminUsername),
       adminPassword = Some(Secret("application-test-password")),
       masterKey = MasterKey

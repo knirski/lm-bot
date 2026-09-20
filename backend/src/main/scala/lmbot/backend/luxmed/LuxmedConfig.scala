@@ -13,7 +13,7 @@ import sttp.model.Uri
   *   Base URI for the PatientPortal NewPortal API (all authenticated calls).
   * @param appVersion
   *   The app version string sent in Custom-User-Agent. Validated at config
-  *   parsing time; minimum supported version is 4.44.0.
+  *   parsing time; minimum known-good version is 5.8.0.
   * @param deviceUuid
   *   Stable device UUID for the Custom-User-Agent header.
   * @param apiLevel

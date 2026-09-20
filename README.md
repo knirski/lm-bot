@@ -139,7 +139,7 @@ variables:
 | `httpPort` | `8080` | `8080` | bind port |
 | `cookieSecure` | `true` | `false` | whether browser cookies require HTTPS |
 | `sessionTtl` | `7 days` | `7 days` | session lifetime; must be at least one day |
-| `luxmedAppVersion` | `4.44.0` | `4.44.0` | Luxmed mobile app version reported to their API |
+| `luxmedAppVersion` | `5.8.0` | `5.8.0` | Luxmed mobile app version reported to their API |
 
 ## Deployment
 

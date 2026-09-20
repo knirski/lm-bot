@@ -23,7 +23,7 @@ class ReservationPrimitivesTest extends munit.FunSuite with GearsTest:
   private val testConfig = LuxmedConfig(
     oldApi = Uri.unsafeParse("http://localhost:1/PatientPortalMobileAPI/api"),
     newApi = Uri.unsafeParse("http://localhost:1/PatientPortal"),
-    appVersion = AppVersion.unsafeFromString("4.44.0"),
+    appVersion = AppVersion.unsafeFromString("5.8.0"),
     deviceUuid = testUuid
   )
 

@@ -43,7 +43,7 @@ cookieSecure = true
 sessionTtl = 7 days
 liveLuxmedApi = false
 embeddedPg = false
-luxmedAppVersion = "4.44.0"
+luxmedAppVersion = "5.8.0"
 ```
 
 The selected resource contains optional HOCON substitutions such as

@@ -36,7 +36,7 @@ class MockConformanceTest extends munit.FunSuite with GearsTest:
       val config = LuxmedConfig(
         oldApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortalMobileAPI/api"),
         newApi = Uri.unsafeParse(s"${mock.baseUri}/PatientPortal"),
-        appVersion = AppVersion.unsafeFromString("4.44.0"),
+        appVersion = AppVersion.unsafeFromString("5.8.0"),
         deviceUuid = testUuid
       )
       val fingerprints = Vector.newBuilder[WireFingerprint]

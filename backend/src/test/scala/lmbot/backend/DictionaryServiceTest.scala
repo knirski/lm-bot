@@ -62,7 +62,7 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
     LuxmedConfig(
       oldApi = Uri.unsafeParse(s"${server.baseUri}/PatientPortalMobileAPI/api"),
       newApi = Uri.unsafeParse(s"${server.baseUri}/PatientPortal"),
-      appVersion = AppVersion.unsafeFromString("4.44.0"),
+      appVersion = AppVersion.unsafeFromString("5.8.0"),
       deviceUuid = UUID.fromString("00000000-0000-4000-8000-000000000002")
     )
 

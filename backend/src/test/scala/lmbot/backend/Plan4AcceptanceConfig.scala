@@ -92,7 +92,7 @@ object Plan4AcceptanceConfig:
       // cookie would never be sent back.
       cookieSecure = false,
       sessionTtl = 7.days,
-      luxmedAppVersion = AppVersion.unsafeFromString("4.44.0"),
+      luxmedAppVersion = AppVersion.unsafeFromString("5.8.0"),
       adminUsername = Some(adminUsername),
       adminPassword = Some(Secret(adminPassword)),
       masterKey = masterKey
