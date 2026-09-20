@@ -66,7 +66,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
         s"${server.baseUri}/PatientPortalMobileAPI/api"
       ),
       newApi = Uri.unsafeParse(s"${server.baseUri}/PatientPortal"),
-      appVersion = AppVersion.unsafeFromString("4.44.0"),
+      appVersion = AppVersion.unsafeFromString("5.8.0"),
       deviceUuid = UUID.fromString("00000000-0000-4000-8000-000000000001")
     )
 
@@ -459,7 +459,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
     insertAccount(secondOwner, "Other")
     val (accounts, _) = service(
       LuxmedConfig.production(
-        AppVersion.unsafeFromString("4.44.0"),
+        AppVersion.unsafeFromString("5.8.0"),
         fixedDeviceUuid
       )
     )
@@ -486,7 +486,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
     val monitorId = insertMonitor(firstOwner, accountId)
     val (accounts, _) = service(
       LuxmedConfig.production(
-        AppVersion.unsafeFromString("4.44.0"),
+        AppVersion.unsafeFromString("5.8.0"),
         fixedDeviceUuid
       )
     )
@@ -560,7 +560,7 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
     val accountId = insertAccount(firstOwner, "Main")
     val (_, factory) = service(
       LuxmedConfig.production(
-        AppVersion.unsafeFromString("4.44.0"),
+        AppVersion.unsafeFromString("5.8.0"),
         fixedDeviceUuid
       )
     )

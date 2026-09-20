@@ -6,6 +6,13 @@
 
 ---
 
+> **Update 2026-09-20: the `4.44.0` version recommendation below is superseded.**
+> Luxmed raised its enforced app-version floor in early August 2026, and the
+> reference client's fix was to send `5.8.0`. See the addendum at the end of
+> this document and the
+> [upstream API review](2026-09-20-dyrkin-luxmed-bot-api-review.md).
+
+
 ## Overview
 
 Luxmed's Patient Portal exposes two API surfaces: the **legacy mobile API** (used by the Android app up to ~mid-2026) and the **new web API** (the current Patient Portal web application). Both authenticate through the same backend identity provider but use different transport mechanisms and have different feature sets.
@@ -368,7 +375,7 @@ Proceed with the old mobile API as specified in PRD §5.4. The spike confirmed i
 
 | Parameter | Recommended Value | Notes |
 |---|---|---|
-| `APP_VERSION` | `4.44.0` | Minimum for refresh grant; password grant works at `4.42.0` |
+| `APP_VERSION` | ~~`4.44.0`~~ **`5.8.0`** | July 2026 minimum for refresh was `4.44.0`; superseded 2026-09-20 — see addendum. `5.8.0` is the reference client's production value since 2026-08-22. |
 | Token refresh interval | 300s (5 min) | Well before the ~600s expiry |
 | Device UUID | Random per deployment or per account | Not validated by the API, used only in `Custom-User-Agent` header |
 
@@ -415,3 +422,31 @@ See [`spike/out/`](../../../spike/out/) for raw (redacted) request/response pair
 **Login attempts used during spike:** 3 / 12 (well within the safety cap).
 
 **Account health:** Confirmed healthy — no lockout or 429s observed.
+
+---
+
+## 7. Addendum (2026-09-20): the app-version floor moved
+
+A review of the reference client at `a5b7abc` (2026-09-03) found that Luxmed
+raised its enforced minimum app version in early August 2026. Full analysis:
+[dyrkin/luxmed-bot API review](2026-09-20-dyrkin-luxmed-bot-api-review.md).
+
+- Upstream issue
+  [#116](https://github.com/dyrkin/luxmed-bot/issues/116) (2026-08-04): bots on
+  `4.42.0` failed at **booking acceptance** with
+  `Obecnie zainstalowana wersja aplikacji nie jest wspierana przez nowy system
+  Portalu Pacjenta…`. Issue
+  [#118](https://github.com/dyrkin/luxmed-bot/issues/118) shows the same error
+  on the `NewPortal` API.
+- Upstream's fix (PR #119, merged 2026-08-22) changed the `Custom-User-Agent`
+  app version on both APIs from `4.42.0` to **`5.8.0`**. Reported fixed the
+  same day; no version-rejection reports since.
+- The check now bites on `NewPortal` reservation calls as well as the token
+  endpoint, and the password grant can still succeed while booking fails, so a
+  working login does not prove booking works. The Play listing is already on
+  `5.11.0` (2026-09-10), so another move is likely.
+- Whether `4.44.0` (this report's July recommendation) still works is
+  **unverified**. lm-bot's default and minimum are now `5.8.0`; see PRD §5.4.
+- The other upstream changes since the commit lm-bot was ported from
+  (`c970447b`) are rehab endpoints (out of scope) and 30 s request/connection
+  timeouts (a robustness pattern worth mirroring).

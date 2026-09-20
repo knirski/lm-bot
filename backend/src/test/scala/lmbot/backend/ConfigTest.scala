@@ -81,7 +81,7 @@ class ConfigTest extends munit.FunSuite:
       "COOKIE_SECURE" -> "false",
       "HTTP_HOST" -> "127.0.0.1",
       "SESSION_TTL_DAYS" -> "30",
-      "LUXMED_APP_VERSION" -> "4.45.1"
+      "LUXMED_APP_VERSION" -> "5.9.9"
     )
     Config.fromEnv(env) match
       case Right(c) =>
@@ -89,7 +89,7 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.cookieSecure, true)
         assertEquals(c.httpHost, "0.0.0.0")
         assertEquals(c.sessionTtl, 7.days)
-        assertEquals(c.luxmedAppVersion.value, "4.44.0")
+        assertEquals(c.luxmedAppVersion.value, "5.8.0")
       case Left(errs) => fail(s"expected success, got $errs")
 
   test("admin bootstrap credentials are picked up when both are present"):
@@ -101,9 +101,9 @@ class ConfigTest extends munit.FunSuite:
         assertEquals(c.adminPassword, Some(Secret("hunter2")))
       case Left(errs) => fail(s"expected success, got $errs")
 
-  test("Luxmed app version defaults to the measured refresh-compatible floor"):
+  test("Luxmed app version defaults to the known-good version"):
     val Right(config) = Config.fromEnv(minimal): @unchecked
-    assertEquals(config.luxmedAppVersion.value, "4.44.0")
+    assertEquals(config.luxmedAppVersion.value, "5.8.0")
 
   test("live Luxmed API is disabled by default"):
     val Right(config) = Config.fromEnv(minimal): @unchecked

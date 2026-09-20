@@ -114,7 +114,7 @@ object GuidedContractExplorer:
     val config = LuxmedConfig(
       oldApi = Uri.unsafeParse(s"$actualBase/PatientPortalMobileAPI/api"),
       newApi = Uri.unsafeParse(s"$actualBase/PatientPortal"),
-      appVersion = AppVersion.unsafeFromString("4.44.0"),
+      appVersion = AppVersion.unsafeFromString("5.8.0"),
       deviceUuid = testUuid
     )
 

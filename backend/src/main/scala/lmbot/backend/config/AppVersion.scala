@@ -5,12 +5,15 @@ import scala.util.matching.Regex
 import pureconfig.ConfigReader
 import pureconfig.error.CannotConvert
 
-/** A validated Luxmed app version string (e.g. "4.44.0").
+/** A validated Luxmed app version string (e.g. "5.8.0").
   *
   * Constructed only via the smart constructor, which enforces the minimum
-  * supported version (4.44.0) and a valid semver-like format at config-parsing
-  * time. This is an opaque type so the validation is enforced at the boundary
-  * and the string value is used internally without overhead.
+  * known-good version (5.8.0) and a valid semver-like format at config-parsing
+  * time. Luxmed raises its accepted floor server-side without notice, so this
+  * bound tracks the oldest value with production evidence — see the 2026-09-20
+  * addendum to the Luxmed API analysis report. This is an opaque type so the
+  * validation is enforced at the boundary and the string value is used
+  * internally without overhead.
   */
 opaque type AppVersion = String
 
@@ -34,8 +37,8 @@ object AppVersion:
 
   private val pattern: Regex = raw"^(\d+)\.(\d+)\.(\d+)".r
 
-  private val minMajor = 4
-  private val minMinor = 44
+  private val minMajor = 5
+  private val minMinor = 8
   private val minPatch = 0
 
   def fromString(s: String): Either[String, AppVersion] =

@@ -23,7 +23,7 @@ class PostgresSessionStoreClientTest extends PostgresSuite with GearsTest:
   private val config = LuxmedConfig(
     oldApi = Uri.unsafeParse("https://old.example/api"),
     newApi = Uri.unsafeParse("https://new.example"),
-    appVersion = AppVersion.unsafeFromString("4.44.0"),
+    appVersion = AppVersion.unsafeFromString("5.8.0"),
     deviceUuid = UUID.fromString("12345678-54b1-4c07-ba09-a3db8daea24b")
   )
 

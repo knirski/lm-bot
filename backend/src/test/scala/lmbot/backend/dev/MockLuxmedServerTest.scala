@@ -70,7 +70,7 @@ class MockLuxmedServerTest extends munit.FunSuite with GearsTest:
     val config = LuxmedConfig(
       oldApi = mock.oldApi,
       newApi = mock.newApi,
-      appVersion = AppVersion.unsafeFromString("4.44.0"),
+      appVersion = AppVersion.unsafeFromString("5.8.0"),
       deviceUuid = UUID.fromString("00000000-0000-4000-8000-000000000008")
     )
     val transport = LuxmedTransport.withBackend(config, http)

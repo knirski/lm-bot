@@ -15,7 +15,7 @@ class StubLuxmedBackendTest extends munit.FunSuite with GearsTest:
   private val testConfig = LuxmedConfig(
     oldApi = Uri.unsafeParse("http://localhost:1/api"),
     newApi = Uri.unsafeParse("http://localhost:2/api"),
-    appVersion = AppVersion.unsafeFromString("4.44.0"),
+    appVersion = AppVersion.unsafeFromString("5.8.0"),
     deviceUuid = UUID.randomUUID()
   )
 
