@@ -1,6 +1,12 @@
 # Composite action that installs Nix and configures Cachix caching.
 # Used by every CI job to avoid repeating the same setup.
 #
+# Cachix is the only binary cache here. Determinate Systems' Magic Nix Cache
+# was removed: its post-job step uploaded every built store path to the GitHub
+# Actions cache, adding minutes of uploads on main pushes and competing with
+# the sbt/coursier cache under the same 10 GB quota. Pushes are now explicit
+# and limited to the devShell closure (see ci.yml).
+#
 # Example usage:
 #   # PR / non-main push (no auth token — pull-only cache access)
 #   - uses: ./.github/actions/setup-nix
@@ -24,9 +30,6 @@ runs:
   using: composite
   steps:
     - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-    - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-      with:
-        use-flakehub: false
 
     # When no auth token is provided, configure Cachix for pull-only access.
     # This is safe for PRs from forks (no secret exposure).
@@ -35,10 +38,12 @@ runs:
       with:
         name: knirski-lm-bot
 
-    # With an auth token, push access is enabled so other CI jobs and local
-    # developers benefit from pre-built artifacts.
+    # With an auth token the CLI is authenticated for the explicit `cachix
+    # push` in ci.yml, but nothing is pushed automatically: the devShell closure
+    # is the only artifact worth caching, not every derivation the job builds.
     - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
       if: ${{ inputs.cachix-auth-token != '' }}
       with:
         name: knirski-lm-bot
         authToken: '${{ inputs.cachix-auth-token }}'
+        skipPush: true
