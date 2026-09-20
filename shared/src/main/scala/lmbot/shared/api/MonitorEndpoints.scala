@@ -1,7 +1,12 @@
 package lmbot.shared.api
 
 import lmbot.shared.api.Codecs.given
-import lmbot.shared.domain.{MonitorDraft, MonitorId, MonitorView}
+import lmbot.shared.domain.{
+  MonitorDraft,
+  MonitorEventView,
+  MonitorId,
+  MonitorView
+}
 import sttp.tapir.*
 import sttp.tapir.json.jsoniter.*
 
@@ -29,6 +34,18 @@ object MonitorEndpoints:
   val get: Endpoint[Option[String], MonitorId, ApiError, MonitorView, Any] =
     securedIdBase.get
       .out(jsonBody[MonitorView])
+
+  val events: Endpoint[
+    Option[String],
+    (MonitorId, Int),
+    ApiError,
+    List[MonitorEventView],
+    Any
+  ] =
+    securedIdBase.get
+      .in("events")
+      .in(query[Int]("limit").default(50))
+      .out(jsonBody[List[MonitorEventView]])
 
   val update: Endpoint[
     Option[String],

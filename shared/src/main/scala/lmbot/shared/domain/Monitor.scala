@@ -54,5 +54,7 @@ final case class MonitorView(
     autoBook: Boolean,
     intervalMinutes: Int,
     createdAt: Instant,
-    updatedAt: Instant
+    updatedAt: Instant,
+    lastCheckAt: Option[Instant] = None,
+    lastCheckSummary: Option[String] = None
 )
