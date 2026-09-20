@@ -15,8 +15,8 @@ A full file list is in each PR.
 failed**; `sbt frontend/fastLinkJS`; `nix flake check`; `git diff --check`; and a
 seven-scenario real-browser run against `Plan5AcceptanceApp` in Chromium 152.
 **skipped-checks:** none. No test was excluded, renamed, or skipped.
-**branch:** `feat/plan-05-frontend` (Tasks 9–10); Tasks 1–8 merged on `main`.
-**pr:** #58, #59, #60 merged; #61 for Tasks 9–10.
+**branch:** `main` (all four Plan 5 PRs merged; their branches were deleted).
+**pr:** #58, #59, #60, #61 — all merged (#61 as `d8727bb`).
 **blocker:** none.
 
 ## What Plan 5 delivered
@@ -101,6 +101,31 @@ names, clinic/doctor names, and Warsaw datetimes.
   concern for Plan 7.
 - **Live status push.** tapir-jdkhttp has no websockets; the UI refreshes when
   the user reloads or acts.
+
+## Post-review fixes
+
+A self-review after the plan closed found and fixed four defects, in a
+follow-up PR:
+
+1. **Telegram bot token could leak into `notification_failed` events.** sttp's
+   `SttpClientException` message embeds the request URI, and the Bot API URI
+   contains the token; `TelegramBot` used the exception message as the error
+   detail, which `NotificationService` persists and the UI renders. Transport
+   failures now produce a fixed detail (class name only), with a
+   connection-refused regression test asserting neither the token nor the URI
+   appears.
+2. **A monitor loop that died outside the per-check guard was never restarted.**
+   `guardedCheck` only covers `checks.run`; a database blip in `recordCheck` (or
+   in a state transition) killed the loop's fiber, and reconciliation only
+   restarted monitors *missing* from its map — a dead-but-present entry meant
+   the monitor silently stopped until process restart. Loop entries are now
+   removed when their future completes, so reconciliation restarts them, and
+   the death is logged.
+3. **An empty `TELEGRAM_API_BASE` was treated as a value**, producing an invalid
+   URI at startup. It is now treated as absent, like the other Telegram
+   variables.
+4. **Failed non-slot notifications were invisible** (no event, no log). They are
+   now logged; slot failures remain visible in the event log as before.
 
 ## Known rough edges
 
