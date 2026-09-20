@@ -10,7 +10,7 @@ The spec describes a complete application. At the TDD granularity this project u
 | 2 | **API spike** (investigation, not implementation) | Auth flows, JWT, token rotation measured; MFA found **not enforced** | ✅ **complete** — [plan](2026-07-27-lm-bot-02-2fa-spike.md), [findings](../reports/2026-07-27-luxmed-api-analysis.md) |
 | 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | ✅ **complete** — [plan](2026-07-28-lm-bot-03-luxmed-client.md), [report](../reports/2026-07-28-plan-03-complete.md) |
 | 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | ✅ **complete** — [plan](2026-07-30-lm-bot-04-accounts-monitors.md), [report](../reports/2026-07-30-plan-04-complete.md), [mid-plan review](../reports/2026-07-30-plan-04-review.md) |
-| 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | **in progress** — [plan](2026-09-20-lm-bot-05-monitor-engine-notifications.md) |
+| 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | ✅ **complete** — [plan](2026-09-20-lm-bot-05-monitor-engine-notifications.md), [report](../reports/2026-09-20-plan-05-complete.md) |
 | 6 | Auto-booking | Matching slots get booked | not yet written |
 | 7 | Hardening & ops | Admin UI, ops notifications, observability, release polish | not yet written |
 

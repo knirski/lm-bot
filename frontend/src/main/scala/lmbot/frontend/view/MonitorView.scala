@@ -1,6 +1,7 @@
 package lmbot.frontend.view
 
-import java.time.DayOfWeek
+import java.time.format.DateTimeFormatter
+import java.time.{DayOfWeek, Instant, LocalDateTime, ZoneId}
 
 import com.raquo.laminar.api.L.*
 import lmbot.frontend.elm.Runtime
@@ -14,6 +15,9 @@ import lmbot.frontend.{
 }
 import lmbot.shared.domain.{
   FacilitiesDoctorsResponse,
+  FoundSlot,
+  MonitorEventKind,
+  MonitorEventView,
   MonitorId,
   MonitorState,
   MonitorView,
@@ -35,13 +39,19 @@ object MonitorsView:
     div(
       cls := "monitors",
       h2("Monitors"),
-      // Keyed on "is a form open", not on the form itself, so that typing into
-      // the form re-binds fields instead of rebuilding the element under the
-      // caret.
-      child <-- rt.store.signal.map(_.monitorForm.isDefined).distinct.map {
-        case true  => monitorForm(rt)
-        case false => monitorList(rt)
-      }
+      // Keyed on which view is open, not on the values themselves, so that
+      // typing into the form re-binds fields instead of rebuilding the element
+      // under the caret. The detail replaces the list, as the form does.
+      child <-- rt.store.signal
+        .map(state =>
+          (state.monitorDetail.isDefined, state.monitorForm.isDefined)
+        )
+        .distinct
+        .map {
+          case (true, _)      => monitorDetail(rt)
+          case (false, true)  => monitorForm(rt)
+          case (false, false) => monitorList(rt)
+        }
     )
 
   // --- The list ---
@@ -49,6 +59,12 @@ object MonitorsView:
   private def monitorList(rt: Runtime[AppState, Msg]): HtmlElement =
     div(
       cls := "monitor-list",
+      // Spec §3.5: a user without a linked Telegram chat can still run
+      // monitors, but must be told no notifications will arrive.
+      child.maybe <-- rt.store.signal
+        .map(_.telegram.status)
+        .distinct
+        .map(telegramWarning),
       // No dead controls: "New monitor" appears only once there is an account
       // for it to watch, because that is also the only case `Update` opens the
       // form in.
@@ -74,6 +90,28 @@ object MonitorsView:
           ul(cls := "monitor-rows", monitors.map(monitorItem(rt, _)))
       }
     )
+
+  private def telegramWarning(
+      status: LoadState[lmbot.shared.api.TelegramSettingsView]
+  ): Option[HtmlElement] = status match
+    case LoadState.Loaded(settings) if !settings.available =>
+      Some(
+        p(
+          cls := "warning",
+          "Telegram notifications are not configured on this server — " +
+            "events are recorded, but no notifications will be delivered."
+        )
+      )
+    case LoadState.Loaded(settings) if !settings.linked =>
+      Some(
+        p(
+          cls := "warning",
+          "No Telegram chat is linked — events are recorded here, but no " +
+            "notifications will be delivered. ",
+          a(href := "#telegram-settings", "Link Telegram")
+        )
+      )
+    case _ => None
 
   private def newMonitorButton(rt: Runtime[AppState, Msg]): HtmlElement =
     button(
@@ -122,8 +160,15 @@ object MonitorsView:
         if monitor.autoBook then "Books a slot automatically"
         else "Notifies only"
       ),
+      p(cls := "last-check", lastCheckText(monitor)),
       div(
         cls := "monitor-actions",
+        button(
+          "Details",
+          onClick.mapTo(Msg.MonitorDetailRequested(monitor.id)) --> (m =>
+            rt.dispatch(m)
+          )
+        ),
         button(
           "Edit",
           onClick.mapTo(Msg.MonitorEditStarted(monitor)) --> (m =>
@@ -142,32 +187,29 @@ object MonitorsView:
         .map(_.map(message => p(cls := "error", role := "alert", message)))
     )
 
-  /** Only `Active` and `Paused` can be toggled: the server refuses to resume a
-    * completed or failed monitor, and offering a control that is known to fail
-    * is worse than offering none.
+  /** `Active` can be paused, and `Paused` or `Failed` can be resumed; the
+    * server refuses to resume a `completed` monitor, and offering a control
+    * that is known to fail is worse than offering none (spec §5.5 allows
+    * resuming a failed monitor manually).
     */
   private def stateToggle(
       rt: Runtime[AppState, Msg],
       monitor: MonitorView,
       actionSignal: Signal[Option[MonitorAction]]
-  ): List[HtmlElement] = monitor.state match
-    case MonitorState.Completed | MonitorState.Failed => Nil
-    case MonitorState.Active | MonitorState.Paused    =>
-      val paused = monitor.state == MonitorState.Paused
-      val request =
-        if paused then Msg.MonitorResumeRequested(monitor.id)
-        else Msg.MonitorPauseRequested(monitor.id)
+  ): List[HtmlElement] =
+    val toggle = monitor.state match
+      case MonitorState.Active =>
+        Some((Msg.MonitorPauseRequested(monitor.id), "Pause", "Pausing…"))
+      case MonitorState.Paused | MonitorState.Failed =>
+        Some((Msg.MonitorResumeRequested(monitor.id), "Resume", "Resuming…"))
+      case MonitorState.Completed => None
+    toggle.toList.map: (request, idle, busy) =>
       val busySignal = actionSignal.map(_.exists(_.submitting)).distinct
-      List(
-        button(
-          disabled <-- busySignal,
-          aria.busy <-- busySignal,
-          child.text <-- busySignal.map {
-            case true  => if paused then "Resuming…" else "Pausing…"
-            case false => if paused then "Resume" else "Pause"
-          },
-          onClick.mapTo(request) --> (m => rt.dispatch(m))
-        )
+      button(
+        disabled <-- busySignal,
+        aria.busy <-- busySignal,
+        child.text <-- busySignal.map(if _ then busy else idle),
+        onClick.mapTo(request) --> (m => rt.dispatch(m))
       )
 
   private def deleteButton(
@@ -200,6 +242,59 @@ object MonitorsView:
       confirmation.error
         .map(message => p(cls := "error", role := "alert", message))
         .toList
+    )
+
+  // --- The detail view ---
+
+  private def monitorDetail(rt: Runtime[AppState, Msg]): HtmlElement =
+    div(
+      cls := "monitor-detail",
+      child <-- rt.store.signal.map(_.monitorDetail).distinct.map {
+        case None =>
+          p(cls := "placeholder", "No monitor selected.")
+        case Some(open) =>
+          div(
+            h3(open.monitor.name),
+            p(cls := "state", stateText(open.monitor.state)),
+            p(
+              cls := "criteria",
+              s"${open.monitor.city.name} — ${open.monitor.service.name}"
+            ),
+            p(
+              cls := "providers",
+              chosenText("clinic", open.monitor.facilities)
+            ),
+            p(cls := "providers", chosenText("doctor", open.monitor.doctors)),
+            p(cls := "last-check", lastCheckText(open.monitor)),
+            h4("Events"),
+            eventsView(open.events),
+            button(
+              "Back",
+              onClick.mapTo(Msg.MonitorDetailClosed) --> (m => rt.dispatch(m))
+            )
+          )
+      }
+    )
+
+  private def eventsView(
+      load: LoadState[List[MonitorEventView]]
+  ): HtmlElement = load match
+    case LoadState.NotAsked | LoadState.Loading =>
+      p(cls := "loading", "Loading events…")
+    case LoadState.Failed(message) =>
+      p(cls := "error", role := "alert", message)
+    case LoadState.Loaded(Nil) =>
+      p(cls := "placeholder", "No events yet.")
+    case LoadState.Loaded(events) =>
+      ul(cls := "event-log", events.map(eventItem))
+
+  private def eventItem(event: MonitorEventView): HtmlElement =
+    li(
+      cls := "event",
+      span(cls := "kind", eventKindText(event.kind)),
+      p(cls := "when", s"${warsawText(event.createdAt)} Warsaw time"),
+      event.slot.map(slotText).map(text => p(cls := "slot", text)).toList,
+      event.detail.map(text => p(cls := "detail", text)).toList
     )
 
   // --- The form ---
@@ -605,3 +700,44 @@ object MonitorsView:
   private def dayName(day: DayOfWeek): String =
     val lower = day.toString.toLowerCase
     s"${lower.head.toUpper}${lower.tail}"
+
+  // --- Time and event text ---
+
+  private val warsaw = ZoneId.of("Europe/Warsaw")
+  private val dateTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+  private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+
+  /** Luxmed-facing instants are shown in Warsaw time regardless of where the
+    * browser is (spec §5.3).
+    */
+  private def warsawText(instant: Instant): String =
+    dateTimeFormat.withZone(warsaw).format(instant)
+
+  private def localText(value: LocalDateTime): String =
+    value.format(dateTimeFormat)
+
+  private def timeText(value: LocalDateTime): String =
+    value.format(timeFormat)
+
+  private def lastCheckText(monitor: MonitorView): String =
+    (monitor.lastCheckAt, monitor.lastCheckSummary) match
+      case (Some(at), Some(summary)) =>
+        s"Checked ${warsawText(at)} Warsaw time — $summary"
+      case (Some(at), None) => s"Checked ${warsawText(at)} Warsaw time"
+      case _                => "Not checked yet."
+
+  private def slotText(slot: FoundSlot): String =
+    val clinic = slot.clinicName.getOrElse("an unnamed clinic")
+    s"$clinic — ${slot.doctorName}, ${localText(slot.from)}–${timeText(slot.to)}"
+
+  private def eventKindText(kind: MonitorEventKind): String = kind match
+    case MonitorEventKind.SlotFound          => "Slot found"
+    case MonitorEventKind.NotificationSent   => "Notification sent"
+    case MonitorEventKind.NotificationFailed => "Notification failed"
+    case MonitorEventKind.BookingAttempted   => "Booking attempted"
+    case MonitorEventKind.BookingSucceeded   => "Booking succeeded"
+    case MonitorEventKind.BookingFailed      => "Booking failed"
+    case MonitorEventKind.MonitorPaused      => "Monitor paused"
+    case MonitorEventKind.MonitorCompleted   => "Monitor completed"
+    case MonitorEventKind.MonitorFailed      => "Monitor failed"
+    case MonitorEventKind.Error              => "Error"

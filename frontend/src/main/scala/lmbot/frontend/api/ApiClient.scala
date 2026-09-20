@@ -8,7 +8,10 @@ import lmbot.shared.api.{
   AuthEndpoints,
   DictionaryEndpoints,
   LoginRequest,
-  MonitorEndpoints
+  MonitorEndpoints,
+  SettingsEndpoints,
+  TelegramLinkCodeView,
+  TelegramSettingsView
 }
 import lmbot.shared.domain.{
   AccountId,
@@ -18,6 +21,7 @@ import lmbot.shared.domain.{
   FacilitiesDoctorsResponse,
   LinkAccountRequest,
   MonitorDraft,
+  MonitorEventView,
   MonitorId,
   MonitorView,
   UserView
@@ -113,6 +117,36 @@ class ApiClient(baseUri: Uri):
       Some(baseUri),
       backend
     )
+  private lazy val getMonitorFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.get,
+      Some(baseUri),
+      backend
+    )
+  private lazy val monitorEventsFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      MonitorEndpoints.events,
+      Some(baseUri),
+      backend
+    )
+  private lazy val telegramStatusFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      SettingsEndpoints.status,
+      Some(baseUri),
+      backend
+    )
+  private lazy val telegramLinkCodeFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      SettingsEndpoints.linkCode,
+      Some(baseUri),
+      backend
+    )
+  private lazy val telegramUnlinkFn =
+    interpreter.toSecureClientThrowDecodeFailures(
+      SettingsEndpoints.unlink,
+      Some(baseUri),
+      backend
+    )
   private lazy val citiesFn =
     interpreter.toSecureClientThrowDecodeFailures(
       DictionaryEndpoints.cities,
@@ -184,6 +218,31 @@ class ApiClient(baseUri: Uri):
 
   def deleteMonitor(id: MonitorId)(using Async): Either[ApiError, Unit] =
     Bridge.awaitEither(deleteMonitorFn(None)(id))(transportFailure)
+
+  def getMonitor(id: MonitorId)(using Async): Either[ApiError, MonitorView] =
+    Bridge.awaitEither(getMonitorFn(None)(id))(transportFailure)
+
+  /** The newest events first, as the server orders them. The default limit
+    * matches the endpoint's own default.
+    */
+  def monitorEvents(
+      id: MonitorId,
+      limit: Int = 50
+  )(using Async): Either[ApiError, List[MonitorEventView]] =
+    Bridge.awaitEither(monitorEventsFn(None)((id, limit)))(transportFailure)
+
+  def telegramStatus()(using
+      Async
+  ): Either[ApiError, TelegramSettingsView] =
+    Bridge.awaitEither(telegramStatusFn(None)(()))(transportFailure)
+
+  def telegramLinkCode()(using
+      Async
+  ): Either[ApiError, TelegramLinkCodeView] =
+    Bridge.awaitEither(telegramLinkCodeFn(None)(()))(transportFailure)
+
+  def telegramUnlink()(using Async): Either[ApiError, Unit] =
+    Bridge.awaitEither(telegramUnlinkFn(None)(()))(transportFailure)
 
   /** The dictionaries the monitor form offers. Each is proxied per linked
     * account, because the choices come from that account's own Luxmed session.

@@ -1,7 +1,8 @@
 package lmbot.backend
 
-import java.net.{InetSocketAddress, ServerSocket}
-import java.time.Duration
+import java.net.{InetSocketAddress, ServerSocket, URLDecoder}
+import java.nio.charset.StandardCharsets
+import java.time.{Duration, LocalDate}
 import java.util.Base64
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
@@ -9,6 +10,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
 import scala.concurrent.duration.*
 import scala.io.{Codec, Source}
 import scala.jdk.CollectionConverters.*
+import scala.util.Try
 
 import com.sun.net.httpserver.HttpServer
 import lmbot.backend.config.{AppVersion, Config, MasterKey, Port, Secret}
@@ -121,6 +123,7 @@ object Plan4AcceptanceConfig:
     private val issued = AtomicInteger(0)
     private val latestRefresh = AtomicReference("")
     private val unrouted = ConcurrentLinkedQueue[String]()
+    private val termsFailures = AtomicInteger(0)
 
     private val server = HttpServer.create(InetSocketAddress(host, 0), 0)
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
@@ -133,7 +136,12 @@ object Plan4AcceptanceConfig:
               Source.fromInputStream(exchange.getRequestBody)(using Codec.UTF8)
             try source.mkString
             finally source.close()
-          val response = route(exchange.getRequestURI.getRawPath, body)
+          val response =
+            route(
+              exchange.getRequestURI.getRawPath,
+              Option(exchange.getRequestURI.getRawQuery).getOrElse(""),
+              body
+            )
           response.headers.foreach: (name, value) =>
             exchange.getResponseHeaders.add(name, value)
           val bytes = response.body.getBytes("UTF-8")
@@ -167,10 +175,16 @@ object Plan4AcceptanceConfig:
       */
     def unroutedPaths: List[String] = unrouted.asScala.toList
 
+    /** Makes the next `times` terms searches answer with malformed JSON, so a
+      * Plan 5 acceptance run can drive the engine's persistent-failure budget.
+      */
+    def failTermsNext(times: Int): Unit = termsFailures.set(times)
+
     def close(): Unit = server.stop(0)
 
     private def route(
         path: String,
+        query: String,
         body: String
     ): LuxmedResponseScripts.Response =
       if path.endsWith("/PatientPortalMobileAPI/api/token") then token(body)
@@ -183,6 +197,7 @@ object Plan4AcceptanceConfig:
         json("service-variants.json")
       else if path.endsWith("/Dictionary/facilitiesAndDoctors") then
         json("facilities-and-doctors.json")
+      else if path.endsWith("/NewPortal/terms/index") then terms(query)
       else
         unrouted.add(path)
         LuxmedResponseScripts.Response(404)
@@ -201,6 +216,50 @@ object Plan4AcceptanceConfig:
         refreshToken = s"RT$serial",
         expiresIn = sessionLifetimeSeconds
       )
+
+    /** One slot per day for the first week of the requested window, so whatever
+      * weekday a monitor selects has a match. The schedule id is the date's
+      * epoch day, which keeps slot keys stable across searches and distinct
+      * between days.
+      */
+    private def terms(query: String): LuxmedResponseScripts.Response =
+      if termsFailures.getAndUpdate(n => Math.max(0, n - 1)) > 0 then
+        LuxmedResponseScripts.Response(
+          200,
+          List("Content-Type" -> "application/json"),
+          "this is not the JSON the client expects"
+        )
+      else
+        val params = query
+          .split('&')
+          .flatMap: pair =>
+            pair.split("=", 2) match
+              case Array(key, value) =>
+                Some(key -> URLDecoder.decode(value, StandardCharsets.UTF_8))
+              case _ => None
+          .toMap
+        val from = params
+          .get("searchDateFrom")
+          .flatMap(value => Try(LocalDate.parse(value)).toOption)
+          .getOrElse(LocalDate.parse("2026-08-03"))
+        val serviceId = params
+          .get("serviceVariantId")
+          .flatMap(_.toLongOption)
+          .getOrElse(4502L)
+        LuxmedResponseScripts.Response(
+          200,
+          List("Content-Type" -> "application/json"),
+          termsBody(from, serviceId)
+        )
+
+    private def termsBody(from: LocalDate, serviceId: Long): String =
+      val termsForDays = (0 until 7)
+        .map(from.plusDays(_))
+        .map: day =>
+          val scheduleId = day.toEpochDay
+          s"""{"day":"${day}T00:00:00","terms":[{"clinic":"Acceptance Clinic","clinicId":100,"clinicGroupId":101,"dateTimeFrom":"${day}T09:00:00","dateTimeTo":"${day}T09:15:00","doctor":{"academicTitle":"lek.","firstName":"Anna","genderId":2,"id":20,"lastName":"Nowak"},"impedimentText":null,"isAdditional":false,"isImpediment":false,"isTelemedicine":false,"roomId":30,"scheduleId":$scheduleId,"serviceId":$serviceId}]}"""
+        .mkString(",")
+      s"""{"correlationId":"acceptance","termsForService":{"additionalData":{"isPreparationRequired":false,"preparationItems":[]},"termsForDays":[$termsForDays]}}"""
 
     private def json(name: String): LuxmedResponseScripts.Response =
       LuxmedResponseScripts.Response(

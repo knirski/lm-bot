@@ -7,15 +7,19 @@ and [the implementation roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadma
 
 ## Status
 
-Plan 4 of 7 complete. You can sign in, link a Luxmed account (its credentials,
+Plan 5 of 7 complete. You can sign in, link a Luxmed account (its credentials,
 device identity, and session are encrypted at rest), and create, edit, pause,
 resume, and delete appointment monitors — through the browser or the HTTP API.
 Deleting an account deletes its monitors with it, after an explicit
 confirmation.
 
-**Monitors are stored but nothing runs them yet.** Nothing queries Luxmed for
-slots on a schedule, there is no event history or notification, and nothing
-books: that is Plan 5 (monitor engine & notifications) and Plan 6
+**Monitors now run.** The engine checks each active monitor on its own jittered
+interval, queues behind the account's rate limiter, records what it finds in an
+append-only event log, and notifies the owner over Telegram. A slot is notified
+at most once per monitor; a user without a linked chat still gets events in the
+UI, with a warning that no notifications will be delivered. Auth failures pause
+the account's monitors with the reason, version rejections notify the admin, and
+a failed monitor can be resumed from the UI. Nothing books yet: that is Plan 6
 (auto-booking). See
 [the roadmap](docs/superpowers/plans/2026-07-27-lm-bot-roadmap.md) for the
 plan-by-plan breakdown.
@@ -126,6 +130,12 @@ operator variables; settings without a substitution remain resource-only.
 | `LMBOT_MASTER_KEY` | yes | — | fixed dev-only key (never use in production) | standard Base64-encoded 32-byte AES key for encrypting Luxmed account credentials and sessions at rest; run `openssl rand -base64 32` to generate |
 | `ADMIN_USERNAME` | no | — (bootstrap only) | `admin` | read **only** when the `users` table is empty |
 | `ADMIN_PASSWORD` | no | — (bootstrap only) | `admin` | as above |
+| `TELEGRAM_BOT_TOKEN` | no | — | — | Bot API token; set together with `TELEGRAM_BOT_USERNAME` to enable notifications |
+| `TELEGRAM_BOT_USERNAME` | no | — | — | bot username (without `@`) used to build the `t.me` deep link |
+| `TELEGRAM_API_BASE` | no | `https://api.telegram.org` | same | override the Bot API base for development or tests |
+
+Telegram is optional: without a token the engine still records events, and the
+UI says notifications are unavailable. Set the token and username together.
 
 `LIVE_LUXMED_API` accepts `true` or `false`. `EMBEDDED_PG` accepts `true`,
 `false`, `1`, or `0`.

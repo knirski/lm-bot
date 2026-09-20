@@ -2,13 +2,14 @@ package lmbot.frontend
 
 import java.time.DayOfWeek
 
-import lmbot.shared.api.ApiError
+import lmbot.shared.api.{ApiError, TelegramLinkCodeView, TelegramSettingsView}
 import lmbot.shared.domain.{
   AccountId,
   AccountView,
   DictionaryCity,
   DictionaryService,
   FacilitiesDoctorsResponse,
+  MonitorEventView,
   MonitorId,
   MonitorState,
   MonitorView,
@@ -132,3 +133,24 @@ enum Msg:
   case MonitorDeleteCancelled
   case MonitorDeleted(monitorId: MonitorId)
   case MonitorDeleteFailed(monitorId: MonitorId, error: ApiError)
+
+  // The detail view refetches the monitor and its event log together, keyed to
+  // the monitor id, so a slow answer for a row the user has since closed cannot
+  // reappear.
+  case MonitorDetailRequested(monitorId: MonitorId)
+  case MonitorDetailLoaded(
+      monitor: MonitorView,
+      events: List[MonitorEventView]
+  )
+  case MonitorDetailLoadFailed(monitorId: MonitorId, error: ApiError)
+  case MonitorDetailClosed
+
+  case TelegramStatusRequested
+  case TelegramStatusLoaded(status: TelegramSettingsView)
+  case TelegramStatusLoadFailed(error: ApiError)
+  case TelegramLinkRequested
+  case TelegramLinkLoaded(link: TelegramLinkCodeView)
+  case TelegramLinkFailed(error: ApiError)
+  case TelegramUnlinkRequested
+  case TelegramUnlinked
+  case TelegramUnlinkFailed(error: ApiError)
