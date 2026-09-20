@@ -204,6 +204,20 @@ lazy val backend = project
       (webDir ** "*").get().filter(_.isFile)
     }.taskValue,
 
+    // The deployable artifact the packaging Dockerfile copies. A stable name
+    // keeps `COPY` free of version numbers and globs. The output path follows
+    // the asset mode: `stageDockerJar` flips useFastLinkForAssets to false,
+    // which bundles the production (full-link) frontend and writes the jar to
+    // the repository root — the Docker build context. A plain
+    // `backend/assembly` keeps the dev (fast) link and stays under target/.
+    assembly / assemblyJarName := "lm-bot.jar",
+    assembly / assemblyOutputPath := {
+      val jarName = (assembly / assemblyJarName).value
+      if ((ThisBuild / useFastLinkForAssets).value)
+        (assembly / target).value / jarName
+      else (ThisBuild / baseDirectory).value / jarName
+    },
+
     assembly / mainClass := Some("lmbot.backend.Main"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "services", _*) => MergeStrategy.concat
@@ -252,6 +266,18 @@ lazy val root = project
   .settings(
     name := "lm-bot",
     publish / skip := true,
+
+    // Production artifact for the Docker image: flips the asset flag so the
+    // resource generator bundles the full-link frontend, assembles
+    // `./lm-bot.jar` in the Docker build context (see the backend assembly
+    // settings above), then restores the dev default so the session cannot
+    // leak the slow link into a later `run`/`startDev`.
+    commands += Command.command("stageDockerJar") { state =>
+      "set ThisBuild/useFastLinkForAssets := false" ::
+        "backend/assembly" ::
+        "set ThisBuild/useFastLinkForAssets := true" ::
+        state
+    },
 
     commands += Command.command("startDev") { state =>
       val log = state.log

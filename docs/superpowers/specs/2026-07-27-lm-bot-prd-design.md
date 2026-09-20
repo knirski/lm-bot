@@ -508,7 +508,11 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
   (`ADMIN_USERNAME`/`ADMIN_PASSWORD`, read only when the `users` table is
   empty). Device identities are **not** configuration — they are per-account
   data, generated once and stored (§5.3).
-- docker-compose: backend container (API + static frontend) + Postgres.
+- docker-compose: backend container (API + static frontend) + Postgres. The
+  image is packaging-only: CI builds the fat jar — including the production
+  (full-link) Wasm frontend — outside Docker with `sbt stageDockerJar`, and
+  the Dockerfile copies it into an `eclipse-temurin:25-jre` runtime instead of
+  recompiling the project.
 
 The build has one `backend` module. It contains the `lmbot.backend.Main`
 launcher, `DevMain` composition support, shared application composition,

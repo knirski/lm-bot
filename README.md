@@ -149,3 +149,16 @@ Run behind your own HTTPS reverse proxy; lm-bot does not terminate TLS.
 LIVE_LUXMED_API=true POSTGRES_PASSWORD=... LMBOT_MASTER_KEY=$(openssl rand -base64 32) \
   ADMIN_USERNAME=... ADMIN_PASSWORD=... docker compose up -d
 ```
+
+### Building the image from source
+
+The Dockerfile is a packaging step: it copies a fat jar that already contains
+the production (full-link) Wasm frontend. Build the jar first, then the image:
+
+```bash
+sbt stageDockerJar    # writes ./lm-bot.jar in the repository root
+docker build -t lm-bot .
+```
+
+`docker compose up -d --build` works the same way — run `sbt stageDockerJar`
+first so `./lm-bot.jar` exists. The jar is ignored by git.
