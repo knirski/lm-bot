@@ -27,6 +27,13 @@ class MonitorRoutes(auth: AuthService, monitors: MonitorService):
       .serverSecurityLogicPure(auth.authenticate)
       .serverLogicPure(user => monitorId => monitors.get(user.id, monitorId))
 
+  private val eventsRoute: ServerEndpoint[Any, Identity] =
+    MonitorEndpoints.events
+      .serverSecurityLogicPure(auth.authenticate)
+      .serverLogicPure(user =>
+        (monitorId, limit) => monitors.events(user.id, monitorId, limit)
+      )
+
   private val updateRoute: ServerEndpoint[Any, Identity] =
     MonitorEndpoints.update
       .serverSecurityLogicPure(auth.authenticate)
@@ -58,6 +65,7 @@ class MonitorRoutes(auth: AuthService, monitors: MonitorService):
       createRoute,
       listRoute,
       getRoute,
+      eventsRoute,
       updateRoute,
       pauseRoute,
       resumeRoute,

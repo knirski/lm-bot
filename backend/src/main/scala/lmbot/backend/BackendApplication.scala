@@ -30,6 +30,7 @@ import lmbot.backend.http.{
   HealthRoutes,
   MonitorRoutes,
   Server,
+  SettingsRoutes,
   StaticRoutes
 }
 import lmbot.backend.luxmed.LuxmedConfig
@@ -159,6 +160,9 @@ object BackendApplication:
         val monitorRoutes = MonitorRoutes(auth, monitorService)
 
         val now = () => OffsetDateTime.now()
+        val telegramLink =
+          TelegramLinkService(users, config.telegramBotUsername, now)
+        val settingsRoutes = SettingsRoutes(auth, telegramLink)
         val telegramBot = config.telegramBotToken
           .zip(config.telegramBotUsername)
           .map: (token, _) =>
@@ -188,19 +192,15 @@ object BackendApplication:
           now
         )
         val telegramPoller = telegramBot.map: bot =>
-          TelegramLinkPoller(
-            bot,
-            TelegramLinkService(users, config.telegramBotUsername, now),
-            users,
-            Sleeper.Default
-          )
+          TelegramLinkPoller(bot, telegramLink, users, Sleeper.Default)
 
         val server = startServer(
           config.httpHost,
           config.httpPort.value,
           HealthRoutes.endpoints ++ authRoutes.endpoints ++
             accountRoutes.endpoints ++ dictionaryRoutes.endpoints ++
-            monitorRoutes.endpoints ++ StaticRoutes.endpoints
+            monitorRoutes.endpoints ++ settingsRoutes.endpoints ++
+            StaticRoutes.endpoints
         )
         (server, engine, telegramPoller)
 

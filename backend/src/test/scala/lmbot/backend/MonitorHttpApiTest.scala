@@ -20,7 +20,7 @@ import lmbot.backend.db.{
 import lmbot.backend.http.{AuthRoutes, HealthRoutes, MonitorRoutes, Server}
 import lmbot.backend.monitor.MonitorService
 import lmbot.backend.support.PostgresSuite
-import lmbot.shared.domain.{Role, UserId}
+import lmbot.shared.domain.{MonitorEventKind, MonitorId, Role, UserId}
 import sttp.client3.*
 import sttp.model.{StatusCode, Uri}
 
@@ -493,3 +493,65 @@ class MonitorHttpApiTest extends PostgresSuite:
         )
         .isDefined
     )
+
+  // -- events -------------------------------------------------------------
+
+  test("monitor events are owner-scoped, newest first, and limited"):
+    val (ownerId, token) = loggedIn("events-owner")
+    val accountId = insertAccount(ownerId)
+    val monitorId = insertMonitorRow(accountId, "active")
+    val eventRepo = MonitorEventRepo(xa)
+    val base = OffsetDateTime.parse("2026-08-10T07:00:00Z")
+    eventRepo.append(
+      MonitorId(monitorId),
+      MonitorEventKind.Error,
+      None,
+      Some("first"),
+      base
+    )
+    eventRepo.append(
+      MonitorId(monitorId),
+      MonitorEventKind.Error,
+      None,
+      Some("second"),
+      base.plusMinutes(1)
+    )
+    eventRepo.append(
+      MonitorId(monitorId),
+      MonitorEventKind.Error,
+      None,
+      Some("third"),
+      base.plusMinutes(2)
+    )
+
+    val r = basicRequest
+      .get(uri"$baseUri/api/monitors/$monitorId/events?limit=2")
+      .cookie("lmbot_session", token)
+      .send(http)
+
+    assertEquals(r.code, StatusCode.Ok)
+    assert(
+      r.body.toOption.exists(_.contains("third")),
+      s"newest event missing: ${r.body}"
+    )
+    assert(
+      r.body.toOption.exists(_.contains("second")),
+      s"second event missing: ${r.body}"
+    )
+    assert(
+      !r.body.toOption.exists(_.contains("first")),
+      s"limit was not applied: ${r.body}"
+    )
+
+  test("another owner cannot read a monitor's events"):
+    val (ownerId, _) = loggedIn("events-victim")
+    val accountId = insertAccount(ownerId)
+    val monitorId = insertMonitorRow(accountId, "active")
+    val (_, otherToken) = loggedIn("events-intruder")
+
+    val r = basicRequest
+      .get(uri"$baseUri/api/monitors/$monitorId/events")
+      .cookie("lmbot_session", otherToken)
+      .send(http)
+
+    assertEquals(r.code, StatusCode.NotFound)
