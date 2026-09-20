@@ -95,19 +95,16 @@ jobs:
           restore-keys: |
             x86_64-sbt-
 
-      # ── Compile, test, link (skip when no Scala/sbt files changed) ───────
-      - name: Compile everything
-        if: steps.changes.outputs.sbt == 'true'
-        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; compile; Test/compile"
-
-      - name: Test with coverage
+      # ── Format, compile, test, report (skip when no Scala/sbt changed) ───
+      # One sbt session: the format gates run first, then a single
+      # scoverage-instrumented compile feeds the whole test run. A separate
+      # `compile` step used to compile the project a second time (instrumented
+      # output differs), and the Wasm link now happens inside stageDockerJar,
+      # where the linked asset is actually consumed.
+      - name: Format, test with coverage, report
         if: steps.changes.outputs.sbt == 'true'
         timeout-minutes: 10
-        run: nix develop --command sbt "coverage; testFull; coverageReport"
-
-      - name: Link frontend (Wasm)
-        if: steps.changes.outputs.sbt == 'true'
-        run: nix develop --command sbt frontend/fullLinkJS
+        run: nix develop --command sbt "scalafmtCheckAll; scalafmtSbtCheck; coverage; testFull; coverageReport"
 
       # ── Upload coverage reports ──────────────────────────────────────────
       - name: Upload coverage reports
