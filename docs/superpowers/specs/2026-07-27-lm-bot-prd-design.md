@@ -74,6 +74,8 @@ Reporting a challenge as "wrong password" is the failure worth guarding against:
 - **Browse** all own monitors with state and last-check summary; **edit**, **pause/resume**, **delete**.
 - **Detail view** shows the event log: slots found, notifications sent, booking attempts, errors.
 - Monitor states: `active`, `paused`, `completed` (auto-booked or date range passed), `failed`.
+- A `failed` monitor can be **resumed manually** from the UI once the cause is
+  addressed; `completed` is terminal.
 
 ### 3.4 Auto-booking
 
@@ -93,10 +95,10 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 
 ### 3.5 Telegram notifications
 - `NotificationChannel` trait; v1 ships one implementation: Telegram Bot API via plain sttp POST (no bot framework dependency).
-- Linking: settings page shows a one-time deep-link (`t.me/<bot>?start=<code>`); the bot receives `/start <code>` via long polling and the backend stores the chat id.
+- Linking: settings page shows a one-time deep-link (`t.me/<bot>?start=<code>`); the bot receives `/start <code>` via long polling and the backend stores the chat id. The code is single-use, expires after 15 minutes, and is stored only as an Argon2id hash.
 - `/start <code>` remains the **only** inbound Telegram interaction in v1 (no public webhook). An earlier revision added inbound one-time-code relay for 2FA; that is cut along with the rest of the enrollment design (§3.2).
 - Notification types: new slots found, auto-book success/failure, Luxmed account auth failure (once, with monitors paused, **naming the reason** so a challenge or a lockout is not reported as a bad password), monitor completed/expired. Version-rejection errors from Luxmed notify the **admin** (ops event).
-- Per-monitor dedup: a given slot is notified at most once (keyed by slot identity within a lookback window).
+- Per-monitor dedup: a given slot is notified at most once for the lifetime of the monitor, keyed by slot identity recorded in `monitor_events` (a partial unique index makes the dedup decision an insert-on-conflict, not a query). A time-boxed window would re-notify for a slot that is still available, which is the noise dedup exists to prevent.
 - A user without a linked Telegram chat can still run monitors: events are logged and visible in the UI, and the UI warns that no notifications will be delivered. Auto-booking works regardless.
 
 ## 4. Future versions (designed-for, not built)
@@ -171,11 +173,11 @@ lm-bot/
 
 | Table | Contents |
 |---|---|
-| `users` | id, username, display name, Argon2id hash, role, telegram chat id (nullable), disabled, timestamps |
+| `users` | id, username, display name, Argon2id hash, role, telegram chat id (nullable), telegram link code (Argon2id hash + expiry, nullable), disabled, timestamps |
 | `sessions` | token hash (opaque token in cookie), user id, expiry, created-at; revocation = row delete |
 | `luxmed_accounts` | id, owner user id, label, Luxmed username, AES-GCM-encrypted password, status, status reason, last successful login, stable device UUID, AES-GCM-encrypted persisted session (access token, **rotating** refresh token, expiry, JWT, cookie jar) |
-| `monitors` | id, luxmed account id, criteria (city/service/facility/doctor ids + denormalized names), date range, time window, days-of-week mask, auto-book flag, state, check interval, timestamps |
-| `monitor_events` | append-only per-monitor log: slots found, notification sent, booking attempted/succeeded/failed, error; powers detail view and slot dedup |
+| `monitors` | id, luxmed account id, criteria (city/service/facility/doctor ids + denormalized names), date range, time window, days-of-week mask, auto-book flag, state, check interval, last-check timestamp and summary, timestamps |
+| `monitor_events` | append-only per-monitor log: kind (`slot_found`, `notification_sent`, `notification_failed`, `booking_attempted`, `booking_succeeded`, `booking_failed`, `monitor_paused`, `monitor_completed`, `monitor_failed`, `error`), nullable slot identity and details (Warsaw-local datetimes), nullable detail text, created-at; powers the detail view, and a partial unique index on `(monitor_id, slot_key)` for `slot_found` makes per-slot dedup atomic |
 | `bookings` | v1-minimal record of auto-booked appointments (reservation id, slot details, monitor id) |
 
 Rules:
@@ -361,15 +363,17 @@ concurrent callers cannot start competing refreshes.
 
 ### 5.5 Monitor engine
 
-- One Gears supervisor started with the app; each active monitor runs a check loop.
+- One Gears supervisor started with the app; each active monitor runs a check loop. The supervisor reconciles against the database every 15 s: a monitor created or resumed after startup gets a loop at the next reconcile, and a paused or deleted monitor's loop is cancelled. A monitor's first check runs immediately; waits *between* checks are ±20 % jittered.
 - Check loop: search terms for the monitor's criteria → filter (date range, time window, days-of-week) → diff against seen slots (`monitor_events`) → notify / auto-book new ones.
-- Intervals are per-monitor with ±20% random jitter; monitors sharing a Luxmed account queue behind its rate limiter rather than running concurrently.
+- Intervals are per-monitor with ±20% random jitter; monitors sharing a Luxmed account queue behind its rate limiter rather than running concurrently. That rate limiter and client live for as long as the account does, not for one request: every Luxmed call for an account — engine checks and browser dictionary calls alike — goes through one shared client.
 - Failure policy:
-  - Transient (network, 5xx): exponential backoff within the loop.
-  - Auth failure: mark account `auth_failed`, pause its monitors, notify owner once — **with the reason**, since the remedy differs. Credentials rejected means retype them; an unexpected challenge-shaped response (§3.2) or a suspected fair-use lockout (§10) means do *not* retype them, because repeated login attempts make a lockout worse. The status carries a reason string precisely so the notification and the UI can say which it was.
-  - Version rejection: notify admin.
-  - Persistent unexpected errors (repeated decode failures or check crashes beyond the retry budget): monitor → `failed`, owner notified once; resuming it is a manual action in the UI.
-  - A crashing check kills only its own fiber, never the supervisor.
+  - Transient (network, 5xx): exponential backoff within the loop — 1 min × 2ⁿ, capped at 30 min. Transient failures do not count toward the retry budget.
+  - Rate limited (429): the same shape from a 5 min base, capped at 1 h.
+  - Auth failure: mark account `auth_failed`, pause its monitors, notify owner once — **with the reason**, since the remedy differs. Credentials rejected means retype them (delete and re-link in v1); an unexpected challenge-shaped response (§3.2) or a suspected fair-use lockout (§10) means do *not* retype them, because repeated login attempts make a lockout worse. The status carries a reason string precisely so the notification and the UI can say which it was.
+  - Version rejection: notify every admin with a linked chat once per engine lifetime, and keep retrying with the capped backoff so a config bump plus restart recovers.
+  - Persistent unexpected errors (repeated decode failures or check crashes beyond the retry budget): three consecutive persistent failures → monitor `failed`, owner notified once; resuming it is a manual action in the UI.
+  - A crashing check kills only its own fiber, never the supervisor. The engine converts a crashing check into one counted persistent failure and rethrows cancellation untouched.
+- A monitor whose date range has passed moves to `completed` and the owner is notified once. Auto-booking (Plan 6) will also complete a monitor, from the same check result.
 - State transitions are persisted; restart resumes the active set exactly. Single process, no distributed coordination.
 
 ### 5.6 Frontend architecture: Elm-on-Gears
@@ -501,7 +505,10 @@ The whole codebase is **direct-style functional Scala**: immutable data, pure do
 - Configuration comes from `application.conf` by default or
   `application-dev.conf` when `LMBOT_CONFIG_RESOURCE` selects it, with
   recognized environment variables overriding the selected resource: DB URL,
-  credential master key, Telegram bot token, Luxmed app version string,
+  credential master key, Telegram bot token and username
+  (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_USERNAME`, both-or-neither;
+  `TELEGRAM_API_BASE` overrides the Bot API base for development and tests),
+  Luxmed app version string,
   `LIVE_LUXMED_API` (the local resource defaults to `false`; the production
   entrypoint requires `true`), `EMBEDDED_PG` (the local resource enables Zonky
   embedded PostgreSQL), and initial admin credentials
