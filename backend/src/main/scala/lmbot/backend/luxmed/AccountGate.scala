@@ -2,7 +2,8 @@ package lmbot.backend.luxmed
 
 import java.time.{Duration, Instant}
 
-import gears.async.{Async, JvmAsyncOperations, Semaphore}
+import gears.async.{Async, Semaphore}
+import lmbot.backend.support.Sleeper
 
 /** A pacing capability that the `AccountGate` hands out to the body of
   * `serialized`. Only `AccountGate` can construct an instance.
@@ -42,13 +43,3 @@ final class AccountGate(
 
   private[luxmed] def recordRequestAt(at: Instant): Unit =
     lastRequestAt = Some(at)
-
-/** An injectable sleeper for deterministic testing.
-  */
-trait Sleeper:
-  def sleep(duration: Duration)(using Async): Unit
-
-object Sleeper:
-  object Default extends Sleeper:
-    def sleep(duration: Duration)(using Async): Unit =
-      JvmAsyncOperations.sleep(duration.toMillis)
