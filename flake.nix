@@ -186,7 +186,7 @@
             echo "  jdk    $(java -version 2>&1 | head -1)"
             echo "  sbt    $(sbt --script-version 2>/dev/null || echo 'launcher present') (launches sbt 2 per project/build.properties)"
             echo "  node   $(node --version)"
-            echo "  scala  3.8.4 (per build.sbt)"
+            echo "  scala  3.9.0 (per build.sbt)"
             echo "  pg     embedded (auto-started by sbt startDev, or set DATABASE_URL for external)"
           '';
         };

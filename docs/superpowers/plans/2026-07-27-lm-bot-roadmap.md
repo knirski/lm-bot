@@ -61,7 +61,7 @@ Admin user management UI; password change and reset; the remaining error surface
 Two things the flake deliberately does **not** provide:
 
 - **A container runtime.** That is a host service. On this dev machine it is rootless Podman, which Testcontainers cannot discover unaided, so the devShell exports `DOCKER_HOST` and disables Ryuk when it finds the Podman socket.
-- **sbt itself, in the version that matters.** The nixpkgs `sbt` is only a launcher; `project/build.properties` declares **sbt 2.0.4**, which the launcher starts.
+- **sbt itself, in the version that matters.** The nixpkgs `sbt` is only a launcher; `project/build.properties` declares **sbt 2.0.9**, which the launcher starts.
 
 ## Conventions that apply to every plan
 
