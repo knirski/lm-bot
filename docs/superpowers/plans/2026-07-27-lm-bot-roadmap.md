@@ -1,6 +1,6 @@
 # lm-bot Implementation Roadmap
 
-**Spec:** [`docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md`](../specs/2026-07-27-lm-bot-prd-design.md) (as amended 2026-07-27)
+**Spec:** [`docs/superpowers/specs/2026-07-27-lm-bot-prd-design.md`](../specs/2026-07-27-lm-bot-prd-design.md) (as amended 2026-09-20)
 
 The spec describes a complete application. At the TDD granularity this project uses, it does not fit one plan, so it is split into seven sequential plans. Each produces working, testable software on its own and is written out in full only when it is reached — later plans are deliberately left as scope statements, because the real ergonomics of Gears, Magnum, and Scala.js/Wasm will be known by then and would otherwise invalidate speculative detail.
 
@@ -10,7 +10,7 @@ The spec describes a complete application. At the TDD granularity this project u
 | 2 | **API spike** (investigation, not implementation) | Auth flows, JWT, token rotation measured; MFA found **not enforced** | ✅ **complete** — [plan](2026-07-27-lm-bot-02-2fa-spike.md), [findings](../reports/2026-07-27-luxmed-api-analysis.md) |
 | 3 | Luxmed API client & mock server | A client that authenticates and searches slots against a mock | ✅ **complete** — [plan](2026-07-28-lm-bot-03-luxmed-client.md), [report](../reports/2026-07-28-plan-03-complete.md) |
 | 4 | Luxmed accounts & monitor CRUD | Link accounts, create/edit monitors | ✅ **complete** — [plan](2026-07-30-lm-bot-04-accounts-monitors.md), [report](../reports/2026-07-30-plan-04-complete.md), [mid-plan review](../reports/2026-07-30-plan-04-review.md) |
-| 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | not yet written |
+| 5 | Monitor engine & notifications | Monitors actually run and tell you what they found | **in progress** — [plan](2026-09-20-lm-bot-05-monitor-engine-notifications.md) |
 | 6 | Auto-booking | Matching slots get booked | not yet written |
 | 7 | Hardening & ops | Admin UI, ops notifications, observability, release polish | not yet written |
 
@@ -43,6 +43,8 @@ The monitor UI shipped as a **single-page form** — every field visible at once
 The session round-trip gets explicit test coverage: store, restart, refresh, and confirm the rotated refresh token survived. Losing that write is unrecoverable without a password grant (§10).
 
 ### Plan 5 — Monitor engine & notifications
+
+**Written 2026-09-20:** [`2026-09-20-lm-bot-05-monitor-engine-notifications.md`](2026-09-20-lm-bot-05-monitor-engine-notifications.md).
 
 The Gears supervisor and per-monitor check loops; slot filtering (date range, time-of-day, days-of-week, all in `Europe/Warsaw`); `monitor_events` as the append-only log and the basis of slot dedup; the monitor state machine (`active` / `paused` / `completed` / `failed`) with the failure policy from §5.5 (backoff, auth-failure pause **carrying a reason**, version rejection to admin, retry budget); jittered per-monitor intervals queued behind each account's rate limiter; restart resuming the active set. Then the `NotificationChannel` trait and the Telegram implementation: plain sttp sends, deep-link `/start <code>` linking over long polling, per-slot dedup, and the no-Telegram-linked degradation from §3.5. Monitors now find slots and notify.
 
