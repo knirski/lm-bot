@@ -1,6 +1,6 @@
 import org.scalajs.linker.interface.{ESVersion, ModuleKind, StandardConfig}
 
-val scala3 = "3.8.4"
+val scala3 = "3.9.0"
 
 ThisBuild / scalaVersion := scala3
 ThisBuild / organization := "dev.knirski"
@@ -17,19 +17,23 @@ val useFastLinkForAssets =
 ThisBuild / useFastLinkForAssets := true
 
 val Vgears = "0.3.1"
-val Vtapir = "1.13.29"
+val Vtapir = "1.13.31"
 val Vsttp = "3.11.0"
-val Vjsoniter = "2.39.1"
+val Vjsoniter = "2.41.0"
 val Vlaminar = "17.2.1"
 val VscalajsDom = "2.8.1"
 val Vmagnum = "1.3.1"
-val Vflyway = "11.8.2"
-val Vpostgres = "42.7.7"
+val Vflyway = "13.7.0"
+val Vpostgres = "42.7.13"
 val Vhikari = "7.1.0"
 val Vargon2 = "2.12"
-val Vlogback = "1.6.0"
-val Vmunit = "1.3.4"
+val Vlogback = "1.6.3"
+val Vmunit = "1.3.6"
 val VembeddedPg = "2.2.2"
+// Zonky's embedded-postgres bundles PostgreSQL 14.22.0 binaries by default;
+// override to the current stable major so tests and the compose deployment
+// (postgres:18) exercise the same PostgreSQL major.
+val VembeddedPgBinaries = "18.6.0"
 val Vpureconfig = "0.17.10"
 val VscalaJavaTimeTzdb = "2.7.0"
 
@@ -46,7 +50,13 @@ lazy val commonSettings = Seq(
     "-unchecked",
     "-Wunused:all",
     "-Werror",
-    "-source:3.8"
+    // Scala 3.9's coverage instrumentation warns for value initializers above
+    // 3000 tree nodes and skips them; Tapir's derived Schemas (MonitorDraft,
+    // MonitorView) exceed that, and -Werror would fail the coverage build.
+    // Silenced by message so the rest of the warning surface stays strict.
+    // See scala/scala3#26953.
+    "-Wconf:msg=Skipping coverage instrumentation:s",
+    "-source:3.9"
   )
 )
 
@@ -143,6 +153,12 @@ lazy val backend = project
       "com.github.pureconfig" %% "pureconfig-core" % Vpureconfig,
       "org.scalameta" %% "munit" % Vmunit % Test,
       "com.softwaremill.sttp.client3" %% "core" % Vsttp
+    ),
+    dependencyOverrides ++= Seq(
+      "io.zonky.test.postgres" % "embedded-postgres-binaries-linux-amd64" % VembeddedPgBinaries,
+      "io.zonky.test.postgres" % "embedded-postgres-binaries-linux-amd64-alpine" % VembeddedPgBinaries,
+      "io.zonky.test.postgres" % "embedded-postgres-binaries-darwin-amd64" % VembeddedPgBinaries,
+      "io.zonky.test.postgres" % "embedded-postgres-binaries-windows-amd64" % VembeddedPgBinaries
     ),
     // Each database test case manages its own Zonky PostgreSQL instance on a
     // random port, so suites can run concurrently without shared test state.

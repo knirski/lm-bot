@@ -116,7 +116,7 @@ for one-off formatting, but `sbt scalafmtAll` is the canonical command.
 - **No `sbt-crossproject`** — it has no sbt 2 build. The JVM/JS cross-build is
   hand-rolled as two projects over one source directory in `build.sbt`.
 - **No `%%%`** — use the `jsDep(org, artifact, version)` helper.
-- **Output is centralised** under `target/out/{jvm,sjs1}/scala-3.8.4/<project>/`,
+- **Output is centralised** under `target/out/{jvm,sjs1}/scala-3.9.0/<project>/`,
   not `<project>/target/`. Never hardcode that layout; locate artifacts.
 - `PathFinder.get` requires the empty argument list: `.get()`.
 

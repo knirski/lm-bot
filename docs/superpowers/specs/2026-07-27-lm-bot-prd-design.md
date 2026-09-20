@@ -113,7 +113,7 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 
 | Layer | Choice |
 |---|---|
-| Language | Scala 3.8 (JVM 25+ backend; Scala.js **Wasm** backend frontend) |
+| Language | Scala 3.9 LTS (JVM 25+ backend; Scala.js **Wasm** backend frontend) |
 | Concurrency | Gears (direct style) on both platforms |
 | API contract | Tapir endpoint definitions in a shared cross-compiled module |
 | HTTP server | tapir-jdkhttp-server (`Identity` interpreter) on a virtual-thread executor |
@@ -122,25 +122,25 @@ Releasing on abort is mandatory: a temporary reservation that is neither confirm
 | Database | PostgreSQL (Zonky embedded-postgres for development and tests), Flyway migrations; Magnum over blocking JDBC on virtual threads |
 | JSON | jsoniter-scala (Scala 3-native, cross-compiles to Scala.js) |
 
-**Verified versions** (checked against Maven Central 2026-07-27; all three platforms confirmed published where needed):
+**Verified versions** (checked against Maven Central 2026-09-20; all three platforms confirmed published where needed):
 
 | Dependency | Version | Note |
 |---|---|---|
-| Scala | 3.8.4 | latest stable 3.8.x |
-| Scala.js | 1.22.0 | Wasm backend |
-| Gears | 0.3.1 | `gears_3` + `gears_sjs1_3` both published |
-| Tapir | 1.13.29 | `tapir-jdkhttp-server_3`, `tapir-core_sjs1_3`, `tapir-jsoniter-scala` |
+| Scala | 3.9.0 | LTS line |
+| Scala.js | 1.22.0 | Wasm backend; `scalajs-scalalib_2.13:3.9.0` published |
+| Gears | 0.3.1 | `gears_3` + `gears_sjs1_3` both published; 0.3.1 is the newest release |
+| Tapir | 1.13.31 | `tapir-jdkhttp-server_3`, `tapir-core_sjs1_3`, `tapir-jsoniter-scala` |
 | sttp client3 | 3.11.0 | JVM + Scala.js |
-| jsoniter-scala | 2.39.1 | JVM + Scala.js |
-| Laminar / Airstream | 17.2.1 | |
+| jsoniter-scala | 2.41.0 | JVM + Scala.js |
+| Laminar / Airstream | 17.2.1 | 18.x is milestone-only |
 | scalajs-dom | 2.8.1 | |
-| Magnum | 2.0.0-M3 | milestone only — accepted |
-| Flyway | 11.8.2 | |
-| PostgreSQL JDBC | 42.7.7 | |
-| Zonky embedded-postgres | 2.2.2 | real PostgreSQL binary (`EMBEDDED_PG=true` for local development/tests) |
-| MUnit | 1.3.4 | |
+| Magnum | 1.3.1 | newest stable; 2.0.0-M3 is a milestone and the code stays on stable |
+| Flyway | 13.7.0 | |
+| PostgreSQL JDBC | 42.7.13 | |
+| Zonky embedded-postgres | 2.2.2 | real PostgreSQL binary (`EMBEDDED_PG=true` for local development/tests); 2.2.2 is the newest release. Binaries overridden to 18.6.0 to match the `postgres:18` compose deployment |
+| MUnit | 1.3.6 | |
 | argon2-jvm | 2.12 | |
-| logback-classic | 1.6.0 | |
+| logback-classic | 1.6.3 | |
 
 **Gears-on-JS caveats (accepted):** requires the Scala.js WebAssembly backend and a JSPI-capable browser (recent Chrome/Firefox; Safari support to be verified during setup). Dev/test tooling must avoid Node 24/25 (V8 stack-overflow bug in nested async contexts) — use Node 26+. Fallback if this bites in practice: keep Laminar and the Elm architecture (§5.6) and run frontend effects on `scala.concurrent.Future` instead of Gears — the change is isolated to the effect runner and the API-client wiring; `update` and views are unaffected.
 

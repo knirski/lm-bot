@@ -1,5 +1,8 @@
 # Build stage: link the frontend, then assemble the backend fat jar.
-FROM sbtscala/scala-sbt:eclipse-temurin-25.0.3_9_1.12.14_3.8.4 AS build
+# `2.x` is the sbt 2 image (currently JDK 25.0.4 LTS + sbt 2.0.9); the sbt
+# version that actually builds the project still comes from
+# project/build.properties.
+FROM sbtscala/scala-sbt:eclipse-temurin-25.0.4_7_2.x AS build
 WORKDIR /build
 
 # Node 26+: required by Gears' JSPI implementation.
@@ -17,7 +20,7 @@ COPY backend backend
 COPY frontend frontend
 
 # Build the frontend to Wasm, then assemble the backend fat JAR.
-# sbt 2 centralises output under target/out/jvm/scala-3.8.4/<project>/,
+# sbt 2 centralises output under target/out/jvm/scala-3.9.0/<project>/,
 # not <project>/target/.  Rather than hardcode a layout that sbt may reorganise
 # again, find the artifact and normalise its name here.
 #
