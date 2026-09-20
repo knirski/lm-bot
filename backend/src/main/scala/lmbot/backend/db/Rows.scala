@@ -1,7 +1,7 @@
 package lmbot.backend.db
 
 import java.sql.{Date => SqlDate, Time => SqlTime}
-import java.time.OffsetDateTime
+import java.time.{LocalDateTime, OffsetDateTime}
 
 import com.augustnagro.magnum.{
   DbCodec,
@@ -26,7 +26,9 @@ case class UserRow(
     telegramChatId: Option[Long],
     disabled: Boolean,
     createdAt: OffsetDateTime,
-    updatedAt: OffsetDateTime
+    updatedAt: OffsetDateTime,
+    telegramLinkCodeHash: Option[String] = None,
+    telegramLinkCodeExpiresAt: Option[OffsetDateTime] = None
 ) derives DbCodec
 
 @Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
@@ -75,5 +77,24 @@ case class MonitorRow(
     intervalMinutes: Int,
     state: String,
     createdAt: OffsetDateTime,
-    updatedAt: OffsetDateTime
+    updatedAt: OffsetDateTime,
+    lastCheckAt: Option[OffsetDateTime] = None,
+    lastCheckSummary: Option[String] = None
+) derives DbCodec
+
+@Table(PostgresDbType, SqlNameMapper.CamelToSnakeCase)
+case class MonitorEventRow(
+    @Id id: Long,
+    monitorId: Long,
+    kind: String,
+    slotKey: Option[String],
+    slotClinicId: Option[Long],
+    slotClinicName: Option[String],
+    slotDoctorId: Option[Long],
+    slotDoctorName: Option[String],
+    slotFrom: Option[LocalDateTime],
+    slotTo: Option[LocalDateTime],
+    slotTelemedicine: Option[Boolean],
+    detail: Option[String],
+    createdAt: OffsetDateTime
 ) derives DbCodec

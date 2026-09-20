@@ -266,7 +266,7 @@ final class LuxmedClient(
         LuxmedEndpoint.LogInToApp,
         accessToken,
         cookies,
-        Map("app" -> "search", "client" -> "3", "lang" -> "pl")
+        Seq("app" -> "search", "client" -> "3", "lang" -> "pl")
       )
       loginCookies = cookies.merge(loginResp.cookies)
       // Add GlobalLang cookie as the reference implementation does
@@ -323,7 +323,7 @@ final class LuxmedClient(
     withSession: (permit, session) =>
       given AccountGatePermit = permit
       transport
-        .newApiGet(LuxmedEndpoint.Cities, Map.empty, session)
+        .newApiGet(LuxmedEndpoint.Cities, Seq.empty, session)
         .flatMap: resp =>
           decodeBody[List[City]](resp.body)
 
@@ -335,7 +335,7 @@ final class LuxmedClient(
       transport
         .newApiGet(
           LuxmedEndpoint.ServiceVariantsGroups,
-          Map.empty,
+          Seq.empty,
           session
         )
         .flatMap: resp =>
@@ -350,7 +350,7 @@ final class LuxmedClient(
       transport
         .newApiGet(
           LuxmedEndpoint.FacilitiesAndDoctors,
-          Map(
+          Seq(
             "cityId" -> cityId.value.toString,
             "serviceVariantId" -> serviceVariantId.value.toString
           ),
@@ -366,7 +366,7 @@ final class LuxmedClient(
   )(using Async): Either[LuxmedError, TermsResponse] =
     withSession: (permit, session) =>
       given AccountGatePermit = permit
-      val params = Map.newBuilder[String, String]
+      val params = List.newBuilder[(String, String)]
       params += "searchPlace.id" -> query.cityId.toString
       params += "searchPlace.type" -> "0"
       params += "serviceVariantId" -> query.serviceVariantId.value.toString
@@ -396,7 +396,7 @@ final class LuxmedClient(
     withSession: (permit, session) =>
       given AccountGatePermit = permit
       transport
-        .newApiGet(LuxmedEndpoint.ForgeryToken, Map.empty, session)
+        .newApiGet(LuxmedEndpoint.ForgeryToken, Seq.empty, session)
         .flatMap: resp =>
           decodeBody[XsrfToken](resp.body).map: token =>
             (token, session.cookies.merge(resp.cookies))
@@ -455,7 +455,7 @@ final class LuxmedClient(
           session,
           xsrfToken = Some(xsrfToken.token),
           extraCookies = extraCookies,
-          params = Map("reservationId" -> reservationId.value.toString)
+          params = Seq("reservationId" -> reservationId.value.toString)
         )
         .flatMap: _ =>
           // Release endpoint returns 2xx on success with any body (empty, boolean,

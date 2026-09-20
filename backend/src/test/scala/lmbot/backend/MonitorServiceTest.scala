@@ -5,6 +5,7 @@ import java.time.{DayOfWeek, LocalDate, LocalTime, OffsetDateTime}
 import lmbot.backend.db.{
   AccountRepo,
   LuxmedAccountRow,
+  MonitorEventRepo,
   MonitorRepo,
   MonitorRow,
   UserRepo
@@ -15,6 +16,7 @@ import lmbot.shared.api.ApiError
 import lmbot.shared.domain.{
   AccountId,
   MonitorDraft,
+  MonitorEventKind,
   MonitorId,
   MonitorState,
   NamedId,
@@ -95,7 +97,7 @@ class MonitorServiceTest extends PostgresSuite:
     MonitorId(id)
 
   private def service(): MonitorService =
-    MonitorService(MonitorRepo(xa), AccountRepo(xa))
+    MonitorService(MonitorRepo(xa), AccountRepo(xa), MonitorEventRepo(xa))
 
   private def draft(
       accountId: AccountId,
@@ -315,10 +317,10 @@ class MonitorServiceTest extends PostgresSuite:
       case Left(ApiError.Conflict(_)) => ()
       case other => fail(s"expected Left(Conflict), got $other")
 
-  test("resume of a failed monitor returns conflict"):
+  test("resume of a completed monitor returns conflict"):
     val ownerId = owner()
     val accountId = insertAccount(ownerId)
-    val monitorId = insertMonitorRow(accountId, "failed")
+    val monitorId = insertMonitorRow(accountId, "completed")
 
     val result = service().resume(ownerId, monitorId)
 
@@ -427,3 +429,68 @@ class MonitorServiceTest extends PostgresSuite:
       MonitorService.decodeDaysOfWeek(MonitorService.encodeDaysOfWeek(days)),
       days
     )
+
+  // -- Engine operations and the event log (Plan 5) --
+
+  test("resume accepts a failed monitor"):
+    val ownerId = owner()
+    val accountId = insertAccount(ownerId)
+    val monitorId = insertMonitorRow(accountId, "failed")
+
+    assertEquals(
+      service().resume(ownerId, monitorId).map(_.state),
+      Right(MonitorState.Active)
+    )
+
+  test("events are owner-scoped, newest first, with a clamped limit"):
+    val ownerId = owner()
+    val other = owner()
+    val accountId = insertAccount(ownerId)
+    val monitorId = insertMonitorRow(accountId, "active")
+    val events = MonitorEventRepo(xa)
+    val base = OffsetDateTime.parse("2026-08-10T07:00:00Z")
+    events.append(
+      monitorId,
+      MonitorEventKind.Error,
+      None,
+      Some("first"),
+      base
+    )
+    events.append(
+      monitorId,
+      MonitorEventKind.Error,
+      None,
+      Some("second"),
+      base.plusMinutes(1)
+    )
+    events.append(
+      monitorId,
+      MonitorEventKind.Error,
+      None,
+      Some("third"),
+      base.plusMinutes(2)
+    )
+
+    assertEquals(
+      service().events(ownerId, monitorId, 2).map(_.map(_.detail)),
+      Right(List(Some("third"), Some("second")))
+    )
+    assertEquals(
+      service().events(other, monitorId, 10),
+      Left(ApiError.NotFound)
+    )
+    // A nonsense limit is clamped, not rejected.
+    assertEquals(service().events(ownerId, monitorId, 0).map(_.size), Right(1))
+
+  test("the monitor view carries the last-check summary"):
+    val ownerId = owner()
+    val accountId = insertAccount(ownerId)
+    val monitorId = insertMonitorRow(accountId, "active")
+    MonitorRepo(xa).recordCheck(
+      monitorId,
+      OffsetDateTime.parse("2026-08-10T07:00:00Z"),
+      "No new slots"
+    )
+
+    val view = service().list(ownerId).toOption.get.head
+    assertEquals(view.lastCheckSummary, Some("No new slots"))

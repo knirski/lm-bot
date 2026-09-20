@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.jdk.CollectionConverters.*
 
 import gears.async.Async
-import lmbot.backend.luxmed.Sleeper
+import lmbot.backend.support.Sleeper
 
 /** A deterministic fake clock and sleeper for testing rate limiting and spacing
   * logic. Advances time manually.

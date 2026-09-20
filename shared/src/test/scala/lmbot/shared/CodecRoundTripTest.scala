@@ -1,6 +1,6 @@
 package lmbot.shared
 
-import java.time.{DayOfWeek, Instant, LocalDate, LocalTime}
+import java.time.{DayOfWeek, Instant, LocalDate, LocalDateTime, LocalTime}
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import lmbot.shared.api.*
@@ -357,4 +357,175 @@ class CodecRoundTripTest extends munit.FunSuite:
     assertEquals(
       MonitorEndpoints.delete.showPathTemplate(),
       "/api/monitors/{monitorId}"
+    )
+
+  // --- Monitor engine contract (Plan 5) ---
+
+  test("FoundSlot serialises Warsaw-local datetimes and its full identity"):
+    val slot = FoundSlot(
+      key = "400:2026-08-10T09:00",
+      clinicId = 100L,
+      clinicName = Some("Mock Clinic"),
+      doctorId = 200L,
+      doctorName = "dr Mock Doctor",
+      from = LocalDateTime.parse("2026-08-10T09:00"),
+      to = LocalDateTime.parse("2026-08-10T09:15"),
+      telemedicine = false
+    )
+    val json = writeToString(slot)
+    assertEquals(
+      json,
+      """{"key":"400:2026-08-10T09:00","clinicId":100,"clinicName":"Mock Clinic","doctorId":200,"doctorName":"dr Mock Doctor","from":"2026-08-10T09:00","to":"2026-08-10T09:15","telemedicine":false}"""
+    )
+    assertEquals(readFromString[FoundSlot](json), slot)
+
+  test("MonitorEventKind serialises as snake_case strings"):
+    val expected = List(
+      MonitorEventKind.SlotFound -> "slot_found",
+      MonitorEventKind.NotificationSent -> "notification_sent",
+      MonitorEventKind.NotificationFailed -> "notification_failed",
+      MonitorEventKind.BookingAttempted -> "booking_attempted",
+      MonitorEventKind.BookingSucceeded -> "booking_succeeded",
+      MonitorEventKind.BookingFailed -> "booking_failed",
+      MonitorEventKind.MonitorPaused -> "monitor_paused",
+      MonitorEventKind.MonitorCompleted -> "monitor_completed",
+      MonitorEventKind.MonitorFailed -> "monitor_failed",
+      MonitorEventKind.Error -> "error"
+    )
+    expected.foreach: (kind, wire) =>
+      assertEquals(writeToString(kind), s"\"$wire\"")
+      assertEquals(readFromString[MonitorEventKind](s"\"$wire\""), kind)
+
+  test(
+    "MonitorEventKind schema advertises exactly the values the codec writes"
+  ):
+    assertEquals(
+      advertisedValues(summon[Schema[MonitorEventKind]]).toSet,
+      Set(
+        "slot_found",
+        "notification_sent",
+        "notification_failed",
+        "booking_attempted",
+        "booking_succeeded",
+        "booking_failed",
+        "monitor_paused",
+        "monitor_completed",
+        "monitor_failed",
+        "error"
+      )
+    )
+
+  test("MonitorEventView round-trips with a slot and without one"):
+    val slot = FoundSlot(
+      key = "400:2026-08-10T09:00",
+      clinicId = 100L,
+      clinicName = Some("Mock Clinic"),
+      doctorId = 200L,
+      doctorName = "dr Mock Doctor",
+      from = LocalDateTime.parse("2026-08-10T09:00"),
+      to = LocalDateTime.parse("2026-08-10T09:15"),
+      telemedicine = false
+    )
+    val withSlot = MonitorEventView(
+      id = MonitorEventId(7L),
+      monitorId = MonitorId(3L),
+      kind = MonitorEventKind.SlotFound,
+      slot = Some(slot),
+      detail = None,
+      createdAt = Instant.parse("2026-08-10T07:01:02Z")
+    )
+    val withSlotJson = writeToString(withSlot)
+    assertEquals(
+      withSlotJson,
+      """{"id":7,"monitorId":3,"kind":"slot_found","slot":{"key":"400:2026-08-10T09:00","clinicId":100,"clinicName":"Mock Clinic","doctorId":200,"doctorName":"dr Mock Doctor","from":"2026-08-10T09:00","to":"2026-08-10T09:15","telemedicine":false},"createdAt":"2026-08-10T07:01:02Z"}"""
+    )
+    assertEquals(readFromString[MonitorEventView](withSlotJson), withSlot)
+
+    val plain = MonitorEventView(
+      id = MonitorEventId(8L),
+      monitorId = MonitorId(3L),
+      kind = MonitorEventKind.Error,
+      slot = None,
+      detail = Some("Malformed JSON response"),
+      createdAt = Instant.parse("2026-08-10T07:05:00Z")
+    )
+    val plainJson = writeToString(plain)
+    assertEquals(
+      plainJson,
+      """{"id":8,"monitorId":3,"kind":"error","detail":"Malformed JSON response","createdAt":"2026-08-10T07:05:00Z"}"""
+    )
+    assertEquals(readFromString[MonitorEventView](plainJson), plain)
+
+  test("MonitorView carries last-check fields when present"):
+    val now = Instant.parse("2026-07-30T12:00:00Z")
+    val view = MonitorView(
+      id = MonitorId(1L),
+      accountId = AccountId(7L),
+      name = "Dermatologist",
+      state = MonitorState.Active,
+      city = NamedId(3L, "Warsaw"),
+      service = NamedId(42L, "Dermatology"),
+      facilities = List.empty,
+      doctors = List.empty,
+      dateFrom = LocalDate.parse("2026-08-01"),
+      dateTo = LocalDate.parse("2026-08-31"),
+      timeFrom = LocalTime.parse("08:00"),
+      timeTo = LocalTime.parse("16:00"),
+      daysOfWeek = List(DayOfWeek.MONDAY),
+      autoBook = false,
+      intervalMinutes = 10,
+      createdAt = now,
+      updatedAt = now,
+      lastCheckAt = Some(Instant.parse("2026-08-10T07:00:00Z")),
+      lastCheckSummary = Some("Found 2 new slots")
+    )
+    val json = writeToString(view)
+    assert(
+      json.contains("\"lastCheckAt\":\"2026-08-10T07:00:00Z\""),
+      s"lastCheckAt missing: $json"
+    )
+    assert(
+      json.contains("\"lastCheckSummary\":\"Found 2 new slots\""),
+      s"lastCheckSummary missing: $json"
+    )
+    assertEquals(readFromString[MonitorView](json), view)
+
+  test("Telegram settings payloads serialise exactly"):
+    assertEquals(
+      writeToString(TelegramSettingsView(true, false, Some("lm_bot"))),
+      """{"available":true,"linked":false,"botUsername":"lm_bot"}"""
+    )
+    assertEquals(
+      writeToString(TelegramSettingsView(false, false, None)),
+      """{"available":false,"linked":false}"""
+    )
+    assertEquals(
+      writeToString(
+        TelegramLinkCodeView(
+          "ABC234",
+          "https://t.me/lm_bot?start=ABC234",
+          Instant.parse("2026-08-10T07:15:00Z")
+        )
+      ),
+      """{"code":"ABC234","deepLink":"https://t.me/lm_bot?start=ABC234","expiresAt":"2026-08-10T07:15:00Z"}"""
+    )
+
+  test("monitor events endpoint is described with the expected path"):
+    assertEquals(
+      MonitorEndpoints.events.showPathTemplate(),
+      "/api/monitors/{monitorId}/events?limit={limit}"
+    )
+
+  test("telegram settings endpoints are described with the expected paths"):
+    assertEquals(
+      SettingsEndpoints.status.showPathTemplate(),
+      "/api/settings/telegram"
+    )
+    assertEquals(
+      SettingsEndpoints.linkCode.showPathTemplate(),
+      "/api/settings/telegram/link-code"
+    )
+    assertEquals(
+      SettingsEndpoints.unlink.showPathTemplate(),
+      "/api/settings/telegram"
     )

@@ -5,6 +5,7 @@ import java.util.{Base64, UUID}
 
 import lmbot.backend.account.{
   AccountClientFactory,
+  AccountClientRegistry,
   AccountService,
   DictionaryService
 }
@@ -85,7 +86,10 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
       uuidGenerator = () => fixedDeviceUuid,
       now = () => fixedInstant
     )
-    (accountService, DictionaryService(factory))
+    (
+      accountService,
+      DictionaryService(AccountClientRegistry.production(accounts, factory))
+    )
 
   private def withServer[A](body: RealHttpLuxmedServer => A): A =
     val server = RealHttpLuxmedServer()

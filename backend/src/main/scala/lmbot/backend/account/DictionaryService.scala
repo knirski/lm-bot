@@ -22,8 +22,12 @@ import lmbot.shared.domain.{
 /** Proxies Luxmed dictionary lookups for a caller-owned account, translating
   * backend-internal Luxmed wire models into shared DTOs. No Luxmed wire model
   * ever crosses this boundary (spec §5.7.4).
+  *
+  * The registry, not a fresh client per call, owns the account's gate: two
+  * dictionary calls (or a dictionary call racing an engine check) queue behind
+  * the same rate limiter.
   */
-final class DictionaryService(clients: AccountClientFactory):
+final class DictionaryService(clients: AccountClientRegistry):
 
   private val unavailable = "Luxmed is temporarily unavailable."
 
@@ -69,7 +73,7 @@ final class DictionaryService(clients: AccountClientFactory):
   private def withClient[A](ownerId: UserId, accountId: AccountId)(
       op: LuxmedClient => Either[ApiError, A]
   ): Either[ApiError, A] =
-    clients.forStored(ownerId, accountId).flatMap(op)
+    clients.forOwnedAccount(ownerId, accountId).flatMap(op)
 
   /** Flattens the recursive `ServiceVariant` tree into a flat, selectable list.
     * Each node's own name is prefixed with its ancestors' names (`"Parent >

@@ -17,8 +17,8 @@ final case class TermsQuery(
     searchDateFrom: LocalDate,
     searchDateTo: LocalDate,
     processId: UUID = UUID.randomUUID(),
-    facilityIds: Option[FacilityId] = None,
-    doctorIds: Option[DoctorId] = None,
+    facilityIds: List[FacilityId] = Nil,
+    doctorIds: List[DoctorId] = Nil,
     languageId: Long = 10,
     searchDatePreset: Int = 14
 )

@@ -11,6 +11,7 @@ import lmbot.backend.auth.{AuthService, Passwords}
 import lmbot.backend.db.{
   AccountRepo,
   LuxmedAccountRow,
+  MonitorEventRepo,
   MonitorRepo,
   MonitorRow,
   SessionRepo,
@@ -48,7 +49,12 @@ class MonitorHttpApiTest extends PostgresSuite:
       )
     val authRoutes = AuthRoutes(auth, cookieSecure = false, sessionTtl = ttl)
     val monitorService =
-      MonitorService(MonitorRepo(xa), AccountRepo(xa), () => fixedInstant)
+      MonitorService(
+        MonitorRepo(xa),
+        AccountRepo(xa),
+        MonitorEventRepo(xa),
+        () => fixedInstant
+      )
     val monitorRoutes = MonitorRoutes(auth, monitorService)
     // Port 0 lets the OS choose, so tests never collide.
     server = Server.start(
@@ -427,7 +433,7 @@ class MonitorHttpApiTest extends PostgresSuite:
       )
     )
 
-  test("resuming a failed monitor is 409"):
+  test("resuming a failed monitor returns it to active"):
     val (ownerId, token) = loggedIn()
     val accountId = insertAccount(ownerId)
     val monitorId = insertMonitorRow(accountId, "failed")
@@ -437,12 +443,14 @@ class MonitorHttpApiTest extends PostgresSuite:
       .cookie("lmbot_session", token)
       .send(http)
 
-    assertEquals(r.code, StatusCode.Conflict)
-    assertEquals(
-      r.body,
-      Left(
-        """{"code":"conflict","message":"The monitor cannot be resumed from its current state."}"""
-      )
+    assertEquals(r.code, StatusCode.Ok)
+    val get = basicRequest
+      .get(uri"$baseUri/api/monitors/$monitorId")
+      .cookie("lmbot_session", token)
+      .send(http)
+    assert(
+      get.body.toOption.exists(_.contains("\"state\":\"active\"")),
+      s"expected the monitor to be active again: ${get.body}"
     )
 
   // -- delete ---------------------------------------------------------------

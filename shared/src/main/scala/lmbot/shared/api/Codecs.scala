@@ -47,6 +47,7 @@ object Codecs:
 
   given JsonValueCodec[AccountId] = JsonCodecMaker.make(config)
   given JsonValueCodec[MonitorId] = JsonCodecMaker.make(config)
+  given JsonValueCodec[MonitorEventId] = JsonCodecMaker.make(config)
 
   // --- Enum codecs with custom string mappings ---
   // AccountStatus and MonitorState use lowercase/snake_case wire values to
@@ -76,6 +77,21 @@ object Codecs:
 
     def nullValue: MonitorState = null.asInstanceOf[MonitorState]
 
+  given JsonValueCodec[MonitorEventKind] with
+    def decodeValue(
+        in: JsonReader,
+        default: MonitorEventKind
+    ): MonitorEventKind =
+      val raw = in.readString(null)
+      MonitorEventKind
+        .fromWire(raw)
+        .getOrElse(in.enumValueError(s"unexpected MonitorEventKind: $raw"))
+
+    def encodeValue(x: MonitorEventKind, out: JsonWriter): Unit =
+      out.writeVal(x.wireName)
+
+    def nullValue: MonitorEventKind = null.asInstanceOf[MonitorEventKind]
+
   // --- Domain type codecs ---
 
   private def dayOfWeekDisplayName(d: DayOfWeek): String =
@@ -102,6 +118,10 @@ object Codecs:
   given JsonValueCodec[NamedId] = JsonCodecMaker.make(config)
   given JsonValueCodec[MonitorDraft] = JsonCodecMaker.make(config)
   given JsonValueCodec[MonitorView] = JsonCodecMaker.make(config)
+  given JsonValueCodec[FoundSlot] = JsonCodecMaker.make(config)
+  given JsonValueCodec[MonitorEventView] = JsonCodecMaker.make(config)
+  given JsonValueCodec[TelegramSettingsView] = JsonCodecMaker.make(config)
+  given JsonValueCodec[TelegramLinkCodeView] = JsonCodecMaker.make(config)
   given JsonValueCodec[DictionaryCity] = JsonCodecMaker.make(config)
   given JsonValueCodec[DictionaryService] = JsonCodecMaker.make(config)
   given JsonValueCodec[DictionaryFacility] = JsonCodecMaker.make(config)
@@ -115,6 +135,8 @@ object Codecs:
   given listAccountViewCodec: JsonValueCodec[List[AccountView]] =
     JsonCodecMaker.make(config)
   given listMonitorViewCodec: JsonValueCodec[List[MonitorView]] =
+    JsonCodecMaker.make(config)
+  given listMonitorEventViewCodec: JsonValueCodec[List[MonitorEventView]] =
     JsonCodecMaker.make(config)
   given listDictionaryCityCodec: JsonValueCodec[List[DictionaryCity]] =
     JsonCodecMaker.make(config)
@@ -145,6 +167,8 @@ object Codecs:
     Schema.schemaForLong.map(id => Some(AccountId(id)))(_.value)
   given Schema[MonitorId] =
     Schema.schemaForLong.map(id => Some(MonitorId(id)))(_.value)
+  given Schema[MonitorEventId] =
+    Schema.schemaForLong.map(id => Some(MonitorEventId(id)))(_.value)
 
   given Schema[AccountStatus] =
     Schema.derivedEnumeration[AccountStatus](
@@ -153,6 +177,10 @@ object Codecs:
   given Schema[MonitorState] =
     Schema.derivedEnumeration[MonitorState](
       encode = Some((state: MonitorState) => state.wireName)
+    )
+  given Schema[MonitorEventKind] =
+    Schema.derivedEnumeration[MonitorEventKind](
+      encode = Some((kind: MonitorEventKind) => kind.wireName)
     )
 
   given Schema[AccountView] = Schema.derived
@@ -169,6 +197,10 @@ object Codecs:
 
   given Schema[MonitorDraft] = Schema.derived
   given Schema[MonitorView] = Schema.derived
+  given Schema[FoundSlot] = Schema.derived
+  given Schema[MonitorEventView] = Schema.derived
+  given Schema[TelegramSettingsView] = Schema.derived
+  given Schema[TelegramLinkCodeView] = Schema.derived
   given Schema[DictionaryCity] = Schema.derived
   given Schema[DictionaryService] = Schema.derived
   given Schema[DictionaryFacility] = Schema.derived

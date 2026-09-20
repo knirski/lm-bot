@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import lmbot.backend.account.{
   AccountClientFactory,
+  AccountClientRegistry,
   AccountService,
   DictionaryService
 }
@@ -14,6 +15,7 @@ import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{
   AccountRepo,
   Database,
+  MonitorEventRepo,
   MonitorRepo,
   SessionRepo,
   UserRepo
@@ -126,13 +128,16 @@ object BackendApplication:
         luxmedConfig,
         crypto
       )
+      val accountClientRegistry =
+        AccountClientRegistry.production(accountRepo, accountClients)
       val accountService =
         AccountService(accountRepo, accountClients, crypto)
       val accountRoutes = AccountRoutes(auth, accountService)
-      val dictionaryService = DictionaryService(accountClients)
+      val dictionaryService = DictionaryService(accountClientRegistry)
       val dictionaryRoutes = DictionaryRoutes(auth, dictionaryService)
       val monitorRepo = MonitorRepo(xa)
-      val monitorService = MonitorService(monitorRepo, accountRepo)
+      val monitorService =
+        MonitorService(monitorRepo, accountRepo, MonitorEventRepo(xa))
       val monitorRoutes = MonitorRoutes(auth, monitorService)
 
       startServer(

@@ -10,6 +10,7 @@ import com.augustnagro.magnum.Transactor
 import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import lmbot.backend.account.{
   AccountClientFactory,
+  AccountClientRegistry,
   AccountService,
   DictionaryService
 }
@@ -19,6 +20,7 @@ import lmbot.backend.crypto.AesGcm
 import lmbot.backend.db.{
   AccountRepo,
   Database,
+  MonitorEventRepo,
   MonitorRepo,
   SessionRepo,
   UserRepo
@@ -185,8 +187,14 @@ object Plan4AcceptanceApp:
       AccountService(accountRepo, accountClients, crypto, now = luxmedNow)
     val accountRoutes = AccountRoutes(auth, accountService)
     val dictionaryRoutes =
-      DictionaryRoutes(auth, DictionaryService(accountClients))
-    val monitorService = MonitorService(MonitorRepo(xa), accountRepo)
+      DictionaryRoutes(
+        auth,
+        DictionaryService(
+          AccountClientRegistry.production(accountRepo, accountClients)
+        )
+      )
+    val monitorService =
+      MonitorService(MonitorRepo(xa), accountRepo, MonitorEventRepo(xa))
     val monitorRoutes = MonitorRoutes(auth, monitorService)
 
     val server = Server.start(
