@@ -740,3 +740,61 @@ class LuxmedClientAuthTest extends munit.FunSuite with GearsTest:
         ),
         0
       )
+
+  // -- Session-established callback (last_successful_login) --
+
+  private def withCallbackClient[T](
+      body: (
+          LuxmedClient,
+          StubLuxmedBackend,
+          List[LuxmedResponseScripts.Response] => Unit,
+          () => Int
+      ) => T
+  ): T =
+    val stub = StubLuxmedBackend()
+    val transport = LuxmedTransport.withBackend(testConfig, stub.backend)
+    val credentials = Credentials("user@example.com", Secret("password123"))
+    val fake = FakeTime()
+    val gate = AccountGate(Duration.ZERO, () => fake.now(), fake.sleeper)
+    var calls = 0
+    val client = LuxmedClient(
+      transport,
+      credentials,
+      gate,
+      InMemorySessionStore(),
+      now = () => fake.now(),
+      onSessionEstablished = () => calls += 1
+    )
+    body(
+      client,
+      stub,
+      responses =>
+        responses.foreach: response =>
+          stub.enqueue(response.status, response.headers, response.body),
+      () => calls
+    )
+
+  test("a password grant reports a session established"):
+    withCallbackClient: (client, _, enqueue, calls) =>
+      enqueue(LuxmedResponseScripts.realisticAuthFlow())
+
+      val result = runAsync(client.authenticate())
+
+      assert(result.isRight, s"expected success, got $result")
+      assertEquals(calls(), 1)
+
+  test("a refresh reports a session established again"):
+    withCallbackClient: (client, _, enqueue, calls) =>
+      enqueue(LuxmedResponseScripts.realisticAuthFlow())
+      runAsync(client.authenticate())
+
+      enqueue(
+        List(LuxmedResponseScripts.oauthPasswordGrant(refreshToken = "RT2"))
+      )
+      enqueue(
+        LuxmedResponseScripts.realisticBootstrapFlow(jwtToken = "JWT2")
+      )
+      val refreshed = runAsync(client.refreshNowForConformance())
+
+      assert(refreshed.isRight, s"expected refresh, got $refreshed")
+      assertEquals(calls(), 2)

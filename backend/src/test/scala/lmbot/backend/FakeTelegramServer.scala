@@ -22,6 +22,12 @@ final class FakeTelegramServer:
   private val sent = mutable.ListBuffer.empty[(Long, String)]
   private val pending = mutable.Queue.empty[String]
   private val nextUpdateId = AtomicLong(1)
+  private val sendFailures = new java.util.concurrent.atomic.AtomicInteger(0)
+
+  /** Makes the next `times` sends answer ok=false, so an acceptance run can
+    * drive the delivery-retry path.
+    */
+  def failNextSends(times: Int): Unit = sendFailures.set(times)
 
   private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
   server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
@@ -82,8 +88,11 @@ final class FakeTelegramServer:
       .toMap
     val chatId = params.get("chat_id").flatMap(_.toLongOption).getOrElse(0L)
     val text = params.getOrElse("text", "")
-    synchronized(sent += ((chatId, text)))
-    s"""{"ok":true,"result":{"message_id":1,"chat":{"id":$chatId},"text":"ok"}}"""
+    if sendFailures.getAndUpdate(n => Math.max(0, n - 1)) > 0 then
+      """{"ok":false,"description":"fake transient failure"}"""
+    else
+      synchronized(sent += ((chatId, text)))
+      s"""{"ok":true,"result":{"message_id":1,"chat":{"id":$chatId},"text":"ok"}}"""
 
   private def getUpdates(): String =
     val updates = synchronized(pending.dequeueAll(_ => true))

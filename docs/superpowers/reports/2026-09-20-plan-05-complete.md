@@ -76,6 +76,27 @@ console was empty throughout.
 No secret appeared in any response or notification: messages carry only monitor
 names, clinic/doctor names, and Warsaw datetimes.
 
+## Additional acceptance pass (post-review)
+
+After the review fixes, the harness gained control endpoints for the paths that
+previously only unit tests had seen — `/reject-auth`, `/fail-telegram`, and
+`/restart`, plus password/refresh grant counters in `/status`. A second run
+drove them:
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | Link an account, then a Telegram chat via the deep link | Account `active`; Telegram `linked` |
+| 2 | A monitor whose date range has passed | `completed` with a `monitor_completed` event and the completed notification |
+| 3 | A monitor whose first Telegram delivery fails (`/fail-telegram`) | `notification_failed` recorded, then **retried on the next check**: `notification_sent` ×7 (6 first pass + the retry) |
+| 4 | A malformed terms response (`/fail-terms`) | an `error` event recorded on the checking monitor, the last-check summary shows the failure, and the next check recovers |
+| 5 | Graph restart (`/restart`) | monitors resumed checking (the last-check timestamp advanced) with **no new password grant** — the persisted session was reused (`passwordGrants` stayed 1) |
+| 6 | Credentials rejected (`/reject-auth`) | account `auth_failed` with "Luxmed rejected these credentials.", every active monitor `paused`, and exactly one notification naming the reason |
+| 7 | Detail view after the above | shows the full story — Slot found ×7, Notification failed, Notification sent ×7, Error — with a clean console |
+
+This pass is also what closed the `error`-event gap: before it, no code path
+wrote `MonitorEventKind.Error`, so the detail view could not explain a failure
+streak. Failed *checks* now append one, bounded by the backoff.
+
 ## Plan 5 completion criteria
 
 | Criterion | Evidence |
@@ -167,3 +188,8 @@ semantics in §5.4.
   The restart is what keeps a single database blip from silently stopping the
   monitor, and the repeated warnings are the signal that the crash itself needs
   fixing.
+- **Delivery failures on non-slot notifications are only logged**, not recorded
+  as events: an account-auth, monitor-failed, or monitor-completed message that
+  Telegram rejects leaves no row in the event log (slot deliveries do record
+  `notification_failed`). The state transition itself is persisted, so the UI
+  still shows what happened.

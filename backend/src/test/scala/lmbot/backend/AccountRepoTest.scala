@@ -307,3 +307,20 @@ class AccountRepoTest extends PostgresSuite:
     assert(!repo.markAuthFailed(id, "rejected", now))
 
     assertEquals(repo.findById(id).map(_.status), Some("disabled"))
+
+  test(
+    "markLogin records the last successful grant without touching updated_at"
+  ):
+    val repo = AccountRepo(xa)
+    val id = anAccount(anOwner())
+    val before = repo.findById(id).get.updatedAt
+    val at = now.plusMinutes(5).truncatedTo(ChronoUnit.MICROS)
+
+    repo.markLogin(id, at)
+
+    val stored = repo.findById(id).get
+    assertEquals(
+      stored.lastSuccessfulLogin.map(_.toInstant),
+      Some(at.toInstant)
+    )
+    assertEquals(stored.updatedAt.toInstant, before.toInstant)

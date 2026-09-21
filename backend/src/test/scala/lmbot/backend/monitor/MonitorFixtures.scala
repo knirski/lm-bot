@@ -84,6 +84,7 @@ abstract class MonitorFixtures extends PostgresSuite with GearsTest:
       dateFrom: LocalDate = LocalDate.parse("2026-08-10"),
       dateTo: LocalDate = LocalDate.parse("2026-08-31"),
       intervalMinutes: Int = 10,
+      serviceId: Long = 200L,
       facilityIds: List[Long] = List(10L),
       doctorIds: List[Long] = List(20L),
       daysOfWeek: Short = 0b0000101, // Monday, Wednesday
@@ -98,7 +99,7 @@ abstract class MonitorFixtures extends PostgresSuite with GearsTest:
         name = "Test Monitor",
         cityId = 100L,
         cityName = "Warsaw",
-        serviceId = 200L,
+        serviceId = serviceId,
         serviceName = "Konsultacja",
         facilityIds = facilityIds,
         facilityNames = facilityIds.map(id => s"Clinic $id"),

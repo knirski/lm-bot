@@ -1,6 +1,6 @@
 package lmbot.backend.account
 
-import java.time.{Duration, Instant}
+import java.time.{Duration, Instant, OffsetDateTime, ZoneOffset}
 import java.util.UUID
 
 import com.augustnagro.magnum.Transactor
@@ -32,14 +32,16 @@ final class AccountClientFactory private (
   private def client(
       config: LuxmedConfig,
       credentials: Credentials,
-      store: SessionStore
+      store: SessionStore,
+      onSessionEstablished: () => Unit = () => ()
   ): LuxmedClient =
     LuxmedClient(
       transport(config),
       credentials,
       AccountGate(minimumSpacing, now),
       store,
-      now
+      now,
+      onSessionEstablished
     )
 
   def forLink(
@@ -88,7 +90,12 @@ final class AccountClientFactory private (
           yield client(
             baseConfig.copy(deviceUuid = uuid),
             Credentials(username.value, password),
-            PostgresSessionStore(xa, ownerId, accountId, crypto)
+            PostgresSessionStore(xa, ownerId, accountId, crypto),
+            onSessionEstablished = () =>
+              accounts.markLogin(
+                accountId,
+                OffsetDateTime.ofInstant(now(), ZoneOffset.UTC)
+              )
           )
     catch
       case _: Exception =>

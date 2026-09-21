@@ -135,7 +135,7 @@ class MonitorEngineTest extends MonitorFixtures:
     )
     assertEquals(storedMonitor(first.id).state, "paused")
     assertEquals(storedMonitor(second.id).state, "paused")
-    assertEquals(events(first.id), Seq("monitor_paused"))
+    assertEquals(events(first.id), Seq("monitor_paused", "error"))
     assertEquals(channel.sent.size, 1)
 
     // A second monitor failing in the same episode does not notify again.
@@ -172,7 +172,10 @@ class MonitorEngineTest extends MonitorFixtures:
     )
 
     assertEquals(storedMonitor(monitor.id).state, "failed")
-    assertEquals(events(monitor.id), Seq("monitor_failed"))
+    assertEquals(
+      events(monitor.id),
+      Seq("monitor_failed", "error", "error")
+    )
     assertEquals(channel.sent.size, 1)
     assert(channel.sent.head._2.contains("bad payload"))
 
@@ -192,6 +195,7 @@ class MonitorEngineTest extends MonitorFixtures:
       storedMonitor(monitor.id).lastCheckSummary,
       Some("Check failed: boom")
     )
+    assertEquals(events(monitor.id), Seq("error"))
 
   test("version rejection notifies the admin once and keeps retrying"):
     anOwner(chatId = Some(111L), role = Role.Admin)
@@ -217,6 +221,7 @@ class MonitorEngineTest extends MonitorFixtures:
 
     assertEquals(channel.sent.map(_._1).toList, List(111L))
     assertEquals(storedMonitor(monitor.id).state, "active")
+    assertEquals(events(monitor.id), Seq("error", "error"))
 
   test("run reconciles, picks up new monitors, and stops"):
     val ownerId = anOwner()
@@ -298,4 +303,55 @@ class MonitorEngineTest extends MonitorFixtures:
     assert(
       search.searched.size >= 2,
       s"the restarted loop never searched: ${search.searched.toList}"
+    )
+
+  test("editing a monitor resets its failure budget"):
+    val ownerId = anOwner()
+    val accountId = anAccount(ownerId)
+    val monitor = aMonitor(accountId)
+    val stop = UnboundedChannel[Unit]()
+    var edited = false
+    var editChangedTimestamp = false
+    val search = ScriptedSearch(
+      mutable.Queue(
+        Left(CheckFailure.Persistent("bad payload")),
+        Left(CheckFailure.Persistent("bad payload")),
+        Left(CheckFailure.Persistent("bad payload"))
+      )
+    )
+    val editLock = new Object
+    val sleeper = new Sleeper:
+      private var calls = 0
+      def sleep(duration: Duration)(using Async): Unit =
+        if summon[Async].group.isCancelled then
+          throw new CancellationException()
+        calls += 1
+        // After two strikes, the user edits the monitor; the third failure
+        // must not be terminal (without the reset it would be the third
+        // consecutive persistent failure and fail the monitor). The lock is
+        // what makes the edit deterministic: the reconciler's sleep shares
+        // this sleeper, and a sleep that returns while the edit is still in
+        // flight would let the next check read the old `updated_at`.
+        editLock.synchronized:
+          if search.searched.size == 2 && !edited then
+            edited = true
+            val row = storedMonitor(monitor.id)
+            val updated =
+              MonitorRepo(xa).updateOwned(row.copy(name = "Edited"), ownerId)
+            editChangedTimestamp = updated.exists(_.updatedAt != row.updatedAt)
+        if search.searched.size >= 3 then
+          stop.close()
+          throw new CancellationException()
+        if calls >= 500 then
+          stop.close()
+          throw IllegalStateException("the engine never reached three checks")
+
+    runAsync(engine(search, None, sleeper).run(stop))
+
+    assert(edited, "the test never edited the monitor")
+    assert(editChangedTimestamp, "the edit must bump updated_at")
+    assertEquals(
+      storedMonitor(monitor.id).state,
+      "active",
+      "an edit must reset the failure budget rather than leaving one strike"
     )

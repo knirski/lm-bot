@@ -27,7 +27,15 @@ final class RealHttpLuxmedServer(port: Int = 0):
   server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
   val context = server.createContext("/")
   context.setHandler { exchange =>
+    val receivedAt = java.time.Instant.now()
     val body = Source.fromInputStream(exchange.getRequestBody).mkString
+    val response = Option(responseQueue.poll()).getOrElse(MockResponse(404))
+    response.headers.foreach { (k, vs) =>
+      vs.foreach(v => exchange.getResponseHeaders.add(k, v))
+    }
+    val bodyBytes = response.body.getBytes("UTF-8")
+    exchange.sendResponseHeaders(response.status, bodyBytes.length)
+    exchange.getResponseBody.write(bodyBytes)
     capturedRequests.add(
       RecordedRequest(
         method = exchange.getRequestMethod,
@@ -36,16 +44,11 @@ final class RealHttpLuxmedServer(port: Int = 0):
         headers = exchange.getRequestHeaders.asScala.map { (k, v) =>
           k -> v.asScala.toList
         }.toMap,
-        body = body
+        body = body,
+        receivedAt = receivedAt,
+        completedAt = java.time.Instant.now()
       )
     )
-    val response = Option(responseQueue.poll()).getOrElse(MockResponse(404))
-    response.headers.foreach { (k, vs) =>
-      vs.foreach(v => exchange.getResponseHeaders.add(k, v))
-    }
-    val bodyBytes = response.body.getBytes("UTF-8")
-    exchange.sendResponseHeaders(response.status, bodyBytes.length)
-    exchange.getResponseBody.write(bodyBytes)
     exchange.close()
   }
   server.start()
