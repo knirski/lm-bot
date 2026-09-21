@@ -156,3 +156,14 @@ A second pass closed the remaining open issues from that review:
 - `Plan4AcceptanceConfig.StubLuxmedServer` now serves terms as well as the auth
   and dictionary routes, so the Plan 4 harness can drive a running monitor too.
 - The settings page has no password-change section yet; that is Plan 7.
+- **Multi-facility/doctor query semantics are unverified against the live
+  API.** The terms search sends the selected ids as repeated
+  `facilitiesIds`/`doctorsIds` parameters and filters the response locally with
+  OR semantics; whether Luxmed itself ANDs or ORs those parameters is unknown.
+  If it ANDs them, a monitor selecting several facilities or doctors would
+  under-fetch. A guided exploration would settle it.
+- **A monitor loop that keeps dying immediately is restarted on every reconcile
+  pass** (15 s in production) and logs each death; there is no restart backoff.
+  The restart is what keeps a single database blip from silently stopping the
+  monitor, and the repeated warnings are the signal that the crash itself needs
+  fixing.
