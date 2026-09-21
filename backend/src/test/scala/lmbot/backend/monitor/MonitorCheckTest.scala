@@ -4,6 +4,7 @@ import scala.collection.mutable
 
 import gears.async.Async
 import lmbot.backend.db.{MonitorEventRepo, MonitorRow}
+import lmbot.backend.notify.{NotificationChannel, NotificationError}
 import lmbot.shared.domain.FoundSlot
 
 class MonitorCheckTest extends MonitorFixtures:
@@ -112,3 +113,72 @@ class MonitorCheckTest extends MonitorFixtures:
       CheckResult.Succeeded(slotsFound = 2, newSlots = 0)
     )
     assertEquals(channel.sent.size, 2)
+
+  // -- Delivery retries (Plan 5 review) --
+
+  final private class FlakyChannel(var failures: Int)
+      extends NotificationChannel:
+    val sent = mutable.ListBuffer.empty[(Long, String)]
+    def send(chatId: Long, text: String)(using
+        Async
+    ): Either[NotificationError, Unit] =
+      sent += ((chatId, text))
+      if failures > 0 then
+        failures -= 1
+        Left(NotificationError.Transient("down"))
+      else Right(())
+
+  private def retryingCheck(
+      search: SlotSearch,
+      channel: FlakyChannel
+  ): MonitorCheck =
+    MonitorCheck(
+      search,
+      MonitorEventRepo(xa),
+      notifier(Some(channel)),
+      () => fixedNow
+    )
+
+  test("a failed delivery is retried on the next check"):
+    val ownerId = anOwner(chatId = Some(555L))
+    val monitor = aMonitor(anAccount(ownerId))
+    val channel = FlakyChannel(failures = 1)
+    val search = ScriptedSearch(
+      mutable.Queue(Right(List(aSlot())), Right(List(aSlot())))
+    )
+    val subject = retryingCheck(search, channel)
+
+    runAsync(subject.run(monitor, ownerId))
+    assert(
+      events(monitor.id).contains("notification_failed"),
+      s"expected a failure to record: ${events(monitor.id)}"
+    )
+
+    runAsync(subject.run(monitor, ownerId))
+    assert(
+      events(monitor.id).contains("notification_sent"),
+      s"expected the retry to succeed: ${events(monitor.id)}"
+    )
+    assertEquals(channel.sent.size, 2)
+
+  test("a delivery is retried at most three times"):
+    val ownerId = anOwner(chatId = Some(555L))
+    val monitor = aMonitor(anAccount(ownerId))
+    val channel = FlakyChannel(failures = Int.MaxValue)
+    val search = ScriptedSearch(
+      mutable.Queue(
+        Right(List(aSlot())),
+        Right(List(aSlot())),
+        Right(List(aSlot())),
+        Right(List(aSlot()))
+      )
+    )
+    val subject = retryingCheck(search, channel)
+
+    (1 to 4).foreach(_ => runAsync(subject.run(monitor, ownerId)))
+
+    assertEquals(
+      channel.sent.size,
+      MonitorCheck.maxDeliveryAttempts,
+      "after the cap a failed delivery must stand"
+    )

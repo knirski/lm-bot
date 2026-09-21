@@ -55,7 +55,10 @@ abstract class MonitorFixtures extends PostgresSuite with GearsTest:
     chatId.foreach(users.setTelegramChatId(userId, _))
     userId
 
-  protected def anAccount(ownerId: UserId): Long =
+  protected def anAccount(
+      ownerId: UserId,
+      status: String = "active"
+  ): Long =
     val repo = AccountRepo(xa)
     val accountId = repo.reserveId()
     repo.insert(
@@ -67,7 +70,7 @@ abstract class MonitorFixtures extends PostgresSuite with GearsTest:
         encryptedPassword = "enc-pass",
         encryptedDeviceUuid = "enc-device",
         encryptedSession = None,
-        status = "active",
+        status = status,
         statusReason = None,
         lastSuccessfulLogin = None,
         createdAt = fixedNow,

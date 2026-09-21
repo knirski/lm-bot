@@ -11,6 +11,7 @@ import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import lmbot.backend.account.{
   AccountClientFactory,
   AccountClientRegistry,
+  AccountHealthReporter,
   AccountService,
   DictionaryService
 }
@@ -183,15 +184,20 @@ object Plan4AcceptanceApp:
       crypto = crypto,
       now = luxmedNow
     )
+    val registry = AccountClientRegistry.production(accountRepo, accountClients)
     val accountService =
-      AccountService(accountRepo, accountClients, crypto, now = luxmedNow)
+      AccountService(
+        accountRepo,
+        accountClients,
+        crypto,
+        registry.forget,
+        now = luxmedNow
+      )
     val accountRoutes = AccountRoutes(auth, accountService)
     val dictionaryRoutes =
       DictionaryRoutes(
         auth,
-        DictionaryService(
-          AccountClientRegistry.production(accountRepo, accountClients)
-        )
+        DictionaryService(registry, AccountHealthReporter.Noop)
       )
     val monitorService =
       MonitorService(MonitorRepo(xa), accountRepo, MonitorEventRepo(xa))

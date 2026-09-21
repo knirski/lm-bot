@@ -217,3 +217,65 @@ class MonitorEventRepoTest extends PostgresSuite:
     AccountRepo(xa).deleteOwned(AccountId(accountId), ownerId)
 
     assertEquals(events.listRecent(monitorId, 10), Seq.empty)
+
+  // -- Delivery retries (Plan 5 review) --
+
+  test("a failed delivery is a slot awaiting retry"):
+    val monitorId = aMonitor(anAccount(anOwner()))
+    val events = MonitorEventRepo(xa)
+    val slot = aSlot()
+    events.recordSlotFound(monitorId, slot, now)
+    events.append(
+      monitorId,
+      MonitorEventKind.NotificationFailed,
+      Some(slot),
+      Some("down"),
+      now.plusMinutes(1)
+    )
+
+    assertEquals(events.slotsAwaitingDelivery(monitorId, 3), Seq(slot))
+
+  test("a delivered slot is not retried"):
+    val monitorId = aMonitor(anAccount(anOwner()))
+    val events = MonitorEventRepo(xa)
+    val slot = aSlot()
+    events.recordSlotFound(monitorId, slot, now)
+    events.append(
+      monitorId,
+      MonitorEventKind.NotificationFailed,
+      Some(slot),
+      Some("down"),
+      now.plusMinutes(1)
+    )
+    events.append(
+      monitorId,
+      MonitorEventKind.NotificationSent,
+      Some(slot),
+      None,
+      now.plusMinutes(2)
+    )
+
+    assertEquals(events.slotsAwaitingDelivery(monitorId, 3), Seq.empty)
+
+  test("a slot at the attempt cap is not retried"):
+    val monitorId = aMonitor(anAccount(anOwner()))
+    val events = MonitorEventRepo(xa)
+    val slot = aSlot()
+    events.recordSlotFound(monitorId, slot, now)
+    (1 to 3).foreach: attempt =>
+      events.append(
+        monitorId,
+        MonitorEventKind.NotificationFailed,
+        Some(slot),
+        Some("down"),
+        now.plusMinutes(attempt.toLong)
+      )
+
+    assertEquals(events.slotsAwaitingDelivery(monitorId, 3), Seq.empty)
+
+  test("a slot with no delivery attempt at all is not retried"):
+    val monitorId = aMonitor(anAccount(anOwner()))
+    val events = MonitorEventRepo(xa)
+    events.recordSlotFound(monitorId, aSlot(), now)
+
+    assertEquals(events.slotsAwaitingDelivery(monitorId, 3), Seq.empty)

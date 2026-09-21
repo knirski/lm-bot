@@ -37,17 +37,22 @@ class MonitorEngineTest extends MonitorFixtures:
       sleeper: Sleeper = ImmediateSleeper(),
       monitors: MonitorRepo = MonitorRepo(xa)
   ): MonitorEngine =
+    val events = MonitorEventRepo(xa)
+    val notifications = notifier(channel)
+    val health = AccountHealth(
+      AccountRepo(xa),
+      monitors,
+      events,
+      notifications,
+      () => fixedNow
+    )
     MonitorEngine(
       monitors,
       AccountRepo(xa),
-      MonitorCheck(
-        search,
-        MonitorEventRepo(xa),
-        notifier(channel),
-        () => fixedNow
-      ),
-      notifier(channel),
-      MonitorEventRepo(xa),
+      MonitorCheck(search, events, notifications, () => fixedNow),
+      notifications,
+      health,
+      events,
       sleeper,
       () => 0.5,
       () => fixedNow
@@ -62,7 +67,7 @@ class MonitorEngineTest extends MonitorFixtures:
     val search = ScriptedSearch(mutable.Queue(Right(Nil)))
 
     val iteration =
-      runAsync(engine(search, None).iterate(monitor, ownerId, "Main", 0, 0))
+      runAsync(engine(search, None).iterate(monitor, ownerId, 0, 0))
 
     assertEquals(iteration, Iteration.Continue(10.minutes, 0, 0))
     assertEquals(
@@ -76,7 +81,7 @@ class MonitorEngineTest extends MonitorFixtures:
     val search = ScriptedSearch(mutable.Queue(Right(List(aSlot()))))
 
     val iteration =
-      runAsync(engine(search, None).iterate(monitor, ownerId, "Main", 0, 0))
+      runAsync(engine(search, None).iterate(monitor, ownerId, 0, 0))
 
     assertEquals(iteration, Iteration.Continue(10.minutes, 0, 0))
     assertEquals(
@@ -96,7 +101,7 @@ class MonitorEngineTest extends MonitorFixtures:
 
     val iteration =
       runAsync(
-        engine(search, Some(channel)).iterate(monitor, ownerId, "Main", 0, 0)
+        engine(search, Some(channel)).iterate(monitor, ownerId, 0, 0)
       )
 
     assertEquals(iteration, Iteration.Stop)
@@ -121,7 +126,7 @@ class MonitorEngineTest extends MonitorFixtures:
     val subject = engine(search, Some(channel))
 
     assertEquals(
-      runAsync(subject.iterate(first, ownerId, "Main", 0, 0)),
+      runAsync(subject.iterate(first, ownerId, 0, 0)),
       Iteration.Stop
     )
     assertEquals(
@@ -135,7 +140,7 @@ class MonitorEngineTest extends MonitorFixtures:
 
     // A second monitor failing in the same episode does not notify again.
     assertEquals(
-      runAsync(subject.iterate(second, ownerId, "Main", 0, 0)),
+      runAsync(subject.iterate(second, ownerId, 0, 0)),
       Iteration.Stop
     )
     assertEquals(channel.sent.size, 1)
@@ -154,15 +159,15 @@ class MonitorEngineTest extends MonitorFixtures:
     val subject = engine(search, Some(channel))
 
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 0, 0)),
+      runAsync(subject.iterate(monitor, ownerId, 0, 0)),
       Iteration.Continue(1.minute, 1, 1)
     )
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 1, 1)),
+      runAsync(subject.iterate(monitor, ownerId, 1, 1)),
       Iteration.Continue(2.minutes, 2, 2)
     )
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 2, 2)),
+      runAsync(subject.iterate(monitor, ownerId, 2, 2)),
       Iteration.Stop
     )
 
@@ -179,7 +184,7 @@ class MonitorEngineTest extends MonitorFixtures:
     )
 
     val iteration =
-      runAsync(engine(search, None).iterate(monitor, ownerId, "Main", 0, 0))
+      runAsync(engine(search, None).iterate(monitor, ownerId, 0, 0))
 
     assertEquals(iteration, Iteration.Continue(1.minute, 0, 1))
     assertEquals(storedMonitor(monitor.id).state, "active")
@@ -202,11 +207,11 @@ class MonitorEngineTest extends MonitorFixtures:
     val subject = engine(search, Some(channel))
 
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 0, 0)),
+      runAsync(subject.iterate(monitor, ownerId, 0, 0)),
       Iteration.Continue(1.minute, 0, 1)
     )
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 0, 1)),
+      runAsync(subject.iterate(monitor, ownerId, 0, 1)),
       Iteration.Continue(2.minutes, 0, 2)
     )
 
@@ -248,7 +253,7 @@ class MonitorEngineTest extends MonitorFixtures:
     val subject = engine(search, Some(RecordingChannel()))
 
     assertEquals(
-      runAsync(subject.iterate(monitor, ownerId, "Main", 0, 0)),
+      runAsync(subject.iterate(monitor, ownerId, 0, 0)),
       Iteration.Continue(1.minute, 1, 1)
     )
 

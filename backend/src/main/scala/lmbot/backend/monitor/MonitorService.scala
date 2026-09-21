@@ -17,7 +17,6 @@ import lmbot.backend.support.result.?
 import lmbot.shared.api.ApiError
 import lmbot.shared.domain.{
   AccountId,
-  FoundSlot,
   MonitorDraft,
   MonitorEventId,
   MonitorEventKind,
@@ -313,31 +312,9 @@ final class MonitorService(
       id = MonitorEventId(row.id),
       monitorId = MonitorId(row.monitorId),
       kind = parseEventKind(row.kind),
-      slot = toSlot(row),
+      slot = MonitorEventRepo.toFoundSlot(row),
       detail = row.detail,
       createdAt = row.createdAt.toInstant
-    )
-
-  /** The slot columns are all-or-none (a database constraint), so the first
-    * present value means the slot is present.
-    */
-  private def toSlot(row: MonitorEventRow): Option[FoundSlot] =
-    for
-      key <- row.slotKey
-      clinicId <- row.slotClinicId
-      doctorId <- row.slotDoctorId
-      from <- row.slotFrom
-      to <- row.slotTo
-      telemedicine <- row.slotTelemedicine
-    yield FoundSlot(
-      key = key,
-      clinicId = clinicId,
-      clinicName = row.slotClinicName,
-      doctorId = doctorId,
-      doctorName = row.slotDoctorName.getOrElse(""),
-      from = from,
-      to = to,
-      telemedicine = telemedicine
     )
 
   /** The `kind` column has a DB `check` constraint mirroring

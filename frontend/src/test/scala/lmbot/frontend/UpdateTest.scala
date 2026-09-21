@@ -1555,3 +1555,56 @@ class UpdateTest extends munit.FunSuite:
     assertEquals(s.telegram.status, LoadState.Loaded(telegramLinked))
     assertEquals(s.telegram.submitting, false)
     assertEquals(s.telegram.error, Some("Something went wrong: offline"))
+
+  // --- Expired sessions (issue #36) ---
+
+  test("a 401 from a dashboard load returns to login with a real message"):
+    val t = update(
+      dashboardState,
+      Msg.MonitorsLoadFailed(
+        ApiError.Unauthorized,
+        dashboardState.dashboardGeneration,
+        dashboardState.monitorsGeneration
+      )
+    )
+
+    assertEquals(t.state.screen, Screen.Login)
+    assertEquals(t.state.user, None)
+    assertEquals(t.state.monitors, LoadState.NotAsked)
+    assertEquals(t.state.login.error, Some(Update.sessionExpiredMessage))
+    assertEquals(
+      t.state.dashboardGeneration,
+      dashboardState.dashboardGeneration + 1
+    )
+
+  test("a 401 from a monitor action also resets to login"):
+    val t = update(
+      dashboardState,
+      Msg.MonitorStateChangeFailed(monitor1.id, ApiError.Unauthorized)
+    )
+
+    assertEquals(t.state.screen, Screen.Login)
+    assertEquals(t.state.user, None)
+
+  test("a wrong-password login failure is not treated as a session expiry"):
+    val submitting = update(AppState.initial, Msg.LoginSubmitted).state
+
+    val outcome = update(submitting, Msg.LoginFailed(ApiError.Unauthorized))
+
+    assertEquals(outcome.state.screen, Screen.Login)
+    assertEquals(outcome.state.login.error, Some("Wrong username or password."))
+    assertEquals(outcome.state.login.submitting, false)
+
+  test("an absent session resets all session-scoped state"):
+    val s = update(dashboardState, Msg.SessionAbsent).state
+
+    assertEquals(
+      s,
+      AppState(
+        Screen.Login,
+        LoginForm(),
+        None,
+        booting = false,
+        dashboardGeneration = dashboardState.dashboardGeneration + 1
+      )
+    )

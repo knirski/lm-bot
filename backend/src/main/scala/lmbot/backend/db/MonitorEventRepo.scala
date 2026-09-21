@@ -65,3 +65,58 @@ class MonitorEventRepo(xa: Transactor):
             where monitor_id = ${monitorId.value}
             order by created_at desc, id desc
             limit $limit""".query[MonitorEventRow].run()
+
+  /** Slots whose most recent delivery attempt failed and that have attempts
+    * left. The next check retries exactly these, so a transient outage does not
+    * silently lose a notification (at-most-three attempts per slot).
+    */
+  def slotsAwaitingDelivery(
+      monitorId: MonitorId,
+      maxAttempts: Int
+  ): Seq[FoundSlot] = connect(xa):
+    sql"""select e.*
+          from (
+            select slot_key, count(*) as attempts
+            from monitor_events
+            where monitor_id = ${monitorId.value}
+              and kind = 'notification_failed'
+            group by slot_key
+          ) failures
+          join lateral (
+            select * from monitor_events latest
+            where latest.monitor_id = ${monitorId.value}
+              and latest.slot_key = failures.slot_key
+              and latest.kind in ('notification_sent', 'notification_failed')
+            order by latest.created_at desc, latest.id desc
+            limit 1
+          ) e on true
+          where e.kind = 'notification_failed'
+            and failures.attempts < $maxAttempts"""
+      .query[MonitorEventRow]
+      .run()
+      .flatMap(MonitorEventRepo.toFoundSlot)
+
+object MonitorEventRepo:
+
+  /** The structured slot a row carries, when it has one. The slot columns are
+    * all-or-none (a database constraint), so the first present value means the
+    * slot is present.
+    */
+  def toFoundSlot(row: MonitorEventRow): Option[FoundSlot] =
+    for
+      key <- row.slotKey
+      clinicId <- row.slotClinicId
+      doctorId <- row.slotDoctorId
+      from <- row.slotFrom
+      to <- row.slotTo
+      telemedicine <- row.slotTelemedicine
+    yield FoundSlot(
+      key = key,
+      clinicId = clinicId,
+      clinicName = row.slotClinicName,
+      doctorId = doctorId,
+      doctorName = row.slotDoctorName.getOrElse(""),
+      from = from,
+      to = to,
+      telemedicine = telemedicine
+    )
