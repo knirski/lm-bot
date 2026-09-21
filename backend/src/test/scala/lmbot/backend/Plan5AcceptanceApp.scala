@@ -40,6 +40,7 @@ import lmbot.backend.http.{
 }
 import lmbot.backend.luxmed.LuxmedConfig
 import lmbot.backend.monitor.{
+  AccountHealth,
   LuxmedSlotSearch,
   MonitorCheck,
   MonitorEngine,
@@ -198,7 +199,6 @@ object Plan5AcceptanceApp:
     val registry = AccountClientRegistry.production(accountRepo, accountClients)
     val accountService = AccountService(accountRepo, accountClients, crypto)
     val accountRoutes = AccountRoutes(auth, accountService)
-    val dictionaryRoutes = DictionaryRoutes(auth, DictionaryService(registry))
 
     val monitorRepo = MonitorRepo(xa)
     val eventRepo = MonitorEventRepo(xa)
@@ -220,6 +220,10 @@ object Plan5AcceptanceApp:
       eventRepo,
       now
     )
+    val health =
+      AccountHealth(accountRepo, monitorRepo, eventRepo, notifier, now)
+    val dictionaryRoutes =
+      DictionaryRoutes(auth, DictionaryService(registry, health))
     val engine = MonitorEngine(
       monitorRepo,
       accountRepo,
@@ -230,6 +234,7 @@ object Plan5AcceptanceApp:
         now
       ),
       notifier,
+      health,
       eventRepo,
       FastForwardSleeper,
       () => Random.nextDouble(),

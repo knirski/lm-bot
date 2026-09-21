@@ -3,10 +3,15 @@ package lmbot.backend
 import java.time.{Duration, Instant}
 import java.util.{Base64, UUID}
 
+import scala.collection.mutable
+
+import gears.async.Async
 import lmbot.backend.account.{
   AccountClientFactory,
   AccountClientRegistry,
+  AccountHealthReporter,
   AccountService,
+  AccountStatusReason,
   DictionaryService
 }
 import lmbot.backend.config.{AppVersion, MasterKey}
@@ -67,8 +72,16 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
       deviceUuid = UUID.fromString("00000000-0000-4000-8000-000000000002")
     )
 
+  final private class RecordingHealthReporter extends AccountHealthReporter:
+    val reported = mutable.ListBuffer.empty[(AccountId, AccountStatusReason)]
+    def reportAuthFailure(accountId: AccountId, reason: AccountStatusReason)(
+        using Async
+    ): Unit =
+      reported += ((accountId, reason))
+
   private def services(
-      baseConfig: LuxmedConfig
+      baseConfig: LuxmedConfig,
+      health: AccountHealthReporter = AccountHealthReporter.Noop
   ): (AccountService, DictionaryService) =
     val accounts = AccountRepo(xa)
     val factory = AccountClientFactory.production(
@@ -88,7 +101,10 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
     )
     (
       accountService,
-      DictionaryService(AccountClientRegistry.production(accounts, factory))
+      DictionaryService(
+        AccountClientRegistry.production(accounts, factory),
+        health
+      )
     )
 
   private def withServer[A](body: RealHttpLuxmedServer => A): A =
@@ -262,3 +278,52 @@ class DictionaryServiceTest extends PostgresSuite with GearsTest:
 
       assertEquals(result, Left(ApiError.NotFound))
       assertEquals(server.requests.size, requestsAfterLink)
+
+  test(
+    "an auth failure during a dictionary call is reported as account health"
+  ):
+    withServer: server =>
+      val ownerId = owner()
+      val reporter = RecordingHealthReporter()
+      val (accountService, dictionaries) = services(config(server), reporter)
+      val accountId = linkedAccount(server, accountService, ownerId)
+      enqueue(
+        server,
+        List(
+          LuxmedResponseScripts.Response(
+            409,
+            List("Content-Type" -> "application/json"),
+            """{"error":{"code":1,"message":"invalid login or password"}}"""
+          )
+        )
+      )
+
+      val result = runAsync(dictionaries.cities(ownerId, accountId))
+
+      assert(result.isLeft, s"expected a failure, got $result")
+      assertEquals(
+        reporter.reported.toList,
+        List((accountId, AccountStatusReason.AuthFailed))
+      )
+
+  test("a transient dictionary failure reports nothing"):
+    withServer: server =>
+      val ownerId = owner()
+      val reporter = RecordingHealthReporter()
+      val (accountService, dictionaries) = services(config(server), reporter)
+      val accountId = linkedAccount(server, accountService, ownerId)
+      enqueue(
+        server,
+        List(
+          LuxmedResponseScripts.Response(
+            503,
+            List("Content-Type" -> "text/plain"),
+            "upstream down"
+          )
+        )
+      )
+
+      val result = runAsync(dictionaries.cities(ownerId, accountId))
+
+      assert(result.isLeft, s"expected a failure, got $result")
+      assertEquals(reporter.reported.toList, Nil)

@@ -127,6 +127,28 @@ follow-up PR:
 4. **Failed non-slot notifications were invisible** (no event, no log). They are
    now logged; slot failures remain visible in the event log as before.
 
+A second pass closed the remaining open issues from that review:
+
+5. **An expired session left the dashboard rendered** (issue #36). Any
+   authenticated call that answers 401 now resets the app to the login screen
+   with "Your session expired. Sign in again." instead of writing "Wrong
+   username or password" into a panel, and `SessionAbsent` resets the whole
+   session-scoped state rather than only swapping the screen.
+6. **A failed delivery is retried** (spec §3.5). Slots whose latest delivery
+   event failed are retried on later checks, at most three attempts each, so a
+   transient Telegram outage does not silently lose a slot; after the cap the
+   failure stands and the detail view shows it.
+7. **Dictionary calls now record auth failures** (issue #40). The engine and
+   the dictionary proxy share one `AccountHealthReporter`, so an account whose
+   credentials fail during a dictionary lookup is marked `auth_failed`, its
+   monitors paused, and the owner notified once — the same policy an engine
+   check applies.
+8. **Explicit read timeouts** on both HTTP clients: Luxmed (issue #41) and
+   Telegram. A stalled response no longer holds a virtual thread indefinitely.
+9. **Deleted accounts drop their cached Luxmed client**, and the monitor list
+   says the Telegram status is unknown — rather than dropping the warning —
+   when the status request fails.
+
 ## Known rough edges
 
 - The acceptance engine caps waits at 200 ms, so a browser run exercises the

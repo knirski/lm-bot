@@ -20,7 +20,18 @@ import lmbot.shared.domain.{
   */
 class Update(api: ApiClient):
 
-  def apply(state: AppState, msg: Msg): Transition[AppState, Msg] = msg match
+  def apply(state: AppState, msg: Msg): Transition[AppState, Msg] =
+    // A 401 from any authenticated call means the session is gone: the
+    // dashboard is dead, and rendering "Wrong username or password" into a
+    // panel (issue #36) would mislabel the failure. The login form's own
+    // failure is excluded — there, `Unauthorized` really is the credentials.
+    if discoversExpiredSession(msg) then sessionExpired(state)
+    else applyMessage(state, msg)
+
+  private def applyMessage(
+      state: AppState,
+      msg: Msg
+  ): Transition[AppState, Msg] = msg match
 
     case Msg.UsernameChanged(v) =>
       Transition(state.copy(login = state.login.copy(username = v)), Nil)
@@ -85,10 +96,11 @@ class Update(api: ApiClient):
       )
 
     case Msg.SessionAbsent =>
-      Transition(
-        state.copy(screen = Screen.Login, user = None, booting = false),
-        Nil
-      )
+      // Unreachable with data today — it fires from the boot probe before
+      // anything is loaded — but it must reset like a logout, not just swap
+      // the screen, or one user's lists would survive into the next sign-in
+      // on a shared browser (issue #36).
+      Transition(freshLogin(state), Nil)
 
     case Msg.LogoutRequested =>
       val effect = new Effect[Msg]:
@@ -102,16 +114,7 @@ class Update(api: ApiClient):
       // list response from the session just ending must never land on the
       // next one, even on a shared browser where the per-list counters would
       // otherwise restart at the same values and coincidentally match.
-      Transition(
-        AppState(
-          Screen.Login,
-          LoginForm(),
-          None,
-          booting = false,
-          dashboardGeneration = state.dashboardGeneration + 1
-        ),
-        Nil
-      )
+      Transition(freshLogin(state), Nil)
 
     case Msg.AccountsRequested =>
       val dashboardGen = state.dashboardGeneration
@@ -934,9 +937,57 @@ class Update(api: ApiClient):
   private def parseInterval(value: String): Option[Int] =
     value.trim.toIntOption
 
+  /** Rebuilds the session-scoped app state from scratch. Only the advancing
+    * generation survives, so a stale response from the session just ending can
+    * never land on the next one.
+    */
+  private def freshLogin(state: AppState): AppState =
+    AppState(
+      Screen.Login,
+      LoginForm(),
+      None,
+      booting = false,
+      dashboardGeneration = state.dashboardGeneration + 1
+    )
+
+  /** A 401 from an authenticated call: the session is gone, so reset fully and
+    * name the real failure — the login form's "Wrong username or password"
+    * would be a lie here (issue #36).
+    */
+  private def sessionExpired(state: AppState): Transition[AppState, Msg] =
+    Transition(
+      freshLogin(state).copy(
+        login = LoginForm(error = Some(Update.sessionExpiredMessage))
+      ),
+      Nil
+    )
+
+  /** The failure messages that can carry a discovered 401. `LoginFailed` is
+    * deliberately absent: there, `Unauthorized` really is the credentials.
+    */
+  private def discoversExpiredSession(msg: Msg): Boolean = msg match
+    case Msg.AccountsLoadFailed(ApiError.Unauthorized, _, _)     => true
+    case Msg.MonitorsLoadFailed(ApiError.Unauthorized, _, _)     => true
+    case Msg.AccountLinkFailed(ApiError.Unauthorized)            => true
+    case Msg.AccountDeleteFailed(ApiError.Unauthorized)          => true
+    case Msg.MonitorSaveFailed(ApiError.Unauthorized)            => true
+    case Msg.MonitorStateChangeFailed(_, ApiError.Unauthorized)  => true
+    case Msg.MonitorDeleteFailed(_, ApiError.Unauthorized)       => true
+    case Msg.MonitorDetailLoadFailed(_, ApiError.Unauthorized)   => true
+    case Msg.CitiesLoadFailed(_, ApiError.Unauthorized)          => true
+    case Msg.ServicesLoadFailed(_, ApiError.Unauthorized)        => true
+    case Msg.ProvidersLoadFailed(_, _, _, ApiError.Unauthorized) => true
+    case Msg.TelegramStatusLoadFailed(ApiError.Unauthorized)     => true
+    case Msg.TelegramLinkFailed(ApiError.Unauthorized)           => true
+    case Msg.TelegramUnlinkFailed(ApiError.Unauthorized)         => true
+    case _                                                       => false
+
   private def explain(err: ApiError): String = err match
     case ApiError.Unauthorized => "Wrong username or password."
     case ApiError.Forbidden    =>
       "That account is disabled. Ask the administrator."
     case ApiError.Unexpected(d) => s"Something went wrong: $d"
     case other                  => other.message
+
+object Update:
+  val sessionExpiredMessage: String = "Your session expired. Sign in again."

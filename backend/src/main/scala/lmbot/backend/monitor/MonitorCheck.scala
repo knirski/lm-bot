@@ -33,6 +33,16 @@ final class MonitorCheck(
         val newSlots = matching.filter: slot =>
           events.recordSlotFound(MonitorId(monitor.id), slot, now())
         newSlots.foreach(slot => notifier.notifySlot(ownerId, monitor, slot))
+        // A delivery that failed earlier is retried here, so a transient
+        // Telegram outage does not silently lose a slot. The attempt cap keeps
+        // a permanently unreachable chat from being retried forever.
+        events
+          .slotsAwaitingDelivery(
+            MonitorId(monitor.id),
+            MonitorCheck.maxDeliveryAttempts
+          )
+          .filter(SlotFilter.matches(_, criteria(monitor)))
+          .foreach(slot => notifier.notifySlot(ownerId, monitor, slot))
         CheckResult.Succeeded(matching.size, newSlots.size)
 
   private def criteria(monitor: MonitorRow): SlotCriteria =
@@ -45,3 +55,7 @@ final class MonitorCheck(
       timeTo = monitor.timeTo.toLocalTime,
       daysOfWeek = MonitorService.decodeDaysOfWeek(monitor.daysOfWeek)
     )
+
+object MonitorCheck:
+  /** Attempts per slot before a failed delivery stands. */
+  val maxDeliveryAttempts: Int = 3

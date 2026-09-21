@@ -11,7 +11,7 @@ import scala.util.Failure
 import scala.util.control.NonFatal
 
 import gears.async.{Async, Future, Listener, ReadableChannel}
-import lmbot.backend.account.AccountStatusReason
+import lmbot.backend.account.{AccountHealthReporter, AccountStatusReason}
 import lmbot.backend.db.{AccountRepo, MonitorEventRepo, MonitorRepo, MonitorRow}
 import lmbot.backend.notify.NotificationService
 import lmbot.backend.support.Sleeper
@@ -37,6 +37,7 @@ final class MonitorEngine(
     accounts: AccountRepo,
     checks: MonitorCheck,
     notifier: NotificationService,
+    health: AccountHealthReporter,
     events: MonitorEventRepo,
     sleeper: Sleeper,
     jitter: () => Double,
@@ -124,7 +125,6 @@ final class MonitorEngine(
               iterate(
                 monitor,
                 ownerId,
-                account.label,
                 persistentFailures,
                 consecutiveFailures
               ) match
@@ -137,7 +137,6 @@ final class MonitorEngine(
   private[monitor] def iterate(
       monitor: MonitorRow,
       ownerId: UserId,
-      accountLabel: String,
       persistentFailures: Int,
       consecutiveFailures: Int
   )(using Async): Iteration =
@@ -166,7 +165,10 @@ final class MonitorEngine(
               fail(monitor, ownerId, failure)
               Iteration.Stop
             case FailureAction.PauseAccount(reason) =>
-              pauseAccount(monitor, ownerId, accountLabel, reason)
+              health.reportAuthFailure(
+                AccountId(monitor.luxmedAccountId),
+                reason
+              )
               Iteration.Stop
             case FailureAction.NotifyAdmin(sleepFor) =>
               if versionNotified.compareAndSet(false, true) then
@@ -230,32 +232,6 @@ final class MonitorEngine(
         )
         notifier.notifyMonitorFailed(ownerId, failed, detail)
       case None => ()
-
-  private def pauseAccount(
-      monitor: MonitorRow,
-      ownerId: UserId,
-      accountLabel: String,
-      reason: AccountStatusReason
-  )(using Async): Unit =
-    val accountId = AccountId(monitor.luxmedAccountId)
-    val firstFailure =
-      accounts.markAuthFailed(accountId, reason.value, now())
-    monitors
-      .pauseAllForAccount(accountId)
-      .foreach: paused =>
-        events.append(
-          MonitorId(paused.id),
-          MonitorEventKind.MonitorPaused,
-          None,
-          Some(reason.value),
-          now()
-        )
-    if firstFailure then
-      log.warn(
-        s"Luxmed account ${accountId.value} needs attention: ${reason.value}; " +
-          "its monitors are paused"
-      )
-      notifier.notifyAccountAuthFailure(ownerId, accountLabel, reason)
 
   private def recordCheck(monitor: MonitorRow, summary: String): Unit =
     monitors.recordCheck(MonitorId(monitor.id), now(), summary)

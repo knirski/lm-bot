@@ -3,6 +3,8 @@ package lmbot.backend.luxmed
 import java.net.http.HttpClient
 import java.time.Duration
 
+import scala.concurrent.duration.*
+
 import gears.async.Async
 import lmbot.backend.config.{SafeDiagnostic, Secret}
 import lmbot.backend.luxmed.model.*
@@ -35,6 +37,11 @@ final case class WireFingerprint(
 )
 
 object LuxmedTransport:
+
+  /** Every request gets an explicit read timeout: without one a stalled
+    * response holds the calling virtual thread forever (issue #41).
+    */
+  private[luxmed] val readTimeout: FiniteDuration = 30.seconds
 
   private val defaultBackend: SttpBackend[Identity, Any] =
     HttpClientSyncBackend.usingClient(
@@ -93,6 +100,9 @@ final class LuxmedTransport private (
     basicRequest
       .response(asStringAlways)
       .followRedirects(false)
+      // A stalled response must not hold the calling virtual thread forever;
+      // sttp only applies a read timeout when one is set explicitly (issue #41).
+      .readTimeout(LuxmedTransport.readTimeout)
       .asInstanceOf[Request[String, Any]]
 
   /** GET on the old API (PatientPortalMobileAPI). */

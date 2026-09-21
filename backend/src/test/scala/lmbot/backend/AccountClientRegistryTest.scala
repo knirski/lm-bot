@@ -172,6 +172,18 @@ class AccountClientRegistryTest extends PostgresSuite with GearsTest:
         Left(ApiError.NotFound)
       )
 
+  test("forget drops the cached client"):
+    withServer: server =>
+      val ownerId = owner()
+      val (accountService, registry) = services(config(server))
+      val accountId = linkedAccount(server, accountService, ownerId)
+      val first = registry.forAccount(accountId).toOption.get
+
+      registry.forget(accountId)
+
+      val second = registry.forAccount(accountId).toOption.get
+      assert(!(first eq second), "forget must drop the cached client")
+
   test("two calls for one account are paced by the shared gate"):
     withServer: server =>
       val ownerId = owner()

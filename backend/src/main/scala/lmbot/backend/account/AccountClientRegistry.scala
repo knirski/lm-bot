@@ -55,6 +55,14 @@ final class AccountClientRegistry private (
               clients.update(accountId, client)
               client
 
+  /** Drops a deleted account's cached client, so its session and gate do not
+    * outlive the account.
+    */
+  def forget(accountId: AccountId): Unit =
+    lock.synchronized:
+      clients.remove(accountId)
+      ()
+
 object AccountClientRegistry:
   def production(
       accounts: AccountRepo,

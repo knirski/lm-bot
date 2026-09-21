@@ -111,6 +111,17 @@ object MonitorsView:
           a(href := "#telegram-settings", "Link Telegram")
         )
       )
+    case LoadState.Failed(_) =>
+      // Not knowing is different from knowing there is no chat: say so rather
+      // than silently dropping the warning.
+      Some(
+        p(
+          cls := "warning",
+          "Telegram notification status could not be loaded — monitors still " +
+            "run and record events, but notifications may not be delivered. " +
+            "Refresh to check."
+        )
+      )
     case _ => None
 
   private def newMonitorButton(rt: Runtime[AppState, Msg]): HtmlElement =

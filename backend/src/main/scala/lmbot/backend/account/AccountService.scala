@@ -24,6 +24,7 @@ final class AccountService(
     accounts: AccountRepo,
     clients: AccountClientFactory,
     crypto: AesGcm,
+    onAccountDeleted: AccountId => Unit = _ => (),
     uuidGenerator: () => UUID = () => UUID.randomUUID(),
     now: () => Instant = () => Instant.now()
 ):
@@ -110,7 +111,10 @@ final class AccountService(
 
   def delete(ownerId: UserId, accountId: AccountId): Either[ApiError, Unit] =
     attempt.either(_ => ApiError.Unexpected(accountDeleteFailed)):
-      if accounts.deleteOwned(accountId, ownerId) then Right(())
+      if accounts.deleteOwned(accountId, ownerId) then
+        // A cached Luxmed client (and its gate) must not outlive its account.
+        onAccountDeleted(accountId)
+        Right(())
       else Left(ApiError.NotFound)
 
   private def encrypt(

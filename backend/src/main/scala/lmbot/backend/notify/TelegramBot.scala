@@ -3,6 +3,8 @@ package lmbot.backend.notify
 import java.net.http.HttpClient
 import java.time.Duration
 
+import scala.concurrent.duration.*
+
 import com.github.plokhotnyuk.jsoniter_scala.core.{
   JsonValueCodec,
   readFromString
@@ -90,6 +92,7 @@ final class TelegramBot private (
   ): Either[NotificationError, Unit] =
     val request = basicRequest
       .post(botUri("sendMessage"))
+      .readTimeout(TelegramBot.readTimeout)
       .body(Map("chat_id" -> chatId.toString, "text" -> text))
     run(request) match
       case Left(error) => Left(error)
@@ -107,6 +110,7 @@ final class TelegramBot private (
           "allowed_updates" -> """["message"]"""
         )
       )
+      .readTimeout(TelegramBot.readTimeout)
     run(request) match
       case Left(error) => Left(error)
       case Right(body) =>
@@ -156,6 +160,11 @@ final class TelegramBot private (
         Left(NotificationError.Rejected("Malformed Telegram response"))
 
 object TelegramBot:
+  /** Longer than the 10-second long poll, short enough that a stalled response
+    * cannot hold a virtual thread indefinitely.
+    */
+  private[notify] val readTimeout: FiniteDuration = 30.seconds
+
   private val defaultBackend: SttpBackend[Identity, Any] =
     HttpClientSyncBackend.usingClient(
       HttpClient

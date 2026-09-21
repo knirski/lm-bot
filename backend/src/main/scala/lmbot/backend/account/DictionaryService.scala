@@ -1,13 +1,13 @@
 package lmbot.backend.account
 
 import gears.async.Async
-import lmbot.backend.luxmed.LuxmedClient
 import lmbot.backend.luxmed.model.{
   CityId,
   Doctor,
   ServiceVariant,
   ServiceVariantId
 }
+import lmbot.backend.luxmed.{LuxmedClient, LuxmedError}
 import lmbot.shared.api.ApiError
 import lmbot.shared.domain.{
   AccountId,
@@ -25,9 +25,14 @@ import lmbot.shared.domain.{
   *
   * The registry, not a fresh client per call, owns the account's gate: two
   * dictionary calls (or a dictionary call racing an engine check) queue behind
-  * the same rate limiter.
+  * the same rate limiter. An auth failure found here is reported through the
+  * same [[AccountHealthReporter]] the engine uses, so the account is marked and
+  * its monitors paused no matter which call discovered it (issue #40).
   */
-final class DictionaryService(clients: AccountClientRegistry):
+final class DictionaryService(
+    clients: AccountClientRegistry,
+    health: AccountHealthReporter
+):
 
   private val unavailable = "Luxmed is temporarily unavailable."
 
@@ -35,21 +40,22 @@ final class DictionaryService(clients: AccountClientRegistry):
       Async
   ): Either[ApiError, List[DictionaryCity]] =
     withClient(ownerId, accountId): client =>
-      client
-        .cities()
-        .left
-        .map(luxmedErrorMapping(_, unavailable))
-        .map(_.map(city => DictionaryCity(city.id.value, city.name)))
+      client.cities() match
+        case Right(cities) =>
+          Right(cities.map(city => DictionaryCity(city.id.value, city.name)))
+        case Left(error) =>
+          report(accountId, error)
+          Left(luxmedErrorMapping(error, unavailable))
 
   def services(ownerId: UserId, accountId: AccountId)(using
       Async
   ): Either[ApiError, List[DictionaryServiceItem]] =
     withClient(ownerId, accountId): client =>
-      client
-        .serviceVariants()
-        .left
-        .map(luxmedErrorMapping(_, unavailable))
-        .map(flatten(_, ancestry = None))
+      client.serviceVariants() match
+        case Right(variants) => Right(flatten(variants, ancestry = None))
+        case Left(error)     =>
+          report(accountId, error)
+          Left(luxmedErrorMapping(error, unavailable))
 
   def facilitiesDoctors(
       ownerId: UserId,
@@ -58,17 +64,35 @@ final class DictionaryService(clients: AccountClientRegistry):
       serviceId: Long
   )(using Async): Either[ApiError, FacilitiesDoctorsResponse] =
     withClient(ownerId, accountId): client =>
-      client
-        .facilitiesAndDoctors(CityId(cityId), ServiceVariantId(serviceId))
-        .left
-        .map(luxmedErrorMapping(_, unavailable))
-        .map { data =>
-          FacilitiesDoctorsResponse(
-            facilities =
-              data.facilities.map(f => DictionaryFacility(f.id.value, f.name)),
-            doctors = data.doctors.map(doctorEntry)
+      client.facilitiesAndDoctors(
+        CityId(cityId),
+        ServiceVariantId(serviceId)
+      ) match
+        case Right(data) =>
+          Right(
+            FacilitiesDoctorsResponse(
+              facilities = data.facilities.map(f =>
+                DictionaryFacility(f.id.value, f.name)
+              ),
+              doctors = data.doctors.map(doctorEntry)
+            )
           )
-        }
+        case Left(error) =>
+          report(accountId, error)
+          Left(luxmedErrorMapping(error, unavailable))
+
+  /** Only credential-shaped failures are recorded against the account; a
+    * transient 5xx or a rate limit says nothing about its health.
+    */
+  private def report(accountId: AccountId, error: LuxmedError)(using
+      Async
+  ): Unit =
+    error match
+      case LuxmedError.AuthFailed =>
+        health.reportAuthFailure(accountId, AccountStatusReason.AuthFailed)
+      case _: LuxmedError.UnexpectedAuthResponse =>
+        health.reportAuthFailure(accountId, AccountStatusReason.Challenge)
+      case _ => ()
 
   private def withClient[A](ownerId: UserId, accountId: AccountId)(
       op: LuxmedClient => Either[ApiError, A]

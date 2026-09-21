@@ -4,6 +4,8 @@ import java.sql.{Date as SqlDate, Time as SqlTime}
 import java.time.{Duration, Instant, LocalDate, LocalTime, OffsetDateTime}
 import java.util.{Base64, UUID}
 
+import scala.collection.mutable
+
 import lmbot.backend.account.{AccountClientFactory, AccountService}
 import lmbot.backend.config.{AppVersion, MasterKey, Secret}
 import lmbot.backend.crypto.{
@@ -508,6 +510,35 @@ class AccountServiceTest extends PostgresSuite with GearsTest:
       MonitorRepo(xa).findOwned(MonitorId(monitorId), firstOwner),
       None
     )
+
+  test("deleting an account reports it so caches can drop it"):
+    val ownerId = owner()
+    val accountId = insertAccount(ownerId, "Main")
+    val (_, factory) = service(
+      LuxmedConfig.production(
+        AppVersion.unsafeFromString("5.8.0"),
+        fixedDeviceUuid
+      )
+    )
+    val deleted = mutable.ListBuffer.empty[AccountId]
+    val deleting = AccountService(
+      accounts = AccountRepo(xa),
+      clients = factory,
+      crypto = crypto,
+      onAccountDeleted = deleted += _,
+      uuidGenerator = () => fixedDeviceUuid,
+      now = () => fixedInstant
+    )
+
+    assertEquals(deleting.delete(ownerId, AccountId(accountId)), Right(()))
+    assertEquals(deleted.toList, List(AccountId(accountId)))
+
+    // A delete that changed nothing reports nothing.
+    assertEquals(
+      deleting.delete(ownerId, AccountId(accountId)),
+      Left(ApiError.NotFound)
+    )
+    assertEquals(deleted.toList, List(AccountId(accountId)))
 
   test("forStored decrypts credentials and device UUID for a scoped client"):
     withServer: server =>

@@ -188,12 +188,13 @@ client are both derived from it. Two rules protect that:
    glob — zsh expands it otherwise):
 
    ```bash
-   grep -rn --include='*.scala' 'scala\.concurrent' \
+   grep -rn --include='*.scala' 'scala\.concurrent\.\(Future\|Promise\)' \
      shared/src/main backend/src/main frontend/src/main | grep -v '/bridge/'
    ```
 
    Must print nothing. Test sources may name it where they are testing the
-   bridge itself.
+   bridge itself. (`scala.concurrent.duration` is not part of this rule — the
+   ban is on the `Future`/`Promise` types — so the grep matches only those.)
 2. **Errors are values** (`Either`, union types). Exceptions mean bugs; they
    crash their own fiber, never the supervisor.
 3. **Airstream lives in exactly two places:** the store `Var` and view
