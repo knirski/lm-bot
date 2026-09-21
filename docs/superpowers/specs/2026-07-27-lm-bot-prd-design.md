@@ -350,7 +350,7 @@ concurrent callers cannot start competing refreshes.
 | Confirm | `POST {newApi}/NewPortal/reservation/confirm` (XSRF) |
 | Release | `POST {newApi}/NewPortal/reservation/releaseterm?reservationId=<id>` (XSRF) |
 
-`terms/index` takes a wide, fiddly parameter set that must be sent in full: `searchPlace.id` (city), `searchPlace.type=0`, `serviceVariantId`, `languageId=10`, `searchDateFrom`, `searchDateTo`, `searchDatePreset=14`, `processId` (fresh UUID per call), `serviceVariantSource=0`, `facilitiesIds`, `doctorsIds`, `nextSearch=false`, `searchByMedicalSpecialist=false`, `delocalized=false`.
+`terms/index` takes a wide, fiddly parameter set that must be sent in full: `searchPlace.id` (city), `searchPlace.type=0`, `serviceVariantId`, `languageId=10`, `searchDateFrom`, `searchDateTo`, `searchDatePreset=14`, `processId` (fresh UUID per call), `serviceVariantSource=0`, `facilitiesIds`, `doctorsIds`, `nextSearch=false`, `searchByMedicalSpecialist=false`, `delocalized=false`. Repeated `facilitiesIds` and `doctorsIds` parameters are **OR**ed by the API (confirmed 2026-09-21): a search matches slots at any of the listed clinics/doctors, so a monitor selecting several of either expects the union. The client still filters the response locally with the same OR semantics, as a safety net that also enforces the monitor's other criteria.
 
 **Datetime quirk.** `dateTimeFrom` / `dateTimeTo` / `day` are returned *sometimes* with a zone offset (`2021-05-21T18:45:00+02:00`) and *sometimes* as a bare local datetime (`2021-05-21T18:45:00`). The decoder must accept both and normalise to `Europe/Warsaw` (§5.3). A decoder that assumes either form alone will fail intermittently in production — luxmed-bot models this explicitly rather than hoping.
 
