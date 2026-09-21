@@ -31,7 +31,8 @@ final class LuxmedClient(
     credentials: Credentials,
     gate: AccountGate,
     store: SessionStore,
-    now: () => Instant = () => Instant.now()
+    now: () => Instant = () => Instant.now(),
+    onSessionEstablished: () => Unit = () => ()
 ):
 
   private val refreshThresholdSeconds = 300L
@@ -157,6 +158,9 @@ final class LuxmedClient(
     store.replace(expectedRefreshToken, session) match
       case Right(()) =>
         state = ClientSessionState.Ready(session)
+        // A password grant or a refresh just succeeded: this is the account's
+        // most recent successful login, and the row should say so.
+        onSessionEstablished()
         Right(session)
       case Left(SessionStoreError.ConcurrentModification) =>
         state = ClientSessionState.Unloaded

@@ -77,8 +77,8 @@ class AccountRepo(xa: Transactor):
       .run()
       .headOption
 
-  /** Marks an active account `auth_failed` with a reason. Returns true only
-    * when the status actually changed, which is the engine's once-per-episode
+  /** Marks the account `auth_failed` with a reason. Returns true only when the
+    * status actually changed, which is the engine's once-per-episode
     * notification guard. A `disabled` account is never overwritten.
     */
   def markAuthFailed(
@@ -89,6 +89,15 @@ class AccountRepo(xa: Transactor):
     sql"""update luxmed_accounts
           set status = 'auth_failed', status_reason = $reason, updated_at = $at
           where id = ${id.value} and status = 'active'""".update.run() > 0
+
+  /** The most recent successful Luxmed grant (password or refresh) for this
+    * account. `updated_at` is deliberately untouched: this is machine-written
+    * health data, not a user edit.
+    */
+  def markLogin(id: AccountId, at: OffsetDateTime): Unit = transact(xa):
+    sql"""update luxmed_accounts set last_successful_login = $at
+          where id = ${id.value}""".update.run()
+    ()
 
   def listOwned(ownerUserId: UserId): Seq[LuxmedAccountRow] = connect(xa):
     sql"""select a.* from luxmed_accounts a

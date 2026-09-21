@@ -184,6 +184,34 @@ class AccountClientRegistryTest extends PostgresSuite with GearsTest:
       val second = registry.forAccount(accountId).toOption.get
       assert(!(first eq second), "forget must drop the cached client")
 
+  test("a successful refresh updates the account's last successful login"):
+    withServer: server =>
+      val linkedAt = Instant.parse("2026-07-30T08:00:00Z")
+      val ownerId = owner()
+      val (linking, _) = services(config(server), now = () => linkedAt)
+      val accountId = linkedAccount(server, linking, ownerId)
+      val (_, later) =
+        services(config(server), now = () => linkedAt.plusSeconds(400))
+      val client = later.forAccount(accountId).toOption.get
+      // The stored session has 200 s left, so this call refreshes it.
+      enqueue(
+        server,
+        List(LuxmedResponseScripts.oauthPasswordGrant(refreshToken = "RT2"))
+      )
+      enqueue(server, LuxmedResponseScripts.realisticBootstrapFlow())
+      enqueueFixture(server, "cities.json")
+
+      val result = runAsync(client.cities())
+
+      assert(result.isRight, s"expected success, got $result")
+      assertEquals(
+        AccountRepo(xa)
+          .findById(accountId)
+          .flatMap(_.lastSuccessfulLogin)
+          .map(_.toInstant),
+        Some(linkedAt.plusSeconds(400))
+      )
+
   test("two calls for one account are paced by the shared gate"):
     withServer: server =>
       val ownerId = owner()

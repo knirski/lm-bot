@@ -124,6 +124,7 @@ object Plan4AcceptanceConfig:
     private val latestRefresh = AtomicReference("")
     private val unrouted = ConcurrentLinkedQueue[String]()
     private val termsFailures = AtomicInteger(0)
+    private val authRejections = AtomicInteger(0)
 
     private val server = HttpServer.create(InetSocketAddress(host, 0), 0)
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
@@ -180,6 +181,11 @@ object Plan4AcceptanceConfig:
       */
     def failTermsNext(times: Int): Unit = termsFailures.set(times)
 
+    /** Makes the next `times` terms searches answer 409 "invalid login or
+      * password", so an acceptance run can drive the account-auth-failure path.
+      */
+    def rejectTermsAuthNext(times: Int): Unit = authRejections.set(times)
+
     def close(): Unit = server.stop(0)
 
     private def route(
@@ -223,7 +229,13 @@ object Plan4AcceptanceConfig:
       * between days.
       */
     private def terms(query: String): LuxmedResponseScripts.Response =
-      if termsFailures.getAndUpdate(n => Math.max(0, n - 1)) > 0 then
+      if authRejections.getAndUpdate(n => Math.max(0, n - 1)) > 0 then
+        LuxmedResponseScripts.Response(
+          409,
+          List("Content-Type" -> "application/json"),
+          """{"error":{"code":1,"message":"invalid login or password"}}"""
+        )
+      else if termsFailures.getAndUpdate(n => Math.max(0, n - 1)) > 0 then
         LuxmedResponseScripts.Response(
           200,
           List("Content-Type" -> "application/json"),

@@ -80,3 +80,21 @@ class SlotFilterTest extends munit.FunSuite:
     assert(
       !SlotFilter.matches(slot("2026-08-10T09:00", clinicId = 10L), criteria)
     )
+
+  test("local-time comparisons are unaffected by DST transitions"):
+    // 2026-03-29 starts and 2026-10-25 ends Europe/Warsaw summer time; both
+    // are Sundays, and the 09:00 slot is outside the ambiguous midnight hour,
+    // so both must match on local time alone.
+    val spring = criteria.copy(
+      dateFrom = LocalDate.parse("2026-03-29"),
+      dateTo = LocalDate.parse("2026-03-29"),
+      daysOfWeek = List(DayOfWeek.SUNDAY)
+    )
+    assert(SlotFilter.matches(slot("2026-03-29T09:00"), spring))
+
+    val autumn = criteria.copy(
+      dateFrom = LocalDate.parse("2026-10-25"),
+      dateTo = LocalDate.parse("2026-10-25"),
+      daysOfWeek = List(DayOfWeek.SUNDAY)
+    )
+    assert(SlotFilter.matches(slot("2026-10-25T09:00"), autumn))

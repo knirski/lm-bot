@@ -132,7 +132,7 @@ object Plan5AcceptanceApp:
 
     val graph = AtomicReference(start(config, xa, luxmed, crypto))
     val control =
-      startControl(controlPort, config, xa, luxmed, telegram)
+      startControl(controlPort, config, xa, luxmed, telegram, crypto, graph)
 
     log.info(s"Acceptance app:      http://${config.httpHost}:$httpPort")
     log.info(s"Acceptance control:  http://${config.httpHost}:$controlPort")
@@ -264,7 +264,9 @@ object Plan5AcceptanceApp:
       config: Config,
       xa: Transactor,
       luxmed: Plan4AcceptanceConfig.StubLuxmedServer,
-      telegram: FakeTelegramServer
+      telegram: FakeTelegramServer,
+      crypto: AesGcm,
+      graph: AtomicReference[Graph]
   ): HttpServer =
     val server = HttpServer.create(
       InetSocketAddress(Plan4AcceptanceConfig.host, port),
@@ -289,8 +291,25 @@ object Plan5AcceptanceApp:
                 params.get("times").flatMap(_.toIntOption).getOrElse(3)
               luxmed.failTermsNext(times)
               s"""{"failingTermsFor":$times}"""
+            case "/reject-auth" =>
+              val times =
+                params.get("times").flatMap(_.toIntOption).getOrElse(1)
+              luxmed.rejectTermsAuthNext(times)
+              s"""{"rejectingTermsAuthFor":$times}"""
+            case "/fail-telegram" =>
+              val times =
+                params.get("times").flatMap(_.toIntOption).getOrElse(1)
+              telegram.failNextSends(times)
+              s"""{"failingTelegramSendsFor":$times}"""
+            case "/restart" =>
+              // Rebuild the composition graph on the same port and database:
+              // exactly what a process restart reads back from Postgres.
+              graph.get().worker.close()
+              graph.get().server.stop(0)
+              graph.set(start(config, xa, luxmed, crypto))
+              """{"restarted":true}"""
             case "/status" =>
-              status(xa, config, telegram)
+              status(xa, config, telegram, luxmed)
             case other =>
               s"""{"error":"unknown control path","path":${quote(other)}}"""
           respond(exchange, 200, body)
@@ -332,7 +351,8 @@ object Plan5AcceptanceApp:
   private def status(
       xa: Transactor,
       config: Config,
-      telegram: FakeTelegramServer
+      telegram: FakeTelegramServer,
+      luxmed: Plan4AcceptanceConfig.StubLuxmedServer
   ): String =
     val adminId = config.adminUsername
       .flatMap(UserRepo(xa).findByUsername)
@@ -355,7 +375,9 @@ object Plan5AcceptanceApp:
     val messages = telegram.messages
       .map((chatId, text) => s"""{"chatId":$chatId,"text":${quote(text)}}""")
     s"""{"monitors":[${monitorJson.mkString(",")}],""" +
-      s""""messages":[${messages.mkString(",")}]}"""
+      s""""messages":[${messages.mkString(",")}],""" +
+      s""""passwordGrants":${luxmed.passwordGrantCount},""" +
+      s""""refreshGrants":${luxmed.refreshGrantCount}}"""
 
   private def respond(exchange: HttpExchange, status: Int, body: String): Unit =
     try

@@ -111,6 +111,7 @@ final class MonitorEngine(
   private def monitorLoop(monitorId: MonitorId)(using Async.Spawn): Unit =
     var persistentFailures = 0
     var consecutiveFailures = 0
+    var lastSeenUpdatedAt: Option[OffsetDateTime] = None
     var running = true
     while running do
       monitors.findById(monitorId) match
@@ -118,6 +119,13 @@ final class MonitorEngine(
         case Some(monitor) if monitor.state != MonitorState.Active.wireName =>
           running = false
         case Some(monitor) =>
+          // A user edit bumps `updated_at` and is an intervention: reset the
+          // failure budget, so fixing a monitor's criteria after two decode
+          // failures does not leave it one strike from `failed`.
+          if lastSeenUpdatedAt.exists(_ != monitor.updatedAt) then
+            persistentFailures = 0
+            consecutiveFailures = 0
+          lastSeenUpdatedAt = Some(monitor.updatedAt)
           accounts.findById(AccountId(monitor.luxmedAccountId)) match
             case None          => running = false
             case Some(account) =>
@@ -159,18 +167,21 @@ final class MonitorEngine(
             consecutiveFailures
           ) match
             case FailureAction.Retry(sleepFor, persistent, consecutive) =>
+              recordError(monitor, failure)
               recordCheck(monitor, failureSummary(failure))
               Iteration.Continue(sleepFor, persistent, consecutive)
             case FailureAction.FailMonitor =>
               fail(monitor, ownerId, failure)
               Iteration.Stop
             case FailureAction.PauseAccount(reason) =>
+              recordError(monitor, failure)
               health.reportAuthFailure(
                 AccountId(monitor.luxmedAccountId),
                 reason
               )
               Iteration.Stop
             case FailureAction.NotifyAdmin(sleepFor) =>
+              recordError(monitor, failure)
               if versionNotified.compareAndSet(false, true) then
                 notifier.notifyAdminsVersionRejected(failureDetail(failure))
               recordCheck(monitor, failureSummary(failure))
@@ -235,6 +246,19 @@ final class MonitorEngine(
 
   private def recordCheck(monitor: MonitorRow, summary: String): Unit =
     monitors.recordCheck(MonitorId(monitor.id), now(), summary)
+
+  /** Every failed check is an `error` event: the last-check summary answers
+    * "what is happening now", the event log answers "what has been happening",
+    * and the detail view promises both (spec §3.3).
+    */
+  private def recordError(monitor: MonitorRow, failure: CheckFailure): Unit =
+    events.append(
+      MonitorId(monitor.id),
+      MonitorEventKind.Error,
+      None,
+      Some(failureDetail(failure)),
+      now()
+    )
 
   private def isPastDateRange(monitor: MonitorRow): Boolean =
     monitor.dateTo.toLocalDate.isBefore(
